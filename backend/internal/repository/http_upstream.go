@@ -140,6 +140,7 @@ type upstreamClientEntry struct {
 type openAIHTTP2FallbackState struct {
 	mu            sync.Mutex
 	windowStart   time.Time
+	lastFailureAt time.Time
 	errorCount    int
 	fallbackUntil time.Time
 }
@@ -217,6 +218,7 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	}
 
 	// 执行请求
+	requestStartedAt := time.Now()
 	client := s.httpClientForUpstreamRequest(entry.client, req)
 	client = httpClientWithGrokAccessDeniedFallback(client)
 	resp, err := doUpstreamRequest(client, req)
@@ -227,14 +229,21 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
 		return nil, err
 	}
-	s.recordOpenAIHTTP2Success(profile, entry.protocolMode, entry.proxyKey)
 
-	// 包装响应体，在关闭时自动减少计数并更新时间戳
+	// 包装响应体，在关闭时自动减少计数并更新时间戳。
+	// H2 streams can fail after a successful response header. Classify the whole
+	// body lifecycle so repeated mid-stream failures can activate the existing
+	// per-proxy H2 -> H1 compatibility fallback instead of being reset by 200 headers.
 	// 这确保了流式响应（如 SSE）在完全读取前不会被淘汰
-	resp.Body = wrapTrackedBody(resp.Body, func() {
-		atomic.AddInt64(&entry.inFlight, -1)
-		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
-	})
+	resp.Body = wrapTrackedBodyWithOutcome(
+		resp.Body,
+		func() {
+			atomic.AddInt64(&entry.inFlight, -1)
+			atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
+		},
+		func() { s.recordOpenAIHTTP2Success(profile, entry.protocolMode, entry.proxyKey, requestStartedAt) },
+		func(err error) { s.recordOpenAIHTTP2Failure(profile, entry.protocolMode, entry.proxyKey, err) },
+	)
 
 	return resp, nil
 }
@@ -1128,6 +1137,7 @@ func isOpenAIHTTP2CompatibilityError(err error) bool {
 		"no application protocol",
 		"protocol error",
 		"stream error",
+		"http2: client connection lost",
 		"goaway",
 		"refused_stream",
 		"frame too large",
@@ -1190,7 +1200,12 @@ func (s *httpUpstreamService) recordOpenAIHTTP2Failure(profile service.HTTPUpstr
 	}
 }
 
-func (s *httpUpstreamService) recordOpenAIHTTP2Success(profile service.HTTPUpstreamProfile, protocolMode, proxyKey string) {
+func (s *httpUpstreamService) recordOpenAIHTTP2Success(
+	profile service.HTTPUpstreamProfile,
+	protocolMode string,
+	proxyKey string,
+	requestStartedAt time.Time,
+) {
 	if profile != service.HTTPUpstreamProfileOpenAI || protocolMode != upstreamProtocolModeOpenAIH2 {
 		return
 	}
@@ -1205,7 +1220,7 @@ func (s *httpUpstreamService) recordOpenAIHTTP2Success(profile service.HTTPUpstr
 	if !ok || state == nil {
 		return
 	}
-	state.resetErrorWindow()
+	state.resetErrorWindow(requestStartedAt)
 }
 
 func (s *openAIHTTP2FallbackState) isFallbackActive(now time.Time) bool {
@@ -1221,10 +1236,14 @@ func (s *openAIHTTP2FallbackState) isFallbackActive(now time.Time) bool {
 	return false
 }
 
-func (s *openAIHTTP2FallbackState) resetErrorWindow() {
+func (s *openAIHTTP2FallbackState) resetErrorWindow(requestStartedAt time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if !s.lastFailureAt.IsZero() && requestStartedAt.Before(s.lastFailureAt) {
+		return
+	}
 	s.windowStart = time.Time{}
+	s.lastFailureAt = time.Time{}
 	s.errorCount = 0
 }
 
@@ -1254,6 +1273,7 @@ func (s *openAIHTTP2FallbackState) recordFailure(now time.Time, threshold int, w
 		s.errorCount = 0
 	}
 	s.errorCount++
+	s.lastFailureAt = now
 	if s.errorCount < threshold {
 		return false, time.Time{}
 	}
@@ -1497,16 +1517,47 @@ type trackedBody struct {
 	io.ReadCloser // 原始响应体
 	once          sync.Once
 	onClose       func() // 关闭时的回调函数
+	outcomeOnce   sync.Once
+	onSuccess     func()
+	onReadError   func(error)
+}
+
+func (b *trackedBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err == nil {
+		return n, nil
+	}
+	if errors.Is(err, io.EOF) {
+		b.recordSuccess()
+	} else {
+		b.recordReadError(err)
+	}
+	return n, err
 }
 
 // Close 关闭响应体并执行回调
 // 使用 sync.Once 确保回调只执行一次
 func (b *trackedBody) Close() error {
 	err := b.ReadCloser.Close()
+	if err != nil {
+		b.recordReadError(err)
+	}
 	if b.onClose != nil {
 		b.once.Do(b.onClose)
 	}
 	return err
+}
+
+func (b *trackedBody) recordSuccess() {
+	if b.onSuccess != nil {
+		b.outcomeOnce.Do(b.onSuccess)
+	}
+}
+
+func (b *trackedBody) recordReadError(err error) {
+	if b.onReadError != nil {
+		b.outcomeOnce.Do(func() { b.onReadError(err) })
+	}
 }
 
 // wrapTrackedBody 包装响应体以跟踪关闭事件
@@ -1519,10 +1570,24 @@ func (b *trackedBody) Close() error {
 // 返回:
 //   - io.ReadCloser: 包装后的响应体
 func wrapTrackedBody(body io.ReadCloser, onClose func()) io.ReadCloser {
+	return wrapTrackedBodyWithOutcome(body, onClose, nil, nil)
+}
+
+func wrapTrackedBodyWithOutcome(
+	body io.ReadCloser,
+	onClose func(),
+	onSuccess func(),
+	onReadError func(error),
+) io.ReadCloser {
 	if body == nil {
 		return body
 	}
-	return &trackedBody{ReadCloser: body, onClose: onClose}
+	return &trackedBody{
+		ReadCloser:  body,
+		onClose:     onClose,
+		onSuccess:   onSuccess,
+		onReadError: onReadError,
+	}
 }
 
 // decompressResponseBody 根据 Content-Encoding 解压响应体。
