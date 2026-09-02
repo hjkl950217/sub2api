@@ -924,6 +924,9 @@ func (s *GatewayService) recordUsageMultipliers(ctx context.Context, apiKey *API
 func (s *GatewayService) recordUsageBillingModel(ctx context.Context, apiKey *APIKey, result *ForwardResult, fields ChannelUsageFields) string {
 	concreteBillingModel := forwardResultBillingModel(result.Model, result.UpstreamModel)
 	billingModel := concreteBillingModel
+	if fields.BillingModelSource == BillingModelSourceUpstream && result.UpstreamModel != "" {
+		billingModel = result.UpstreamModel
+	}
 	if fields.BillingModelSource == BillingModelSourceChannelMapped && fields.ChannelMappedModel != "" {
 		billingModel = fields.ChannelMappedModel
 	}
