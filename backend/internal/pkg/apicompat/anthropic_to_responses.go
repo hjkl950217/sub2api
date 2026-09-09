@@ -409,7 +409,7 @@ func anthropicImageToDataURI(src *AnthropicImageSource) string {
 // (the Responses API output field only accepts strings).
 func convertToolResultOutput(b AnthropicContentBlock) (string, []ResponsesContentPart) {
 	if len(b.Content) == 0 {
-		return "(empty)", nil
+		return formatAnthropicToolResultOutput("(empty)", b.IsError), nil
 	}
 
 	// Try plain string content.
@@ -418,13 +418,13 @@ func convertToolResultOutput(b AnthropicContentBlock) (string, []ResponsesConten
 		if s == "" {
 			s = "(empty)"
 		}
-		return s, nil
+		return formatAnthropicToolResultOutput(s, b.IsError), nil
 	}
 
 	// Array of content blocks — may contain text and/or images.
 	var inner []AnthropicContentBlock
 	if err := json.Unmarshal(b.Content, &inner); err != nil {
-		return "(empty)", nil
+		return formatAnthropicToolResultOutput("(empty)", b.IsError), nil
 	}
 
 	// Separate text (for function_call_output) from images (for user message).
@@ -447,7 +447,14 @@ func convertToolResultOutput(b AnthropicContentBlock) (string, []ResponsesConten
 	if text == "" {
 		text = "(empty)"
 	}
-	return text, imageParts
+	return formatAnthropicToolResultOutput(text, b.IsError), imageParts
+}
+
+func formatAnthropicToolResultOutput(text string, isError bool) string {
+	if !isError {
+		return text
+	}
+	return "Error: " + text
 }
 
 // extractAnthropicTextFromBlocks joins all text blocks, ignoring thinking/
