@@ -4,8 +4,9 @@ name: Release
 #   1. 只推送 GHCR；DockerHub 渠道整体停用（登录、推送、描述更新、通知文案）；
 #   2. 停用 sync-version-file 作业，避免 CI 改写默认分支；
 #   3. 新增 workflow_dispatch 输入 use_version_file，无 tag 时用 VERSION 文件发版；
-#   4. build-frontend 里把 fork/frontend 的前端补丁打进 dist 并跑单测；
-#   5. release 里先重建同名 tag 与 Release，保证 tag 指向本次发版的提交。
+#   4. build-frontend 里把 fork/frontend 的前端补丁打进 dist 并跑单测，再跑 fork 的 embed 覆盖测试；
+#   5. release 里先重建同名 tag 与 Release，保证 tag 指向本次发版的提交；
+#   6. backend/internal/web/embed_on.go 带 FORK-ANCHOR 标记，data/public 覆盖优先且 index.html 可覆盖。
 
 on:
   push:
@@ -119,6 +120,17 @@ jobs:
         run: python fork/frontend/patch_dist.py --dist backend/internal/web/dist
       - name: Test patched frontend dist
         run: node fork/frontend/test_patched_dist.mjs backend/internal/web/dist
+      # FORK: 验证 embed 构建下二开改动（data/public 覆盖优先、index.html 可覆盖）。
+      # 上游 CI 只跑 -tags=unit，不编译 embed 代码，所以在这里把关。
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: false
+          cache: true
+          cache-dependency-path: backend/go.sum
+      - name: Fork embed override tests
+        working-directory: backend
+        run: go test -tags=embed -run TestFork ./internal/web/
       - uses: actions/upload-artifact@v7
         with:
           name: frontend-dist

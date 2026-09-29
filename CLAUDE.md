@@ -41,6 +41,7 @@ git add -f CLAUDE.md
 | 8 | `sync-version-file` 作业 | `if` 改为 `false`，整作业停用 | 该作业会把发版版本号 commit 回默认分支，导致 `main` 与上游分叉，`git pull --ff-only` 从此失败 |
 | 9 | `build-frontend` 作业 | 新增两步：`python fork/frontend/patch_dist.py` 把三处前端补丁打进 dist，再跑 `node fork/frontend/test_patched_dist.mjs` | 让镜像自带前端补丁，部署后不必再往 `data/public/` 放覆盖文件 |
 | 10 | `release` 作业 | 新增 `Reset release tag and release` 步骤（非 dry-run）：`git tag -f` + `git push --force` + `gh release delete` | 同名 tag / Release 一律重建，保证 tag 指向本次发版的提交 |
+| 11 | `build-frontend` 作业 | 新增 `Fork embed override tests`：`go test -tags=embed -run TestFork ./internal/web/` | 上游 CI 只跑 `-tags=unit`，不编译 embed 代码，二开的覆盖改动不会被它覆盖，必须在这里把关 |
 
 ### 2.2 `.github/release-tools/release_matrix.py`
 
@@ -71,6 +72,51 @@ git add -f CLAUDE.md
 - `test_version_file_plan_publishes_without_a_tag`：无 tag 时 tag 回退为 `v<version>`；
 - `test_version_file_plan_prefers_an_existing_tag`：HEAD 上有 tag 时用真实 tag 名；
 - `test_version_file_plan_rejects_an_invalid_version`：VERSION 文件非法时报错。
+
+### 2.5 `backend/internal/web/embed_on.go`（改上游文件，带锚点）
+
+二开的**运行时前端覆盖**改造，让本地构建的前端产物直接映射进容器即可生效，不必重打镜像。
+
+改动前上游的行为：`tryServeOverride` 只在**内嵌 dist 里已存在**该路径时才查 `data/public/`，且 `index.html` 固定走内嵌版。因此覆盖目录只能替换已有文件，投不了新文件、也改不了首页。
+
+改动后：
+
+| # | 位置 | 改动 | 原因 |
+|---|---|---|---|
+| 1 | `Middleware` | 先查覆盖目录，再判存在性；`index.html` 直接进 `serveIndexHTML` | 覆盖优先，且允许投放内嵌 dist 中不存在的新文件（否则会被当成 SPA 路由回落成 index.html） |
+| 2 | 新增 `currentBaseHTML()` | 读 `data/public/index.html`，按 mtime+size 变化重新加载并失效已渲染缓存 | 首页可覆盖且改完即生效，不用重启容器 |
+| 3 | `serveIndexHTML` / `injectSettings` | 用 `currentBaseHTML()` 代替 `s.baseHTML` | 让 1、2 两条生效 |
+| 4 | `ServeEmbeddedFrontend`（legacy 分支） | 同上顺序调整 | 无 settings provider 时的回落路径保持一致 |
+
+新增结构体字段：`embeddedHTML`（内嵌原始首页，用于回退）、`baseMu`（保护 baseHTML/overrideStamp）、`overrideStamp`。
+
+**锚点清单**（合并上游后逐个确认还在、且只出现一次）：
+
+| 锚点 | 位置 |
+|---|---|
+| `FORK-ANCHOR: override-first` | `Middleware` 里的覆盖优先分支 |
+| `FORK-ANCHOR: override-index-loader` | `currentBaseHTML()` 定义 |
+| `FORK-ANCHOR: override-index-use` | `serveIndexHTML` 里调用 `currentBaseHTML()` |
+| `FORK-ANCHOR: override-first-legacy` | `ServeEmbeddedFrontend` 里的覆盖优先分支 |
+
+### 2.6 `frontend/src/components/layout/AppSidebar.vue`（改上游文件）
+
+屏蔽管理端侧栏三项入口，**只删菜单项、不删路由**，页面仍可直接输地址访问：
+
+- `/admin/announcements`（公告）
+- `/admin/redeem`（兑换码）
+- `/admin/promo-codes`（优惠码）
+
+随之删掉只为它们服务的 `BellIcon`、`TicketIcon` 图标定义（`noUnusedLocals` 会让未使用的 const 编译失败）。`GiftIcon` 仍被用户端 `/redeem` 使用，保留。
+
+### 2.7 `backend/internal/web/embed_fork_test.go`（新增文件）
+
+覆盖 2.5 的 fork 测试，与上游的 `embed_test.go` 分开放，减少合并冲突：
+
+- `TestForkOverridePrecedesEmbeddedLookup`：内嵌 dist 中不存在的新路径能被覆盖目录命中（改动前会回落成 index.html）；
+- `TestForkIndexHTMLOverrideAndCacheInvalidation`：`data/public/index.html` 生效、mtime 变化后重新加载、文件移除后回退内嵌版。
+
+本机没有 Go，这两个用例的验证走 CI 的 `Fork embed override tests` 步骤。
 
 ## 3. 发版方式
 
@@ -145,6 +191,7 @@ gh workflow run release.yml -R hjkl950217/sub2api \
 - `backend/internal/service/update_service.go` 里 `githubRepo = "Wei-Shaw/sub2api"` 是硬编码的，指向唯一上游，因此内置「检查更新」在 fork 上会报出上游新版本，点击更新会下载**上游二进制**覆盖当前实例。当前靠"版本号与上游一致"规避，一旦本地版本落后于上游，这个入口就会真的覆盖。
 - `release-images.sh` 用 `${RELEASE_VERSION%%.*}` / `${RELEASE_VERSION#*.}` 截取 major/minor。版本号保持三段时正常；若将来出现第四段，会产出 `:0.2` 之外的脏标签。
 - 运行时覆盖（`data/public/`）**优先级高于**内嵌补丁。NAS 上遗留的旧覆盖文件会盖掉镜像里的新补丁，切换镜像后要按子任务 `旧补丁/README.md` 的说明清理，否则会误判「补丁没生效」。
+- 2.5 的 `currentBaseHTML()` 每个首页请求都会 `os.Stat` 一次 `data/public/index.html`（约 1 次系统调用，远低于渲染与注入开销）；覆盖目录为空时走 `Stat` 失败的快路径，不会读文件。
 - `patch_dist.py` 依赖 Vite 压缩后的函数形态。上游改了这个函数的写法，或者 Vite 升级换了压缩策略，模式就会失配——构建会在 `build-frontend` 阶段失败（不会静默出未打补丁的镜像）。
 
 ## 6. 修改本仓库的纪律
