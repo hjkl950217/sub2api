@@ -481,7 +481,7 @@ const PluginIcon = {
   render: () => h(Icon, { name: 'cube' })
 }
 
-// FORK: BellIcon / TicketIcon 随「公告 / 兑换码」菜单项一并移除（见 adminNavItems）。
+// FORK-ANCHOR: sidebar-removed-icons（BellIcon / TicketIcon 随公告、兑换码入口一并移除）
 
 const CogIcon = {
   render: () =>
@@ -765,8 +765,10 @@ const adminNavItems = computed((): NavItem[] => {
     // 「仅充值」站点连管理端的「订阅管理」入口也一并收起（路由本身不拦截）。
     { path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: CreditCardIcon, hideInSimpleMode: true, featureFlag: flagSubscription },
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
+    // FORK-ANCHOR: sidebar-group-model-accounts（分组模型账号入口，紧接账号管理）
+    { path: '/admin/group-model-accounts', label: t('nav.groupModelAccounts'), icon: FolderIcon },
     { path: '/admin/plugins', label: t('nav.plugins'), icon: PluginIcon, featureFlag: flagPluginManagement },
-    // FORK: 「公告」入口已按需屏蔽（路由 /admin/announcements 保留，可直接访问）。
+    // FORK-ANCHOR: sidebar-announcements-entry（公告入口已屏蔽，路由保留可直接访问）
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
     {
       path: '/admin/security-audit',
@@ -779,7 +781,7 @@ const adminNavItems = computed((): NavItem[] => {
         { path: '/admin/prompt-audit', label: t('nav.promptAudit'), icon: ShieldIcon },
       ],
     },
-    // FORK: 「兑换码」「优惠码」入口已按需屏蔽（路由保留，可直接访问）。
+    // FORK-ANCHOR: sidebar-redeem-promo-entries（兑换码/优惠码入口已屏蔽，路由保留可直接访问）
     {
       path: '/admin/affiliates',
       label: t('nav.affiliateManagement'),

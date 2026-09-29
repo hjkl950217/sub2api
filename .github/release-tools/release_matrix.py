@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# FORK-ANCHOR: release-matrix-version-file（plan() 新增 --version-file 模式）
 """Split GoReleaser builds across runners without requiring GoReleaser Pro.
 
 FORK (hjkl950217/sub2api): plan() 新增 --version-file，用所选 ref 上的 VERSION 文件

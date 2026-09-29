@@ -1,6 +1,7 @@
 name: Release
 
-# FORK (hjkl950217/sub2api) 相对上游的改动，合并上游后按这五条复查：
+# FORK-ANCHOR: ci-header（本文件所有改动的总说明，勿删）
+# FORK (hjkl950217/sub2api) 相对上游的改动，合并上游后按这几条复查：
 #   1. 只推送 GHCR；DockerHub 渠道整体停用（登录、推送、描述更新、通知文案）；
 #   2. 停用 sync-version-file 作业，避免 CI 改写默认分支；
 #   3. 新增 workflow_dispatch 输入 use_version_file，无 tag 时用 VERSION 文件发版；
@@ -19,6 +20,7 @@ on:
         required: false
         type: string
       use_version_file:
+        # FORK-ANCHOR: ci-version-file-input（无 tag 手动发版，版本取 VERSION 文件）
         description: 'FORK: publish the VERSION file at the selected ref, no matching tag required'
         required: false
         type: boolean
@@ -77,6 +79,7 @@ jobs:
         id: plan
         env:
           REQUESTED_REF: ${{ inputs.tag || github.ref_name }}
+          # FORK-ANCHOR: ci-version-file-plan（把 use_version_file 传给 release_matrix.py）
           # FORK: 用所选 ref 上的 VERSION 文件发版，不要求存在同名 tag
           USE_VERSION_FILE: ${{ inputs.use_version_file == true }}
         run: |
@@ -115,11 +118,13 @@ jobs:
         working-directory: frontend
       - run: pnpm run build
         working-directory: frontend
-      # FORK: 把三处前端补丁打进 dist，镜像自带补丁，部署后不必再往 data/public/ 放覆盖文件
+      # FORK-ANCHOR: ci-patch-frontend-dist（构建期打两处前端补丁并单测）
+      # FORK: 把两处前端补丁打进 dist，镜像自带补丁，部署后不必再往 data/public/ 放覆盖文件
       - name: Patch frontend dist
         run: python fork/frontend/patch_dist.py --dist backend/internal/web/dist
       - name: Test patched frontend dist
         run: node fork/frontend/test_patched_dist.mjs backend/internal/web/dist
+      # FORK-ANCHOR: ci-embed-fork-tests（上游 CI 只跑 -tags=unit，embed 改动在这里把关）
       # FORK: 验证 embed 构建下二开改动（data/public 覆盖优先、index.html 可覆盖）。
       # 上游 CI 只跑 -tags=unit，不编译 embed 代码，所以在这里把关。
       - uses: actions/setup-go@v6
@@ -130,7 +135,14 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Fork embed override tests
         working-directory: backend
-        run: go test -tags=embed -run TestFork ./internal/web/
+        run: |
+          go test -tags=embed -v -run TestFork ./internal/web/ | tee /tmp/fork-embed.log
+          # -run 匹配不到用例时 go test 也返回 0，必须确认两个用例真的跑了。
+          ran=$(grep -c '^--- PASS: TestFork' /tmp/fork-embed.log || true)
+          if [ "$ran" -ne 2 ]; then
+            echo "::error::期望 2 个 TestFork 用例通过，实际 $ran 个"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
@@ -199,6 +211,7 @@ jobs:
           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO_OWNER_LOWER: ${{ needs.prepare.outputs.owner_lower }}
           GITHUB_REPO_NAME: ${{ github.event.repository.name }}
+          # FORK-ANCHOR: ci-ghcr-only-build-binaries（DockerHub 渠道整体停用）
           # FORK: 固定 skip，DockerHub 渠道不再参与
           DOCKERHUB_USERNAME: skip
           TAG_MESSAGE: ''
@@ -266,6 +279,7 @@ jobs:
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+      # FORK-ANCHOR: ci-ghcr-push-only
       # FORK: DockerHub 登录已移除，只推送 GHCR
       - name: Login to GitHub Container Registry
         if: ${{ env.DRY_RUN != 'true' }}
@@ -276,6 +290,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build images and publish manifests
         env:
+          # FORK-ANCHOR: ci-ghcr-only-release-env（DockerHub 渠道整体停用）
           # FORK: 固定 skip，DockerHub 渠道不再参与
           DOCKERHUB_USERNAME: skip
         run: bash "$RUNNER_TEMP/release-tools/release-images.sh"
@@ -289,6 +304,7 @@ jobs:
             echo "$TAG_MESSAGE"
             echo "$DELIMITER"
           } >> "$GITHUB_OUTPUT"
+      # FORK-ANCHOR: ci-recreate-release-tag（同名 tag/Release 一律重建）
       # FORK: 同名 tag 与 Release 一律重建，保证 tag 始终指向本次发版的提交。
       # 用 GITHUB_TOKEN 推送，GitHub 不会因此再触发一次 Release 工作流。
       - name: Reset release tag and release
@@ -323,6 +339,7 @@ jobs:
           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO_NAME: ${{ github.event.repository.name }}
           GITHUB_REPO_OWNER_LOWER: ${{ needs.prepare.outputs.owner_lower }}
+          # FORK-ANCHOR: ci-ghcr-only-dry-run（DockerHub 渠道整体停用）
           # FORK: 固定 skip，DockerHub 渠道不再参与
           DOCKERHUB_USERNAME: skip
       - name: Upload dry-run checksums and metadata
@@ -337,6 +354,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
+      # FORK-ANCHOR: ci-no-dockerhub-description（DockerHub 描述更新步骤已移除）
       # FORK: DockerHub 描述更新步骤已移除
 
       # Send Telegram notification
@@ -346,6 +364,7 @@ jobs:
           TAG_MESSAGE: ${{ steps.tag_message.outputs.message }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # FORK-ANCHOR: ci-notify-dockerhub-empty（通知里不出现 DockerHub 拉取命令）
           # FORK: 留空，避免通知里出现 DockerHub 拉取命令
           DOCKERHUB_USERNAME: ''
         continue-on-error: true
@@ -410,6 +429,7 @@ jobs:
                 disable_web_page_preview: true
               }')"
 
+  # FORK-ANCHOR: ci-disable-sync-version-file（停用，避免 CI 改写默认分支）
   # FORK: 停用，避免 CI 改写默认分支（VERSION 文件跟随上游，fork 版本号由 tag 决定）
   sync-version-file:
     needs: [prepare, release]

@@ -1,8 +1,11 @@
 """把前端补丁打进已构建的 dist，供镜像构建使用。
 
-用途：镜像里直接带上三处补丁，部署后无需再往 data/public/ 放覆盖文件。
+用途：镜像里直接带上两处补丁，部署后无需再往 data/public/ 放覆盖文件。
 补丁逻辑与 旧补丁/前端补丁/build_patches.py 一致，只是输入从「临时文件/live-*.js」
 换成「dist 里刚构建出来的 chunk」。
+
+2026-09-30：「分组模型账号」已改为真路由页（frontend/src/views/admin/GroupModelAccountsView.vue），
+原「入口尾部追加 DOM 注入面板」那处补丁随之删除，三处变两处。
 
 入口 chunk 从 dist/index.html 读取：assets/ 下还有别的 index-*.js 路由分包，
 按文件名通配会命中多个，必须按 index.html 的引用定位。
@@ -20,7 +23,6 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-INJECT = os.path.join(HERE, "group-model-accounts-injection.js")
 
 # 与 旧补丁/前端补丁/build_patches.py 保持一致
 ENTRY_PATTERN = re.compile(
@@ -41,7 +43,7 @@ ENTRY_TEMPLATE = (
 )
 CSV_PATTERN = re.compile(r"return;(\w+)\.value=(\w+)\.items\|\|\[\]\}")
 
-PATCH_MARK = "group-model-accounts-panel"
+LOCAL_FIRST_MARK = 'if(r&&r.platform==="openai")'
 SORT_MARK = ".slice().sort((A,B)=>A.id-B.id)"
 ENTRY_RE = re.compile(r"assets/(index-[A-Za-z0-9_-]+\.js)")
 CSV_RE = re.compile(r"ChannelStatusView-[A-Za-z0-9_-]+\.js")
@@ -100,7 +102,7 @@ def main():
     print(f"入口 chunk: {entry_name}")
     print(f"监控 chunk: {csv_name}")
 
-    if PATCH_MARK in entry:
+    if LOCAL_FIRST_MARK in entry:
         sys.exit("[FAIL] 入口已含补丁标记，dist 可能已被打过补丁，不要重复打")
 
     matches = ENTRY_PATTERN.findall(entry)
@@ -127,15 +129,15 @@ def main():
         print("\n[dry-run] 模式全部命中，未写入任何文件。")
         return
 
-    write(entry_path, entry.replace(old_entry, new_entry) + read(INJECT))
+    write(entry_path, entry.replace(old_entry, new_entry))
     write(csv_path, csv)
 
     print("\n=== 产物校验 ===")
     for p in (entry_path, csv_path):
         text = read(p)
         marks = []
-        if PATCH_MARK in text:
-            marks.append(PATCH_MARK)
+        if LOCAL_FIRST_MARK in text:
+            marks.append("local-first")
         if SORT_MARK in text:
             marks.append("sort-by-id")
         print(f"  {os.path.basename(p)}  {os.path.getsize(p)} 字节  sha256 {sha256(p)}  标记 {marks}")

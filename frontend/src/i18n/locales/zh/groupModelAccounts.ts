@@ -1,0 +1,27 @@
+// FORK: 「分组模型账号」页面文案（见 fork/CLAUDE.md 第 2.6c 节）
+export default {
+  groupModelAccounts: {
+    title: '分组模型账号',
+    description: '按模型或分组查看账号覆盖情况，数据来自分组实际可调度账号的 model_mapping。',
+    searchPlaceholder: '搜索模型 / 分组 / 账号（多个词空格分隔）',
+    modelView: '模型视角',
+    groupView: '分组视角',
+    onlyScheduled: '仅已调度账号',
+    refresh: '刷新',
+    loading: '加载中…',
+    notLoaded: '尚未加载',
+    updatedAt: '更新于 {time}',
+    count: '{count} 个',
+    emptyModel: '没有匹配的模型',
+    emptyGroup: '没有匹配的分组或模型',
+    noGroupModels: '该分组无可用模型',
+    unlabeled: '未标注',
+    colModel: '模型',
+    colGroupAccount: '涉及分组 / 账号',
+    colAccount: '账号',
+    modelTableHint: '按模型看，用这个模型会涉及哪些分组',
+    groupMeta: '分组 ID {id} · 平台 {platform}',
+    accountSummary: '账号：计入 {counted} / 共 {total}',
+    accountSummaryExcluded: '账号：计入 {counted} / 共 {total}（{excluded} 个未计入）',
+  },
+}

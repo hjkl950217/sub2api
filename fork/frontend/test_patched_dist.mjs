@@ -1,4 +1,5 @@
-// 校验已打补丁的 dist：三处补丁都在，且 getAvailableModels 的 local-first 行为正确。
+// 校验已打补丁的 dist：两处补丁都在，且 getAvailableModels 的 local-first 行为正确。
+// 2026-09-30：「分组模型账号」改为真路由页后，原「入口面板注入」补丁已删，三处变两处。
 // 站点升级后 chunk 哈希与压缩函数名都会变，因此按补丁特征自动定位，不写死文件名。
 //
 // 用法：node fork/frontend/test_patched_dist.mjs <dist 目录>
@@ -18,9 +19,7 @@ const bundle = fs.readFileSync(path.join(assets, entryName), 'utf8');
 
 const assert = (cond, msg) => { if (!cond) throw new Error('FAIL: ' + msg); console.log('PASS:', msg); };
 
-// --- 补丁 1+2：入口 ---
-assert(bundle.includes('group-model-accounts-panel'), '入口含面板注入标记');
-
+// --- 补丁 1：入口 local-first ---
 const MARK = 'try{const{data:r}=await n.get(`/admin/accounts/${e}`)';
 const i = bundle.indexOf(MARK);
 assert(i > 0, '入口含 local-first 补丁特征');
@@ -62,17 +61,19 @@ calls.length = 0; r = await ds(4);
 assert(calls.includes('/admin/accounts/4/models'), '详情接口报错 → 回退 /models');
 assert(r.length === 2, '回退结果正确');
 
-// --- 补丁 3：渠道监控 ---
+// --- 补丁 2：渠道监控 ---
 const csvName = bundle.match(/ChannelStatusView-[A-Za-z0-9_-]+\.js/)?.[0];
 assert(Boolean(csvName), '入口引用到监控 chunk ' + csvName);
 const csv = fs.readFileSync(path.join(assets, csvName), 'utf8');
 assert(csv.includes('.slice().sort((A,B)=>A.id-B.id)'), '监控 chunk 含按 ID 排序补丁');
 
-// --- DOM 锚点 ---
+// --- 新页面随镜像发布（替代原来的 DOM 注入面板）---
 const findFile = (re) => fs.readdirSync(assets).find((f) => re.test(f));
-const customPage = findFile(/^CustomPageView-.*\.js$/);
+const groupModelChunk = findFile(/^GroupModelAccountsView-.*\.js$/);
+assert(Boolean(groupModelChunk), 'dist 里有分组模型账号页 chunk ' + groupModelChunk);
+
+// --- DOM 锚点 ---
 const appLayout = findFile(/^AppLayout.*\.js$/);
-assert(customPage && fs.readFileSync(path.join(assets, customPage), 'utf8').includes('custom-page-layout'), 'CustomPageView 仍有 custom-page-layout 锚点');
 assert(appLayout && fs.readFileSync(path.join(assets, appLayout), 'utf8').includes('sidebar-nav'), 'AppLayout 仍有 sidebar-nav 锚点');
 
 console.log('\nALL PASS');

@@ -27,6 +27,32 @@ git remote -v
 git add -f CLAUDE.md
 ```
 
+### 2.0 标记纪律（强制，长空 2026-09-30 定）
+
+**所有改动过的上游源码文件——前端和后端都算——必须在每处改动的紧邻位置带一个 `FORK-ANCHOR` 标记。**
+
+```
+// FORK-ANCHOR: <唯一名字> (<一句话说明这处改了什么>)
+```
+
+- 后端用 `//`，前端 `.vue/.ts` 用 `//`（模板里用 `<!-- FORK-ANCHOR: ... -->`），YAML 用 `#`；
+- 一个标记对应一处**改动点**，不是整个文件一处；同一文件改了 3 处就要有 3 个标记；
+- 标记名全局唯一，用 `grep -rn "FORK-ANCHOR" .` 能列出全部改动点；
+- **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
+- 合并上游后先跑 `grep -rn "FORK-ANCHOR" .` 对数量，数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+
+当前锚点全量清单（10 个，合并上游后逐个确认还在、且只出现一次；用 `grep -rn "FORK-ANCHOR" .` 复核数量）：
+
+| 锚点 | 文件 |
+|---|---|
+| `override-first` / `override-index-loader` / `override-index-use` / `override-first-legacy` | `backend/internal/web/embed_on.go` |
+| `sidebar-removed-icons` / `sidebar-announcements-entry` / `sidebar-redeem-promo-entries` / `sidebar-group-model-accounts` | `frontend/src/components/layout/AppSidebar.vue` |
+| `route-group-model-accounts` | `frontend/src/router/index.ts` |
+| `ci-header` / `ci-version-file-input` / `ci-version-file-plan` / `ci-patch-frontend-dist` / `ci-embed-fork-tests` / `ci-ghcr-only-build-binaries` / `ci-ghcr-push-only` / `ci-ghcr-only-release-env` / `ci-ghcr-only-dry-run` / `ci-recreate-release-tag` / `ci-no-dockerhub-description` / `ci-notify-dockerhub-empty` / `ci-disable-sync-version-file` | `.github/workflows/release.yml` |
+| `release-matrix-version-file` | `.github/release-tools/release_matrix.py` |
+| `release-matrix-version-file-tests` | `.github/release-tools/test_release_matrix.py` |
+| `fork-embed-override-tests` | `backend/internal/web/embed_fork_test.go` |
+
 ### 2.1 `.github/workflows/release.yml`
 
 | # | 位置 | 改动 | 原因 |
@@ -57,11 +83,12 @@ git add -f CLAUDE.md
 
 镜像内嵌前端补丁的实现，是 `工具/管理_sub2api/子任务/二开sub2api/旧补丁/前端补丁/` 那套「运行时覆盖」方案的构建期等价物。
 
+**当前是两处补丁**（2026-09-30 起；「面板注入」已删，见 2.6c）：
+
 | 文件 | 作用 |
 |---|---|
-| `group-model-accounts-injection.js` | 面板注入源码，与子任务里的同名文件**逐字节一致**（改一处要同步另一处） |
-| `patch_dist.py` | 把补丁打进 `dist`：入口 `getAvailableModels` 改 local-first、入口尾部追加注入、渠道监控列表按 ID 升序。每个模式必须命中且仅命中一次，否则失败退出；已打过补丁的 dist 会被拒绝重复打 |
-| `test_patched_dist.mjs` | 补丁后的 dist 单测：13 项行为断言 + 2 处 DOM 锚点 + 1 处监控补丁标记 |
+| `patch_dist.py` | 把补丁打进 `dist`：入口 `getAvailableModels` 改 local-first、渠道监控列表按 ID 升序。每个模式必须命中且仅命中一次，否则失败退出；已打过补丁的 dist 会被拒绝重复打 |
+| `test_patched_dist.mjs` | 补丁后的 dist 单测：local-first 行为断言 + 监控排序标记 + 2 处 DOM 锚点 |
 
 入口 chunk 必须从 `dist/index.html` 读：`assets/` 下还有别的 `index-*.js` 路由分包，按文件名通配会命中 4 个。
 
@@ -101,7 +128,9 @@ git add -f CLAUDE.md
 
 ### 2.6 `frontend/src/components/layout/AppSidebar.vue`（改上游文件）
 
-屏蔽管理端侧栏三项入口，**只删菜单项、不删路由**，页面仍可直接输地址访问：
+两处改动，各带一个锚点：
+
+**（1）屏蔽管理端侧栏三项入口**（`FORK-ANCHOR: sidebar-admin-entries`）——只删菜单项、不删路由，页面仍可直接输地址访问：
 
 - `/admin/announcements`（公告）
 - `/admin/redeem`（兑换码）
@@ -109,9 +138,25 @@ git add -f CLAUDE.md
 
 随之删掉只为它们服务的 `BellIcon`、`TicketIcon` 图标定义（`noUnusedLocals` 会让未使用的 const 编译失败）。`GiftIcon` 仍被用户端 `/redeem` 使用，保留。
 
+**（2）新增「分组模型账号」侧栏入口**（`FORK-ANCHOR: sidebar-group-model-accounts`）——在 `adminNavItems` 的「账号管理」之后插入一条指向 `/admin/group-model-accounts` 的菜单项，图标用上游已有的 `FolderIcon`。
+
+### 2.6b `frontend/src/router/index.ts`（改上游文件）
+
+`FORK-ANCHOR: route-group-model-accounts` —— 在 `/admin/accounts` 之后注册 `/admin/group-model-accounts`，指向新增的 `views/admin/GroupModelAccountsView.vue`，`requiresAuth + requiresAdmin` 与其它管理路由一致。
+
+### 2.6c `frontend/src/views/admin/GroupModelAccountsView.vue`（新增文件）
+
+「分组模型账号」页面的正式实现，取代原来的运行时 DOM 注入面板。数据走既有管理 API（`adminAPI.groups.getAll()` + `adminAPI.accounts.list(page, 1000, { group })` 翻页），因此前端不用自建请求逻辑。
+
+两种视角（模型→分组→账号、分组→模型→账号）、搜索、仅已调度过滤、刷新，行为对齐被它取代的注入面板。
+
+**为什么不再用注入面板**：注入面板挂在 `/custom/group-model-accounts` 这个「自定义页面」路由上，而该路由的菜单项 `url` 必须填 `md:<slug>` 或绝对 http(s) 地址；站点对所有响应都发 `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'`，绝对地址的 iframe 会被浏览器直接拒绝，`md:` 又只能渲染 Markdown。真路由页没有这些限制，且随镜像发布、升级后不用重建。
+
 ### 2.7 `backend/internal/web/embed_fork_test.go`（新增文件）
 
-覆盖 2.5 的 fork 测试，与上游的 `embed_test.go` 分开放，减少合并冲突：
+### 2.7 `backend/internal/web/embed_fork_test.go`（新增文件）
+
+`FORK-ANCHOR: fork-embed-override-tests` —— 覆盖 2.5 的 fork 测试，与上游的 `embed_test.go` 分开放，减少合并冲突：
 
 - `TestForkOverridePrecedesEmbeddedLookup`：内嵌 dist 中不存在的新路径能被覆盖目录命中（改动前会回落成 index.html）；
 - `TestForkIndexHTMLOverrideAndCacheInvalidation`：`data/public/index.html` 生效、mtime 变化后重新加载、文件移除后回退内嵌版。
@@ -182,7 +227,7 @@ gh workflow run release.yml -R hjkl950217/sub2api \
 |---|---|
 | 镜像仓库 | `ghcr.io/hjkl950217/sub2api`（GHCR 包默认私有，拉取需 `docker login ghcr.io`） |
 | 镜像标签 | `:<version>`、`:latest`、`:0.2`、`:0`、`:<version>-amd64` / `-arm64` |
-| 镜像内嵌前端补丁 | 有。三处补丁在 `build-frontend` 里打进 dist 再嵌入二进制，部署后**不需要**再往 `data/public/` 放覆盖文件 |
+| 镜像内嵌前端补丁 | 有。两处补丁在 `build-frontend` 里打进 dist 再嵌入二进制，部署后**不需要**再往 `data/public/` 放覆盖文件 |
 | 当前线上部署 | 仍是官方 `weishaw/sub2api:latest`，**尚未切到自建镜像**（长空后续手动切换） |
 | NAS | TrueNAS SCALE，Intel 12 代 x86_64，compose 在 `/mnt/nasData/dockerData/docker-compose-sub2api.yml` |
 
@@ -191,6 +236,7 @@ gh workflow run release.yml -R hjkl950217/sub2api \
 - `backend/internal/service/update_service.go` 里 `githubRepo = "Wei-Shaw/sub2api"` 是硬编码的，指向唯一上游，因此内置「检查更新」在 fork 上会报出上游新版本，点击更新会下载**上游二进制**覆盖当前实例。当前靠"版本号与上游一致"规避，一旦本地版本落后于上游，这个入口就会真的覆盖。
 - `release-images.sh` 用 `${RELEASE_VERSION%%.*}` / `${RELEASE_VERSION#*.}` 截取 major/minor。版本号保持三段时正常；若将来出现第四段，会产出 `:0.2` 之外的脏标签。
 - 运行时覆盖（`data/public/`）**优先级高于**内嵌补丁。NAS 上遗留的旧覆盖文件会盖掉镜像里的新补丁，切换镜像后要按子任务 `旧补丁/README.md` 的说明清理，否则会误判「补丁没生效」。
+- 「分组模型账号」是**真路由页**（`/admin/group-model-accounts`），不依赖任何 DOM 注入。它随镜像发布，站点升级后不需要重建——升级后要重建的只剩 local-first 与监控排序两处。
 - 2.5 的 `currentBaseHTML()` 每个首页请求都会 `os.Stat` 一次 `data/public/index.html`（约 1 次系统调用，远低于渲染与注入开销）；覆盖目录为空时走 `Stat` 失败的快路径，不会读文件。
 - `patch_dist.py` 依赖 Vite 压缩后的函数形态。上游改了这个函数的写法，或者 Vite 升级换了压缩策略，模式就会失配——构建会在 `build-frontend` 阶段失败（不会静默出未打补丁的镜像）。
 

@@ -132,6 +132,7 @@ class ReleaseMatrixTest(unittest.TestCase):
                 release.plan(args)
 
     def test_version_file_plan_publishes_without_a_tag(self):
+        # FORK-ANCHOR: release-matrix-version-file-tests（覆盖 --version-file 的 3 个用例）
         # FORK: 无 tag 发版，版本取 VERSION 文件，tag 回退为 v<version>
         args = argparse.Namespace(ref='main', dry_run=False, simple=False, version_file=True)
         with patch.dict(os.environ, {'GITHUB_OUTPUT': 'outputs', 'GITHUB_REPOSITORY_OWNER': 'ExampleOwner'}), \

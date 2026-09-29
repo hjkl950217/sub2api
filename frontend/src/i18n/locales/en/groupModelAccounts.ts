@@ -1,0 +1,27 @@
+// FORK: copy for the group-model-accounts page (see fork/CLAUDE.md section 2.6c)
+export default {
+  groupModelAccounts: {
+    title: 'Group Model Accounts',
+    description: 'Inspect account coverage by model or by group, based on the model_mapping of schedulable group accounts.',
+    searchPlaceholder: 'Search model / group / account (space separated)',
+    modelView: 'By model',
+    groupView: 'By group',
+    onlyScheduled: 'Schedulable only',
+    refresh: 'Refresh',
+    loading: 'Loading...',
+    notLoaded: 'Not loaded yet',
+    updatedAt: 'Updated {time}',
+    count: '{count} items',
+    emptyModel: 'No matching model',
+    emptyGroup: 'No matching group or model',
+    noGroupModels: 'This group has no usable model',
+    unlabeled: 'unlabeled',
+    colModel: 'Model',
+    colGroupAccount: 'Groups / accounts',
+    colAccount: 'Accounts',
+    modelTableHint: 'Which groups are involved when this model is used',
+    groupMeta: 'Group ID {id} · Platform {platform}',
+    accountSummary: 'Accounts: counted {counted} / total {total}',
+    accountSummaryExcluded: 'Accounts: counted {counted} / total {total} ({excluded} excluded)',
+  },
+}

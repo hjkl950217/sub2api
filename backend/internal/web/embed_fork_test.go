@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// FORK-ANCHOR: fork-embed-override-tests（覆盖 embed_on.go 的覆盖优先改动）
 // FORK: 本文件只覆盖 fork 对 embed_on.go 的改动，与上游文件分开，减少合并冲突。
 // 需 -tags=embed 且有 dist 才能编译运行：
 //   cd backend && go test -tags=embed -run TestFork ./internal/web/

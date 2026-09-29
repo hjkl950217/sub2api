@@ -182,6 +182,7 @@ export default {
     modelPlaza: 'Model Plaza',
     subscriptions: 'Subscriptions',
     accounts: 'Accounts',
+    groupModelAccounts: 'Group Model Accounts',
     plugins: 'Plugins',
     proxies: 'Proxies',
     redeemCodes: 'Redeem Codes',

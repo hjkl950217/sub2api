@@ -526,6 +526,19 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    // FORK-ANCHOR: route-group-model-accounts（分组模型账号页，见 fork/CLAUDE.md 第 2.6c 节）
+    path: '/admin/group-model-accounts',
+    name: 'AdminGroupModelAccounts',
+    component: () => import('@/views/admin/GroupModelAccountsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Group Model Accounts',
+      titleKey: 'groupModelAccounts.title',
+      descriptionKey: 'groupModelAccounts.description'
+    }
+  },
+  {
     path: '/admin/plugins',
     name: 'AdminPlugins',
     component: () => import('@/views/admin/PluginsView.vue'),
