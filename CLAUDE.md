@@ -72,7 +72,9 @@ git add -f CLAUDE.md
 | 8 | `sync-version-file` 作业 | `if` 改为 `false`，整作业停用 | 该作业会把发版版本号 commit 回默认分支，导致 `main` 与上游分叉，`git pull --ff-only` 从此失败 |
 | 9 | `build-frontend` 作业 | 新增两步：`python fork/frontend/patch_dist.py` 把三处前端补丁打进 dist，再跑 `node fork/frontend/test_patched_dist.mjs` | 让镜像自带前端补丁，部署后不必再往 `data/public/` 放覆盖文件 |
 | 10 | `release` 作业 | 新增 `Reset release tag and release` 步骤（非 dry-run）：`git tag -f` + `git push --force` + `gh release delete` | 同名 tag / Release 一律重建，保证 tag 指向本次发版的提交 |
-| 11 | `build-frontend` 作业 | 新增 `Fork embed override tests`：`go test -tags=embed -run TestFork ./internal/web/` | 上游 CI 只跑 `-tags=unit`，不编译 embed 代码，二开的覆盖改动不会被它覆盖，必须在这里把关 |
+| 11 | `build-frontend` 作业 | 新增 `Fork embed override tests`：`go test -tags=embed -run TestFork ./internal/web/`，并校验恰好 2 个用例通过 | 上游 CI 只跑 `-tags=unit`，不编译 embed 代码，二开的覆盖改动不会被它覆盖，必须在这里把关；`-run` 匹配不到用例时 `go test` 也返回 0，必须核对数量 |
+
+上表 11 条对应的锚点在 `.github/workflows/release.yml` 里共 13 处（第 6、7 条各涉及多处 env），锚点全量清单见第 2.0 节。
 
 ### 2.2 `.github/release-tools/release_matrix.py`
 
@@ -233,7 +235,7 @@ gh workflow run release.yml -R hjkl950217/sub2api \
 | 镜像仓库 | `ghcr.io/hjkl950217/sub2api`（GHCR 包默认私有，拉取需 `docker login ghcr.io`） |
 | 镜像标签 | `:<version>`、`:latest`、`:0.2`、`:0`、`:<version>-amd64` / `-arm64` |
 | 镜像内嵌前端补丁 | 有。两处补丁在 `build-frontend` 里打进 dist 再嵌入二进制，部署后**不需要**再往 `data/public/` 放覆盖文件 |
-| 当前线上部署 | 仍是官方 `weishaw/sub2api:latest`，**尚未切到自建镜像**（长空后续手动切换） |
+| 当前线上部署 | 已切到自建镜像 `ghcr.io/hjkl950217/sub2api:latest`（2026-09-29 切换），NAS compose 里指向它 |
 | NAS | TrueNAS SCALE，Intel 12 代 x86_64，compose 在 `/mnt/nasData/dockerData/docker-compose-sub2api.yml` |
 
 ## 5. 已知风险
