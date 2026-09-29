@@ -1,5 +1,10 @@
 name: Release
 
+# FORK (hjkl950217/sub2api) 相对上游的改动，合并上游后按这三条复查：
+#   1. 只推送 GHCR；DockerHub 渠道整体停用（登录、推送、描述更新、通知文案）；
+#   2. 停用 sync-version-file 作业，避免 CI 改写默认分支；
+#   3. 新增 workflow_dispatch 输入 use_version_file，无 tag 时用 VERSION 文件发版。
+
 on:
   push:
     tags:
@@ -7,9 +12,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to release (or a branch/ref for dry run)'
-        required: true
+        description: 'Tag to release (or a branch/ref when use_version_file is on)'
+        required: false
         type: string
+      use_version_file:
+        description: 'FORK: publish the VERSION file at the selected ref, no matching tag required'
+        required: false
+        type: boolean
+        default: false
       simple_release:
         description: 'Simple release: only x86_64 GHCR image, skip other artifacts'
         required: false
@@ -64,10 +74,13 @@ jobs:
         id: plan
         env:
           REQUESTED_REF: ${{ inputs.tag || github.ref_name }}
+          # FORK: 用所选 ref 上的 VERSION 文件发版，不要求存在同名 tag
+          USE_VERSION_FILE: ${{ inputs.use_version_file == true }}
         run: |
           args=(--ref "$REQUESTED_REF")
           if [[ "$SIMPLE_RELEASE" == true ]]; then args+=(--simple); fi
           if [[ "$DRY_RUN" == true ]]; then args+=(--dry-run); fi
+          if [[ "$USE_VERSION_FILE" == true ]]; then args+=(--version-file); fi
           python "$RUNNER_TEMP/release-tools/release_matrix.py" plan "${args[@]}"
       - uses: actions/upload-artifact@v7
         with:
@@ -167,6 +180,7 @@ jobs:
           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO_OWNER_LOWER: ${{ needs.prepare.outputs.owner_lower }}
           GITHUB_REPO_NAME: ${{ github.event.repository.name }}
+          # FORK: 固定 skip，DockerHub 渠道不再参与
           DOCKERHUB_USERNAME: skip
           TAG_MESSAGE: ''
       - name: Verify and collect the target archive
@@ -233,14 +247,7 @@ jobs:
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      - name: Login to DockerHub
-        if: ${{ env.DRY_RUN != 'true' && env.SIMPLE_RELEASE != 'true' && env.DOCKERHUB_USERNAME != '' }}
-        uses: docker/login-action@v3
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # FORK: DockerHub 登录已移除，只推送 GHCR
       - name: Login to GitHub Container Registry
         if: ${{ env.DRY_RUN != 'true' }}
         uses: docker/login-action@v3
@@ -250,7 +257,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build images and publish manifests
         env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || 'skip' }}
+          # FORK: 固定 skip，DockerHub 渠道不再参与
+          DOCKERHUB_USERNAME: skip
         run: bash "$RUNNER_TEMP/release-tools/release-images.sh"
       - name: Get annotated tag notes
         id: tag_message
@@ -279,7 +287,8 @@ jobs:
           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO_NAME: ${{ github.event.repository.name }}
           GITHUB_REPO_OWNER_LOWER: ${{ needs.prepare.outputs.owner_lower }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || 'skip' }}
+          # FORK: 固定 skip，DockerHub 渠道不再参与
+          DOCKERHUB_USERNAME: skip
       - name: Upload dry-run checksums and metadata
         if: ${{ env.DRY_RUN == 'true' }}
         uses: actions/upload-artifact@v7
@@ -292,18 +301,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-      # Update DockerHub description
-      - name: Update DockerHub description
-        if: ${{ env.DRY_RUN != 'true' && env.SIMPLE_RELEASE != 'true' && env.DOCKERHUB_USERNAME != '' }}
-        uses: peter-evans/dockerhub-description@v5
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ secrets.DOCKERHUB_USERNAME }}/sub2api
-          short-description: "Sub2API - AI API Gateway Platform"
-          readme-filepath: ./deploy/DOCKER.md
+      # FORK: DockerHub 描述更新步骤已移除
 
       # Send Telegram notification
       - name: Send Telegram Notification
@@ -312,7 +310,8 @@ jobs:
           TAG_MESSAGE: ${{ steps.tag_message.outputs.message }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          # FORK: 留空，避免通知里出现 DockerHub 拉取命令
+          DOCKERHUB_USERNAME: ''
         continue-on-error: true
         run: |
           # 检查必要的环境变量
@@ -375,9 +374,10 @@ jobs:
                 disable_web_page_preview: true
               }')"
 
+  # FORK: 停用，避免 CI 改写默认分支（VERSION 文件跟随上游，fork 版本号由 tag 决定）
   sync-version-file:
     needs: [prepare, release]
-    if: ${{ needs.release.result == 'success' && needs.prepare.outputs.dry_run != 'true' }}
+    if: false
     runs-on: ubuntu-latest
     permissions:
       contents: write

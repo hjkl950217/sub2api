@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Split GoReleaser builds across runners without requiring GoReleaser Pro."""
+"""Split GoReleaser builds across runners without requiring GoReleaser Pro.
+
+FORK (hjkl950217/sub2api): plan() 新增 --version-file，用所选 ref 上的 VERSION 文件
+发版，不再要求存在同名 tag。合并上游后复查这一处。
+"""
 import argparse
 import hashlib
 import itertools
@@ -55,6 +59,14 @@ def plan(args):
     if args.dry_run:
         version = VERSION_FILE.read_text().strip()
         tag = 'v' + version
+    elif getattr(args, 'version_file', False):
+        # FORK: 无 tag 发版。版本取所选 ref 的 VERSION 文件；若该 ref 恰好是 tag，
+        # 用真实 tag 名，保证 GORELEASER_CURRENT_TAG 是仓库里存在的 tag。
+        version = VERSION_FILE.read_text().strip()
+        if not VERSION_RE.fullmatch(version):
+            raise ValueError('invalid VERSION')
+        tag = subprocess.check_output(['git', 'tag', '--points-at', 'HEAD', '--list', 'v*'], text=True).split()
+        tag = tag[0] if tag else 'v' + version
     else:
         tag = args.ref
         version = tag.removeprefix('v')
@@ -161,6 +173,7 @@ def main():
     p.add_argument('--ref', required=True)
     p.add_argument('--simple', action='store_true')
     p.add_argument('--dry-run', action='store_true')
+    p.add_argument('--version-file', action='store_true')  # FORK
     p.set_defaults(run=plan)
     p = commands.add_parser('config')
     p.add_argument('mode', choices=['build', 'publish'])

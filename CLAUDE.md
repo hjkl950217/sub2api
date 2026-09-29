@@ -1,0 +1,136 @@
+# CLAUDE.md — sub2api fork
+
+本仓库是 **Sub2API 的个人二次开发 fork**（origin `hjkl950217/sub2api`）。前端补丁与后端二开的管理中心在 PersonalAITaskCenter 的 `工具/管理_sub2api/子任务/二开sub2api/`，本文件只描述**本仓库自身**的改动与纪律。
+
+## 1. 唯一认可的上游
+
+**`https://github.com/Wei-Shaw/sub2api`（`Wei-Shaw/sub2api`）是唯一认可的官方上游。**
+
+- 本仓库的代码、版本号、发布产物、更新检查，全部以该仓库为基准；
+- 任何其他同名或同源仓库（包括各种 fork、镜像站、二次分发的仓库）都不是上游，不参与合并、不对齐版本、不作为更新来源；
+- 合并上游更新一律走 `git fetch upstream && git merge upstream/main`，`upstream` remote 指向上述地址；
+- 版本号跟随上游，**不自行改号**。
+
+```bash
+git remote -v
+# origin    https://github.com/hjkl950217/sub2api.git   （本 fork，推送目标）
+# upstream  https://github.com/Wei-Shaw/sub2api.git     （唯一上游，只读）
+```
+
+## 2. 相对上游的改动清单
+
+改动都提交在 `main` 分支。合并上游后，按本节逐条复查是否还在、是否仍然需要。
+
+本文件本身也是改动之一：上游 `.gitignore:122` 忽略了 `CLAUDE.md`，所以它需要强制加入版本控制。
+
+```bash
+git add -f CLAUDE.md
+```
+
+### 2.1 `.github/workflows/release.yml`
+
+| # | 位置 | 改动 | 原因 |
+|---|---|---|---|
+| 1 | 文件头注释 | 加了 `# FORK` 说明块，列出本文件的三条改动 | 合并上游后一眼看到要复查什么 |
+| 2 | `workflow_dispatch.inputs` | 新增 `use_version_file`（boolean，默认 false）；`tag` 改为非必填 | 支持无 tag 手动发版 |
+| 3 | `prepare` 作业的 plan 步骤 | 传入 `USE_VERSION_FILE`，为真时给 `release_matrix.py plan` 加 `--version-file` | 同上 |
+| 4 | `release` 作业 | **删除** `Login to DockerHub` 步骤 | 只推 GHCR |
+| 5 | `release` 作业 | **删除** `Update DockerHub description` 步骤 | 同上 |
+| 6 | `build-binaries` / `release` 两处 env | `DOCKERHUB_USERNAME` 从 `secrets.DOCKERHUB_USERNAME \|\| 'skip'` 改为固定 `skip` | 不依赖 secret，渠道恒定失效 |
+| 7 | Telegram 通知步骤 env | `DOCKERHUB_USERNAME` 从 secret 改为空串 `''` | 该脚本用 `[ -n "$DOCKERHUB_USERNAME" ]` 判断，`skip` 会被当成"有值"而输出 `skip/sub2api` 脏命令，必须留空 |
+| 8 | `sync-version-file` 作业 | `if` 改为 `false`，整作业停用 | 该作业会把发版版本号 commit 回默认分支，导致 `main` 与上游分叉，`git pull --ff-only` 从此失败 |
+
+### 2.2 `.github/release-tools/release_matrix.py`
+
+`plan()` 新增 `--version-file` 模式，并在文件头加了 `FORK` 说明：
+
+- 版本取所选 ref 上的 `backend/cmd/server/VERSION`；
+- tag 优先取 HEAD 上已存在的 `v*` tag；没有则回退为 `v<version>`；
+- 该模式下不再要求 checkout 与 tag 的 commit 一致。
+
+原因：上游的 `plan()` 强制要求 `ref` 是 `v*` tag 且 tag 指向当前 commit，改完代码后必须先打 tag 才能发版。`--version-file` 让"打完补丁直接手动触发"成为可能。
+
+### 2.3 `.github/release-tools/test_release_matrix.py`
+
+新增 3 个用例覆盖 `--version-file`：
+
+- `test_version_file_plan_publishes_without_a_tag`：无 tag 时 tag 回退为 `v<version>`；
+- `test_version_file_plan_prefers_an_existing_tag`：HEAD 上有 tag 时用真实 tag 名；
+- `test_version_file_plan_rejects_an_invalid_version`：VERSION 文件非法时报错。
+
+## 3. 发版方式
+
+版本号与上游保持一致，**不追加第四段**。
+
+### 3.1 打 tag 发版（与上游相同）
+
+```bash
+git tag -a v0.2.9 -m "同步上游 0.2.9 + 本地补丁"
+git push origin v0.2.9
+```
+
+推 `v*` tag 触发 `Release` 工作流，产出 `ghcr.io/hjkl950217/sub2api:<version>`。
+
+### 3.2 手动触发发版（无 tag，本 fork 新增）
+
+改完代码不想打 tag 时，用 `workflow_dispatch` + `use_version_file`：
+
+```bash
+gh workflow run release.yml -R hjkl950217/sub2api \
+  --ref main \
+  -f tag=main \
+  -f use_version_file=true \
+  -f simple_release=true
+```
+
+版本号取 `main` 上的 `backend/cmd/server/VERSION`。`GORELEASER_CURRENT_TAG` 回退为 `v<version>`，会创建或覆盖同名 GitHub Release。
+
+> 注意：这种模式下 tag 不存在于仓库，goreleaser 的 tag 消息为空，Release 说明会缺少正文。
+
+### 3.3 仓库变量
+
+| 变量 | 作用 | 当前 |
+|---|---|---|
+| `SIMPLE_RELEASE` | `true` 时只出 amd64 GHCR 镜像，跳过 arm64 和多架构 manifest | 未设置 |
+
+仓库里**没有配置任何 secret**（`DOCKERHUB_*`、`TELEGRAM_*` 全为空），DockerHub 渠道已从工作流中移除，不依赖 secret 缺失来兜底。
+
+## 4. 产物与部署
+
+| 项 | 值 |
+|---|---|
+| 镜像仓库 | `ghcr.io/hjkl950217/sub2api`（GHCR 包默认私有，拉取需 `docker login ghcr.io`） |
+| 镜像标签 | `:<version>`、`:latest`、`:0.2`、`:0`、`:<version>-amd64` / `-arm64` |
+| 当前线上部署 | 仍是官方 `weishaw/sub2api:latest`，**尚未切到自建镜像** |
+| NAS | TrueNAS SCALE，Intel 12 代 x86_64，compose 在 `/mnt/nasData/dockerData/docker-compose-sub2api.yml` |
+
+## 5. 已知风险
+
+- `backend/internal/service/update_service.go` 里 `githubRepo = "Wei-Shaw/sub2api"` 是硬编码的，指向唯一上游，因此内置「检查更新」在 fork 上会报出上游新版本，点击更新会下载**上游二进制**覆盖当前实例。当前靠"版本号与上游一致"规避，一旦本地版本落后于上游，这个入口就会真的覆盖。
+- `release-images.sh` 用 `${RELEASE_VERSION%%.*}` / `${RELEASE_VERSION#*.}` 截取 major/minor。版本号保持三段时正常；若将来出现第四段，会产出 `:0.2` 之外的脏标签。
+
+## 6. 修改本仓库的纪律
+
+- 改动提交到 `main`；`main` 允许与上游分叉。
+- **不要**执行 `git push --force` 到 `main`，也不要把 `main` reset 回上游——那会丢掉本节的改动。
+- 上游的 `!拉取最新代码.ps1` 对含本地提交的分支执行 `git pull --ff-only` 会失败，这是预期行为，改用 `git fetch upstream && git merge upstream/main`。
+- 每次合并上游后，按第 2 节的表格逐条复查改动是否被覆盖或变得多余。
+- 改动工作流的 YAML 后，用下面这条命令确认能解析：
+
+```bash
+python -c "import yaml; yaml.safe_load(open('.github/workflows/release.yml', encoding='utf-8'))"
+```
+
+## 7. 本机环境
+
+开发机**没有 Go、没有 Docker、没有 make、没有 WSL**，无法本地编译后端或构建镜像。后端改动的验证只能走 GitHub Actions。
+
+本地能跑的是 `.github/release-tools/` 的 Python 单测：
+
+```powershell
+# Windows 下必须开 UTF-8 模式，否则读 .goreleaser.yaml 会因 GBK 解码报错
+$env:PYTHONUTF8='1'
+python -m unittest discover -s .github/release-tools -p 'test_release_matrix.py'
+```
+
+该套件在本机有 4 个用例必然失败，与代码改动无关：3 个依赖真实 `bash` 执行 `release-images.sh`（本机 `bash` 只是未安装 WSL 的占位程序），1 个依赖 POSIX 文件权限（NTFS 上 `chmod 0o755` 不生效）。在 ubuntu runner 上正常。

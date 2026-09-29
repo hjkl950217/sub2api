@@ -131,6 +131,31 @@ class ReleaseMatrixTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'does not match'):
                 release.plan(args)
 
+    def test_version_file_plan_publishes_without_a_tag(self):
+        # FORK: 无 tag 发版，版本取 VERSION 文件，tag 回退为 v<version>
+        args = argparse.Namespace(ref='main', dry_run=False, simple=False, version_file=True)
+        with patch.dict(os.environ, {'GITHUB_OUTPUT': 'outputs', 'GITHUB_REPOSITORY_OWNER': 'ExampleOwner'}), \
+             patch.object(subprocess, 'check_output', side_effect=['a' * 40 + '\n', '']):
+            release.plan(args)
+        output = dict(line.split('=', 1) for line in Path('outputs').read_text().splitlines())
+        self.assertEqual(output['tag'], 'v9.8.7')
+        self.assertEqual(output['version'], '9.8.7')
+
+    def test_version_file_plan_prefers_an_existing_tag(self):
+        args = argparse.Namespace(ref='main', dry_run=False, simple=False, version_file=True)
+        with patch.dict(os.environ, {'GITHUB_OUTPUT': 'outputs-tagged', 'GITHUB_REPOSITORY_OWNER': 'ExampleOwner'}), \
+             patch.object(subprocess, 'check_output', side_effect=['a' * 40 + '\n', 'v9.8.7\n']):
+            release.plan(args)
+        output = dict(line.split('=', 1) for line in Path('outputs-tagged').read_text().splitlines())
+        self.assertEqual(output['tag'], 'v9.8.7')
+
+    def test_version_file_plan_rejects_an_invalid_version(self):
+        release.VERSION_FILE.write_text('not-a-version\n')
+        args = argparse.Namespace(ref='main', dry_run=False, simple=False, version_file=True)
+        with patch.object(subprocess, 'check_output', return_value='a' * 40 + '\n'):
+            with self.assertRaisesRegex(ValueError, 'invalid VERSION'):
+                release.plan(args)
+
     def test_dry_run_plan_resolves_matrix_without_a_new_tag(self):
         with patch.dict(os.environ, {'GITHUB_OUTPUT': 'outputs', 'GITHUB_REPOSITORY_OWNER': 'ExampleOwner'}), patch.object(subprocess, 'check_output', return_value='a' * 40 + '\n'):
             release.plan(argparse.Namespace(ref='feature/matrix', dry_run=True, simple=False))
