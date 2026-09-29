@@ -39,6 +39,8 @@ git add -f CLAUDE.md
 | 6 | `build-binaries` / `release` 两处 env | `DOCKERHUB_USERNAME` 从 `secrets.DOCKERHUB_USERNAME \|\| 'skip'` 改为固定 `skip` | 不依赖 secret，渠道恒定失效 |
 | 7 | Telegram 通知步骤 env | `DOCKERHUB_USERNAME` 从 secret 改为空串 `''` | 该脚本用 `[ -n "$DOCKERHUB_USERNAME" ]` 判断，`skip` 会被当成"有值"而输出 `skip/sub2api` 脏命令，必须留空 |
 | 8 | `sync-version-file` 作业 | `if` 改为 `false`，整作业停用 | 该作业会把发版版本号 commit 回默认分支，导致 `main` 与上游分叉，`git pull --ff-only` 从此失败 |
+| 9 | `build-frontend` 作业 | 新增两步：`python fork/frontend/patch_dist.py` 把三处前端补丁打进 dist，再跑 `node fork/frontend/test_patched_dist.mjs` | 让镜像自带前端补丁，部署后不必再往 `data/public/` 放覆盖文件 |
+| 10 | `release` 作业 | 新增 `Reset release tag and release` 步骤（非 dry-run）：`git tag -f` + `git push --force` + `gh release delete` | 同名 tag / Release 一律重建，保证 tag 指向本次发版的提交 |
 
 ### 2.2 `.github/release-tools/release_matrix.py`
 
@@ -50,7 +52,19 @@ git add -f CLAUDE.md
 
 原因：上游的 `plan()` 强制要求 `ref` 是 `v*` tag 且 tag 指向当前 commit，改完代码后必须先打 tag 才能发版。`--version-file` 让"打完补丁直接手动触发"成为可能。
 
-### 2.3 `.github/release-tools/test_release_matrix.py`
+### 2.3 `fork/frontend/`（新增目录）
+
+镜像内嵌前端补丁的实现，是 `工具/管理_sub2api/子任务/二开sub2api/旧补丁/前端补丁/` 那套「运行时覆盖」方案的构建期等价物。
+
+| 文件 | 作用 |
+|---|---|
+| `group-model-accounts-injection.js` | 面板注入源码，与子任务里的同名文件**逐字节一致**（改一处要同步另一处） |
+| `patch_dist.py` | 把补丁打进 `dist`：入口 `getAvailableModels` 改 local-first、入口尾部追加注入、渠道监控列表按 ID 升序。每个模式必须命中且仅命中一次，否则失败退出；已打过补丁的 dist 会被拒绝重复打 |
+| `test_patched_dist.mjs` | 补丁后的 dist 单测：13 项行为断言 + 2 处 DOM 锚点 + 1 处监控补丁标记 |
+
+入口 chunk 必须从 `dist/index.html` 读：`assets/` 下还有别的 `index-*.js` 路由分包，按文件名通配会命中 4 个。
+
+### 2.4 `.github/release-tools/test_release_matrix.py`
 
 新增 3 个用例覆盖 `--version-file`：
 
@@ -62,18 +76,34 @@ git add -f CLAUDE.md
 
 版本号与上游保持一致，**不追加第四段**。
 
-### 3.1 打 tag 发版（与上游相同）
+### 3.1 tag 策略：同名一律覆盖重建
+
+**长空 2026-09-29 定：fork 是打补丁用的，tag 可以覆盖。**
+
+- 从上游拉来的 `v0.2.9` 之类同名 tag，我们改动后**直接覆盖重建**，不需要新版本号；
+- 每次发版都必须把 tag 指到**最新的发版提交**上，不允许留在旧提交；
+- 实现方式：`release` 作业里的 `Reset release tag and release` 步骤，在构建镜像之后、发布 Release 之前执行
 
 ```bash
-git tag -a v0.2.9 -m "同步上游 0.2.9 + 本地补丁"
+git tag -f "$RELEASE_TAG" "$RELEASE_SHA"
+git push --force origin "refs/tags/$RELEASE_TAG"
+gh release delete "$RELEASE_TAG" --yes --repo "$GITHUB_REPOSITORY" || true
+```
+
+用 `GITHUB_TOKEN` 推送，GitHub 不会因此再触发一次 Release 工作流。删掉旧 Release 是为了让 goreleaser 能重新发布（同名 Release 已存在时会报错）。dry-run 不执行这一步。
+
+手动打 tag 时也要遵守同一条：**先删后建，指向最新提交**。
+
+```bash
+git tag -d v0.2.9                                  # 删本地
+git push origin :refs/tags/v0.2.9                  # 删远端
+git tag -a v0.2.9 -m "同步上游 0.2.9 + 本地补丁"    # 在最新提交上重建
 git push origin v0.2.9
 ```
 
-推 `v*` tag 触发 `Release` 工作流，产出 `ghcr.io/hjkl950217/sub2api:<version>`。
-
 ### 3.2 手动触发发版（无 tag，本 fork 新增）
 
-改完代码不想打 tag 时，用 `workflow_dispatch` + `use_version_file`：
+打完补丁、合并上游之后不想打 tag 时，用 `workflow_dispatch` + `use_version_file`：
 
 ```bash
 gh workflow run release.yml -R hjkl950217/sub2api \
@@ -83,9 +113,9 @@ gh workflow run release.yml -R hjkl950217/sub2api \
   -f simple_release=true
 ```
 
-版本号取 `main` 上的 `backend/cmd/server/VERSION`。`GORELEASER_CURRENT_TAG` 回退为 `v<version>`，会创建或覆盖同名 GitHub Release。
+版本号取所选 ref 上的 `backend/cmd/server/VERSION`。tag 名优先用 HEAD 上已有的 `v*` tag，没有则回退为 `v<version>`；随后由 3.1 的步骤把它覆盖指到本次发版的提交。
 
-> 注意：这种模式下 tag 不存在于仓库，goreleaser 的 tag 消息为空，Release 说明会缺少正文。
+> 注意：tag 名回退时它原本不存在，goreleaser 的 tag 消息为空，Release 说明会缺少正文。
 
 ### 3.3 仓库变量
 
@@ -101,13 +131,16 @@ gh workflow run release.yml -R hjkl950217/sub2api \
 |---|---|
 | 镜像仓库 | `ghcr.io/hjkl950217/sub2api`（GHCR 包默认私有，拉取需 `docker login ghcr.io`） |
 | 镜像标签 | `:<version>`、`:latest`、`:0.2`、`:0`、`:<version>-amd64` / `-arm64` |
-| 当前线上部署 | 仍是官方 `weishaw/sub2api:latest`，**尚未切到自建镜像** |
+| 镜像内嵌前端补丁 | 有。三处补丁在 `build-frontend` 里打进 dist 再嵌入二进制，部署后**不需要**再往 `data/public/` 放覆盖文件 |
+| 当前线上部署 | 仍是官方 `weishaw/sub2api:latest`，**尚未切到自建镜像**（长空后续手动切换） |
 | NAS | TrueNAS SCALE，Intel 12 代 x86_64，compose 在 `/mnt/nasData/dockerData/docker-compose-sub2api.yml` |
 
 ## 5. 已知风险
 
 - `backend/internal/service/update_service.go` 里 `githubRepo = "Wei-Shaw/sub2api"` 是硬编码的，指向唯一上游，因此内置「检查更新」在 fork 上会报出上游新版本，点击更新会下载**上游二进制**覆盖当前实例。当前靠"版本号与上游一致"规避，一旦本地版本落后于上游，这个入口就会真的覆盖。
 - `release-images.sh` 用 `${RELEASE_VERSION%%.*}` / `${RELEASE_VERSION#*.}` 截取 major/minor。版本号保持三段时正常；若将来出现第四段，会产出 `:0.2` 之外的脏标签。
+- 运行时覆盖（`data/public/`）**优先级高于**内嵌补丁。NAS 上遗留的旧覆盖文件会盖掉镜像里的新补丁，切换镜像后要按子任务 `旧补丁/README.md` 的说明清理，否则会误判「补丁没生效」。
+- `patch_dist.py` 依赖 Vite 压缩后的函数形态。上游改了这个函数的写法，或者 Vite 升级换了压缩策略，模式就会失配——构建会在 `build-frontend` 阶段失败（不会静默出未打补丁的镜像）。
 
 ## 6. 修改本仓库的纪律
 

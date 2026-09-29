@@ -1,9 +1,11 @@
 name: Release
 
-# FORK (hjkl950217/sub2api) 相对上游的改动，合并上游后按这三条复查：
+# FORK (hjkl950217/sub2api) 相对上游的改动，合并上游后按这五条复查：
 #   1. 只推送 GHCR；DockerHub 渠道整体停用（登录、推送、描述更新、通知文案）；
 #   2. 停用 sync-version-file 作业，避免 CI 改写默认分支；
-#   3. 新增 workflow_dispatch 输入 use_version_file，无 tag 时用 VERSION 文件发版。
+#   3. 新增 workflow_dispatch 输入 use_version_file，无 tag 时用 VERSION 文件发版；
+#   4. build-frontend 里把 fork/frontend 的前端补丁打进 dist 并跑单测；
+#   5. release 里先重建同名 tag 与 Release，保证 tag 指向本次发版的提交。
 
 on:
   push:
@@ -112,6 +114,11 @@ jobs:
         working-directory: frontend
       - run: pnpm run build
         working-directory: frontend
+      # FORK: 把三处前端补丁打进 dist，镜像自带补丁，部署后不必再往 data/public/ 放覆盖文件
+      - name: Patch frontend dist
+        run: python fork/frontend/patch_dist.py --dist backend/internal/web/dist
+      - name: Test patched frontend dist
+        run: node fork/frontend/test_patched_dist.mjs backend/internal/web/dist
       - uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
@@ -270,6 +277,17 @@ jobs:
             echo "$TAG_MESSAGE"
             echo "$DELIMITER"
           } >> "$GITHUB_OUTPUT"
+      # FORK: 同名 tag 与 Release 一律重建，保证 tag 始终指向本次发版的提交。
+      # 用 GITHUB_TOKEN 推送，GitHub 不会因此再触发一次 Release 工作流。
+      - name: Reset release tag and release
+        if: ${{ env.DRY_RUN != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git tag -f "$RELEASE_TAG" "$RELEASE_SHA"
+          git push --force origin "refs/tags/$RELEASE_TAG"
+          gh release delete "$RELEASE_TAG" --yes --repo "$GITHUB_REPOSITORY" || true
+          echo "已把 $RELEASE_TAG 指向 $RELEASE_SHA"
       - name: Prepare publication-only GoReleaser config
         run: |
           args=(publish --output "$RUNNER_TEMP/goreleaser.publisher.yaml")
