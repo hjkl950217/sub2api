@@ -285,6 +285,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_MESSAGE: ${{ steps.tag_message.outputs.message }}
         run: |
+          # 带注释的 tag 需要一个提交者身份，runner 上默认没有
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # 覆盖前先记住原 tag 的说明，覆盖后用带注释的 tag 重建，避免说明丢失
           MESSAGE="${TAG_MESSAGE:-Fork release ${RELEASE_VERSION}}"
           git tag -f -a "$RELEASE_TAG" -m "$MESSAGE" "$RELEASE_SHA"
