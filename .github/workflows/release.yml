@@ -283,11 +283,14 @@ jobs:
         if: ${{ env.DRY_RUN != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_MESSAGE: ${{ steps.tag_message.outputs.message }}
         run: |
-          git tag -f "$RELEASE_TAG" "$RELEASE_SHA"
+          # 覆盖前先记住原 tag 的说明，覆盖后用带注释的 tag 重建，避免说明丢失
+          MESSAGE="${TAG_MESSAGE:-Fork release ${RELEASE_VERSION}}"
+          git tag -f -a "$RELEASE_TAG" -m "$MESSAGE" "$RELEASE_SHA"
           git push --force origin "refs/tags/$RELEASE_TAG"
           gh release delete "$RELEASE_TAG" --yes --repo "$GITHUB_REPOSITORY" || true
-          echo "已把 $RELEASE_TAG 指向 $RELEASE_SHA"
+          echo "已把 $RELEASE_TAG 指向 $RELEASE_SHA（带注释）"
       - name: Prepare publication-only GoReleaser config
         run: |
           args=(publish --output "$RUNNER_TEMP/goreleaser.publisher.yaml")

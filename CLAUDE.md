@@ -85,10 +85,13 @@ git add -f CLAUDE.md
 - 实现方式：`release` 作业里的 `Reset release tag and release` 步骤，在构建镜像之后、发布 Release 之前执行
 
 ```bash
-git tag -f "$RELEASE_TAG" "$RELEASE_SHA"
+MESSAGE="${TAG_MESSAGE:-Fork release ${RELEASE_VERSION}}"
+git tag -f -a "$RELEASE_TAG" -m "$MESSAGE" "$RELEASE_SHA"
 git push --force origin "refs/tags/$RELEASE_TAG"
 gh release delete "$RELEASE_TAG" --yes --repo "$GITHUB_REPOSITORY" || true
 ```
+
+覆盖前先把原 tag 的说明读进 `TAG_MESSAGE`，覆盖时用带注释的 tag（`-a`）重建，避免说明文字丢失。原 tag 没有说明时回退为 `Fork release <version>`。
 
 用 `GITHUB_TOKEN` 推送，GitHub 不会因此再触发一次 Release 工作流。删掉旧 Release 是为了让 goreleaser 能重新发布（同名 Release 已存在时会报错）。dry-run 不执行这一步。
 
