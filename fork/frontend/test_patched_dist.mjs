@@ -76,4 +76,12 @@ assert(Boolean(groupModelChunk), 'dist 里有分组模型账号页 chunk ' + gro
 const appLayout = findFile(/^AppLayout.*\.js$/);
 assert(appLayout && fs.readFileSync(path.join(assets, appLayout), 'utf8').includes('sidebar-nav'), 'AppLayout 仍有 sidebar-nav 锚点');
 
+// --- 账号管理：默认按 ID 降序 ---
+const accountsChunk = findFile(/^AccountsView-.*\.js$/);
+assert(Boolean(accountsChunk), 'dist 里有账号管理 chunk ' + accountsChunk);
+const accounts = fs.readFileSync(path.join(assets, accountsChunk), 'utf8');
+assert(accounts.includes('"default-sort-key":"id","default-sort-order":"desc"'), '账号管理默认排序为 ID 降序');
+assert(accounts.includes('sort_by:"id",sort_order:"desc"'), '排序兜底值为 ID 降序');
+assert(accounts.includes('account-table-sort-default-version'), '含旧排序偏好的一次性迁移键');
+
 console.log('\nALL PASS');

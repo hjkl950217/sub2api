@@ -1,11 +1,11 @@
 <template>
   <div class="flex flex-wrap items-center gap-3">
+    <!-- FORK-ANCHOR: account-search-single-trigger（搜索框只走 500ms 独立防抖，不再额外触发 change，勿删） -->
     <SearchInput
       :model-value="searchQuery"
       :placeholder="t('admin.accounts.searchAccounts')"
       class="w-full sm:w-64"
       @update:model-value="$emit('update:searchQuery', $event)"
-      @search="$emit('change')"
     />
     <Select :model-value="filters.platform" class="w-40" :options="pOpts" @update:model-value="updatePlatform" @change="$emit('change')" />
     <Select :model-value="filters.type" class="w-40" :options="tOpts" @update:model-value="updateType" @change="$emit('change')" />

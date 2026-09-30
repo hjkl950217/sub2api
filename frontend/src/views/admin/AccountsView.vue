@@ -3,13 +3,14 @@
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-wrap-reverse items-start justify-between gap-3">
+          <!-- FORK-ANCHOR: account-search-debounce（搜索框单独 500ms 防抖，勿删） -->
           <AccountTableFilters
             v-model:searchQuery="params.search"
             :filters="params"
             :groups="groups"
             @update:filters="(newFilters) => Object.assign(params, newFilters)"
             @change="debouncedReload"
-            @update:searchQuery="debouncedReload"
+            @update:searchQuery="handleSearchQueryUpdate"
           />
           <AccountTableActions
             :loading="loading"
@@ -192,6 +193,7 @@
           @toggle-schedulable="handleBulkToggleSchedulable"
         />
         <div ref="accountTableRef" class="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <!-- FORK-ANCHOR: account-sort-default-id-desc（默认按账号 ID 降序，勿删） -->
         <DataTable
           ref="dataTableRef"
           :columns="cols"
@@ -200,8 +202,8 @@
           row-key="id"
           :server-side-sort="true"
           @sort="handleSort"
-          default-sort-key="name"
-          default-sort-order="asc"
+          default-sort-key="id"
+          default-sort-order="desc"
           :sort-storage-key="ACCOUNT_SORT_STORAGE_KEY"
           :estimate-row-height="156"
           :overscan="5"
@@ -487,7 +489,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, toRaw, watch } from 'vue'
-import { useIntervalFn } from '@vueuse/core'
+import { useDebounceFn, useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
@@ -667,9 +669,18 @@ const ACCOUNT_SORTABLE_KEYS = new Set([
   'created_at',
   'expires_at'
 ])
+// FORK-ANCHOR: account-sort-default-id-desc-fallback（默认排序兜底 + 旧持久化值一次性迁移，勿删）
+const ACCOUNT_SORT_DEFAULT_VERSION_KEY = 'account-table-sort-default-version'
+const ACCOUNT_SORT_DEFAULT_VERSION = 'id-desc'
 const loadInitialAccountSortState = (): AccountSortState => {
-  const fallback: AccountSortState = { sort_by: 'name', sort_order: 'asc' }
+  const fallback: AccountSortState = { sort_by: 'id', sort_order: 'desc' }
   try {
+    // 已访问过的浏览器里存着旧的默认值（name/asc），不覆盖的话这次改动不会生效；只覆盖一次，之后尊重用户手选的排序。
+    if (localStorage.getItem(ACCOUNT_SORT_DEFAULT_VERSION_KEY) !== ACCOUNT_SORT_DEFAULT_VERSION) {
+      localStorage.setItem(ACCOUNT_SORT_DEFAULT_VERSION_KEY, ACCOUNT_SORT_DEFAULT_VERSION)
+      localStorage.setItem(ACCOUNT_SORT_STORAGE_KEY, JSON.stringify({ key: fallback.sort_by, order: fallback.sort_order }))
+      return fallback
+    }
     const raw = localStorage.getItem(ACCOUNT_SORT_STORAGE_KEY)
     if (!raw) return fallback
     const parsed = JSON.parse(raw) as { key?: string; order?: string }
@@ -1294,6 +1305,20 @@ const debouncedReload = () => {
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = true
   baseDebouncedReload()
+}
+
+// FORK-ANCHOR: account-search-debounce-handler（搜索框 500ms 防抖 + 去首尾空格，勿删）
+const ACCOUNT_SEARCH_DEBOUNCE_MS = 500
+const debouncedSearchReload = useDebounceFn(() => {
+  // 停顿后再去首尾空格，输入过程中不动输入框内容，避免光标跳动。
+  const trimmedSearch = String(params.search || '').trim()
+  if (trimmedSearch !== params.search) params.search = trimmedSearch
+  clearSelection()
+  void reload()
+}, ACCOUNT_SEARCH_DEBOUNCE_MS)
+
+const handleSearchQueryUpdate = () => {
+  debouncedSearchReload()
 }
 
 const handlePageChange = (page: number) => {
