@@ -44,9 +44,9 @@ git add -f CLAUDE.md
   ```
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **25 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **29 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
 
-当前锚点全量清单（**25 个**，合并上游后逐个确认还在、且只出现一次）：
+当前锚点全量清单（**29 个**，合并上游后逐个确认还在、且只出现一次）：
 
 | 锚点 | 文件 |
 |---|---|
@@ -57,6 +57,9 @@ git add -f CLAUDE.md
 | `release-matrix-version-file` | `.github/release-tools/release_matrix.py` |
 | `release-matrix-version-file-tests` | `.github/release-tools/test_release_matrix.py` |
 | `fork-embed-override-tests` | `backend/internal/web/embed_fork_test.go` |
+| `account-search-by-id` | `backend/internal/repository/account_repo.go` |
+| `account-search-by-id-local` | `frontend/src/views/admin/AccountsView.vue` |
+| `search-placeholder-id-zh` / `search-placeholder-id-en` | `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` |
 
 ### 2.1 `.github/workflows/release.yml`
 
@@ -167,6 +170,20 @@ git add -f CLAUDE.md
 - `TestForkIndexHTMLOverrideAndCacheInvalidation`：`data/public/index.html` 生效、mtime 变化后重新加载、文件移除后回退内嵌版。
 
 本机没有 Go，这两个用例的验证走 CI 的 `Fork embed override tests` 步骤。
+
+### 2.8 账号管理搜索框支持按账号 ID 匹配（改上游文件，三处）
+
+上游的账号列表搜索只匹配账号名（`account_repo.go` 里 `dbaccount.NameContainsFold(search)`），ID 是数字主键、名字里通常不含，因此按 ID 搜不到。
+
+改动是**扩展搜索框的匹配范围**，不加新输入框、不改接口签名：
+
+| # | 文件 | 位置 | 改动 | 锚点 |
+|---|---|---|---|---|
+| 1 | `backend/internal/repository/account_repo.go` | `accountListFilteredQuery` 的 search 分支 | search 为纯数字时改为 `Or(NameContainsFold(search), IDEQ(id))`，否则维持原样 | `account-search-by-id` |
+| 2 | `frontend/src/views/admin/AccountsView.vue` | `accountMatchesCurrentFilters` | 本地过滤同步支持按 ID 匹配，避免编辑账号后该行被误判为不符合筛选而摘掉 | `account-search-by-id-local` |
+| 3 | `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` | `searchAccounts` | 占位符改为「搜索账号名或 ID...」/「Search name or ID...」 | `search-placeholder-id-zh` / `search-placeholder-id-en` |
+
+第 1 处是唯一有实际过滤作用的地方。`accountListFilteredQuery` 的三个调用点（账号列表、调度分候选池、数据导出）语义一致，改完都跟着生效；前端全选（`fetchAllAccountIds`）、导出、批量编辑的筛选快照都透传 `search`，不用逐个改。
 
 ## 3. 发版方式
 
