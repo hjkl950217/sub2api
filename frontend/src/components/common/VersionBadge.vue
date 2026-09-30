@@ -318,9 +318,11 @@
                 </div>
 
                 <!-- Update button -->
+                <!-- FORK-ANCHOR: version-disable-update（二开恒禁用：在线更新会拉上游二进制覆盖本实例） -->
                 <button
                   @click="handleUpdate"
-                  :disabled="updating"
+                  :disabled="updating || forkUpdateDisabled"
+                  :title="forkUpdateDisabled ? t('version.updateDisabledByFork') : undefined"
                   class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <svg v-if="updating" class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -351,6 +353,17 @@
                   class="flex items-center justify-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200"
                 >
                   {{ t('version.viewChangelog') }}
+                  <Icon name="externalLink" size="xs" :stroke-width="2" />
+                </a>
+
+                <!-- FORK-ANCHOR: version-fork-repo-link（指向本 fork 仓库，便于查看二开改动） -->
+                <a
+                  :href="FORK_REPO_URL"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="flex items-center justify-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200"
+                >
+                  {{ t('version.viewForkRepo') }}
                   <Icon name="externalLink" size="xs" :stroke-width="2" />
                 </a>
               </div>
@@ -654,6 +667,12 @@ import Icon from '@/components/icons/Icon.vue'
 const GITHUB_REPO = 'Wei-Shaw/sub2api'
 // Docker Hub image published by CI (tags carry no "v" prefix, e.g. weishaw/sub2api:0.1.146)
 const DOCKER_IMAGE = 'weishaw/sub2api'
+
+// FORK-ANCHOR: version-fork-config（二开：恒禁用在线更新，并提供本 fork 仓库地址）
+// 本实例是二开 fork，在线更新会下载上游二进制覆盖当前实例，因此按钮恒禁用；
+// 「检查更新」仍指向上游，用于感知上游发版。
+const forkUpdateDisabled = true
+const FORK_REPO_URL = 'https://github.com/hjkl950217/sub2api'
 
 const { t } = useI18n()
 

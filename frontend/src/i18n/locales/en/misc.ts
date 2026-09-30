@@ -32,6 +32,10 @@ export default {
     sourceMode: 'Source Build',
     sourceModeHint: 'Source build, use git pull to update',
     updateNow: 'Update Now',
+    // FORK-ANCHOR: version-fork-i18n-en（二开新增：fork 仓库链接与在线更新禁用说明）
+    viewForkRepo: 'View Fork Repo',
+    updateDisabledByFork:
+      'This is a fork build. In-place update would overwrite it with the upstream binary, so it is disabled; update via the self-built image.',
     updating: 'Updating...',
     updateComplete: 'Update Complete',
     updateFailed: 'Update Failed',

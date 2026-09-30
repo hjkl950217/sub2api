@@ -7,9 +7,10 @@
     <AppSidebar />
 
     <!-- Main Content Area -->
+    <!-- FORK-ANCHOR: layout-compact-offset（与侧栏 w-52 对应，避免内容区被多推 48px） -->
     <div
       class="relative min-h-screen transition-all duration-300"
-      :class="[sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-64']"
+      :class="[sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-52']"
     >
       <!-- Header -->
       <AppHeader />

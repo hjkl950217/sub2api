@@ -1,8 +1,9 @@
 <template>
+  <!-- FORK-ANCHOR: sidebar-compact-width（二开：展开态收窄到 13rem，够 8 个中文字，余量给内容区） -->
   <aside
     class="sidebar"
     :class="[
-      sidebarCollapsed ? 'w-[72px]' : 'w-64',
+      sidebarCollapsed ? 'w-[72px]' : 'w-52',
       { '-translate-x-full lg:translate-x-0': !mobileOpen }
     ]"
   >

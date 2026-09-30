@@ -32,6 +32,9 @@ export default {
     sourceMode: '源码构建',
     sourceModeHint: '源码构建请使用 git pull 更新',
     updateNow: '立即更新',
+    // FORK-ANCHOR: version-fork-i18n-zh（二开新增：fork 仓库链接与在线更新禁用说明）
+    viewForkRepo: '查看 fork 仓库',
+    updateDisabledByFork: '本实例是二开 fork，在线更新会拉取上游二进制覆盖本实例，已禁用；请用自建镜像更新',
     updating: '正在更新...',
     updateComplete: '更新完成',
     updateFailed: '更新失败',

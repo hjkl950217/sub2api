@@ -40,13 +40,13 @@ git add -f CLAUDE.md
 - 标记名全局唯一，用下面这条命令列出全部改动点（**排除本文件**，本文件只是在文档里列举锚点名，不是改动点）：
 
   ```bash
-  grep -rn "FORK-ANCHOR:" . --include="*.go" --include="*.vue" --include="*.ts" --include="*.yml" --include="*.py" --include="*.mjs" | grep -v "^./CLAUDE.md"
+  grep -rn "FORK-ANCHOR:" . --include="*.go" --include="*.vue" --include="*.ts" --include="*.yml" --include="*.py" --include="*.mjs" --include="*.css" | grep -v "^./CLAUDE.md"
   ```
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **34 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **42 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
 
-当前锚点全量清单（**34 个**，合并上游后逐个确认还在、且只出现一次）：
+当前锚点全量清单（**42 个**，合并上游后逐个确认还在、且只出现一次）：
 
 | 锚点 | 文件 |
 |---|---|
@@ -61,6 +61,11 @@ git add -f CLAUDE.md
 | `account-search-by-id-local` / `account-search-debounce` / `account-search-debounce-handler` / `account-sort-default-id-desc` / `account-sort-default-id-desc-fallback` | `frontend/src/views/admin/AccountsView.vue` |
 | `search-placeholder-id-zh` / `search-placeholder-id-en` | `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` |
 | `account-search-single-trigger` | `frontend/src/components/admin/account/AccountTableFilters.vue` |
+| `version-fork-config` / `version-disable-update` / `version-fork-repo-link` | `frontend/src/components/common/VersionBadge.vue` |
+| `version-fork-i18n-zh` / `version-fork-i18n-en` | `frontend/src/i18n/locales/{zh,en}/misc.ts` |
+| `sidebar-compact-width` | `frontend/src/components/layout/AppSidebar.vue` |
+| `sidebar-compact-width-css` | `frontend/src/style.css` |
+| `layout-compact-offset` | `frontend/src/components/layout/AppLayout.vue` |
 
 ### 2.1 `.github/workflows/release.yml`
 
@@ -199,6 +204,31 @@ git add -f CLAUDE.md
 | 5 | `frontend/src/components/admin/account/AccountTableFilters.vue` | `<SearchInput>` | 去掉 `@search` → `change` 的转发，搜索只保留一条触发路径 | `account-search-single-trigger` |
 
 第 2 处的 `reload()` 是 AccountsView 自己的包装（重置分页并刷新今日统计），不是 `useTableLoader` 的 `reload`。第 4 处不覆盖的话，已访问过的浏览器会一直沿用旧的默认排序，改动等于没生效。首尾空格后端 `account_handler.go` 本来就有 `strings.TrimSpace`，第 2 处是让输入框内容与请求参数保持一致。按 ID 排序不需要改后端：`account_repo.go` 的 `accountListOrder` 早就支持 `sort_by=id`。
+
+### 2.10 版本徽章：禁用在线更新、加 fork 仓库入口（改上游文件）
+
+**背景**：`backend/internal/service/update_service.go` 的 `githubRepo` 硬编码为唯一上游，`POST /admin/system/update` 会下载**上游**二进制覆盖本实例。二开 fork 上这个入口是隐患，因此恒禁用；但「检查更新」保持指向上游，用来感知上游发版。
+
+| # | 文件 | 改动 | 锚点 |
+|---|---|---|---|
+| 1 | `VersionBadge.vue` | 新增常量 `forkUpdateDisabled = true` 与 `FORK_REPO_URL` | `version-fork-config` |
+| 2 | `VersionBadge.vue` | 「立即更新」按钮 `:disabled` 加 `|| forkUpdateDisabled`，并加 `title` 说明原因 | `version-disable-update` |
+| 3 | `VersionBadge.vue` | 「查看更新日志」下方新增「查看 fork 仓库」链接 | `version-fork-repo-link` |
+| 4 | `{zh,en}/misc.ts` | `version` 段新增 `viewForkRepo`、`updateDisabledByFork` | `version-fork-i18n-zh` / `version-fork-i18n-en` |
+
+只禁用了 UI 按钮，**后端接口未动**——直接调 `POST /admin/system/update` 仍会执行上游覆盖。要彻底封死得改 `update_service.go`，目前按「不扩大改动面」保留。
+
+### 2.11 侧栏收窄（改上游文件，三处）
+
+展开态侧栏从 16rem（`w-64`，256px）收到 **13rem（`w-52`，208px）**，正好容纳 8 个中文字（最长菜单项「分组模型账号」6 字），余量还给右侧内容区。
+
+| # | 文件 | 改动 | 锚点 |
+|---|---|---|---|
+| 1 | `AppSidebar.vue` | `:class` 里 `w-64` → `w-52` | `sidebar-compact-width` |
+| 2 | `style.css` | `.sidebar` 的 `@apply w-64` → `w-52`（与 1 保持一致，否则两处宽度说法不一） | `sidebar-compact-width-css` |
+| 3 | `AppLayout.vue` | 内容区 `lg:ml-64` → `lg:ml-52` | `layout-compact-offset` |
+
+208px 的算法：内容区 `px-3`(24) + 链接内边距(31) + 图标(20) + 间距(12) = 87px 固定开销，剩 121px 给文字，8 个 14px 汉字需 112px。改 `w-48`（192px）只剩 105px，8 字会被截断。
 
 ## 3. 发版方式
 
