@@ -1074,7 +1074,16 @@ func (r *accountRepository) accountListFilteredQuery(platform, accountType, stat
 		}
 	}
 	if search != "" {
-		q = q.Where(dbaccount.NameContainsFold(search))
+		// FORK-ANCHOR: account-search-by-id
+		// 二开：search 为纯数字时额外按账号 ID 精确匹配，便于按 ID 定位账号。勿删。
+		if id, err := strconv.ParseInt(search, 10, 64); err == nil && id > 0 {
+			q = q.Where(dbaccount.Or(
+				dbaccount.NameContainsFold(search),
+				dbaccount.IDEQ(id),
+			))
+		} else {
+			q = q.Where(dbaccount.NameContainsFold(search))
+		}
 	}
 	if groupID == service.AccountListGroupUngrouped {
 		q = q.Where(dbaccount.Not(dbaccount.HasAccountGroups()))

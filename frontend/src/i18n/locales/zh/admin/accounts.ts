@@ -77,7 +77,8 @@ export default {
       crsBack: '返回',
       editAccount: '编辑账号',
       deleteAccount: '删除账号',
-      searchAccounts: '搜索账号...',
+      // FORK-ANCHOR: search-placeholder-id-zh（搜索框范围已扩展到账号 ID）
+      searchAccounts: '搜索账号名或 ID...',
       notes: '备注',
       notesPlaceholder: '请输入备注',
       notesHint: '备注可选',

@@ -78,7 +78,8 @@ export default {
       crsBack: 'Back',
       editAccount: 'Edit Account',
       deleteAccount: 'Delete Account',
-      searchAccounts: 'Search accounts...',
+      // FORK-ANCHOR: search-placeholder-id-en（搜索框范围已扩展到账号 ID）
+      searchAccounts: 'Search name or ID...',
       notes: 'Notes',
       notesPlaceholder: 'Enter notes',
       notesHint: 'Notes are optional',

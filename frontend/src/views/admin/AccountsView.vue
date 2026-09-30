@@ -2174,7 +2174,9 @@ const accountMatchesCurrentFilters = (account: Account) => {
     }
   }
   const search = String(filters.search || '').trim().toLowerCase()
-  if (search && !account.name.toLowerCase().includes(search)) return false
+  // FORK-ANCHOR: account-search-by-id-local（本地过滤同步支持按账号 ID 匹配，与后端 search 语义一致）
+  const searchID = /^\d+$/.test(search) && Number(search) > 0 ? String(Number(search)) : ''
+  if (search && !account.name.toLowerCase().includes(search) && String(account.id) !== searchID) return false
   return true
 }
 const mergeRuntimeFields = (oldAccount: Account, updatedAccount: Account): Account => ({
