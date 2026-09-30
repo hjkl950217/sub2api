@@ -44,9 +44,9 @@ git add -f CLAUDE.md
   ```
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **29 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **33 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
 
-当前锚点全量清单（**29 个**，合并上游后逐个确认还在、且只出现一次）：
+当前锚点全量清单（**33 个**，合并上游后逐个确认还在、且只出现一次）：
 
 | 锚点 | 文件 |
 |---|---|
@@ -58,8 +58,9 @@ git add -f CLAUDE.md
 | `release-matrix-version-file-tests` | `.github/release-tools/test_release_matrix.py` |
 | `fork-embed-override-tests` | `backend/internal/web/embed_fork_test.go` |
 | `account-search-by-id` | `backend/internal/repository/account_repo.go` |
-| `account-search-by-id-local` | `frontend/src/views/admin/AccountsView.vue` |
+| `account-search-by-id-local` / `account-search-debounce` / `account-search-debounce-handler` / `account-sort-default-id-desc` / `account-sort-default-id-desc-fallback` | `frontend/src/views/admin/AccountsView.vue` |
 | `search-placeholder-id-zh` / `search-placeholder-id-en` | `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` |
+| `account-search-single-trigger` | `frontend/src/components/admin/account/AccountTableFilters.vue` |
 
 ### 2.1 `.github/workflows/release.yml`
 
@@ -184,6 +185,20 @@ git add -f CLAUDE.md
 | 3 | `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` | `searchAccounts` | 占位符改为「搜索账号名或 ID...」/「Search name or ID...」 | `search-placeholder-id-zh` / `search-placeholder-id-en` |
 
 第 1 处是唯一有实际过滤作用的地方。`accountListFilteredQuery` 的三个调用点（账号列表、调度分候选池、数据导出）语义一致，改完都跟着生效；前端全选（`fetchAllAccountIds`）、导出、批量编辑的筛选快照都透传 `search`，不用逐个改。
+
+### 2.9 账号管理搜索框 500ms 防抖与默认按账号 ID 降序（改上游文件，五处）
+
+搜索框原来每输入一个字符就发一次列表请求；列表默认按名称升序，与「按 ID 定位账号」的用法不搭。这两点一起改。
+
+| # | 文件 | 位置 | 改动 | 锚点 |
+|---|---|---|---|---|
+| 1 | `frontend/src/views/admin/AccountsView.vue` | 模板 `<AccountTableFilters>` | 搜索事件改接 `handleSearchQueryUpdate`，不再与下拉筛选共用 300ms 的 `debouncedReload` | `account-search-debounce` |
+| 2 | `frontend/src/views/admin/AccountsView.vue` | `debouncedReload` 之后 | 新增 500ms 防抖 `debouncedSearchReload`：停顿后去首尾空格再刷新 | `account-search-debounce-handler` |
+| 3 | `frontend/src/views/admin/AccountsView.vue` | 模板 `<DataTable>` | `default-sort-key` 改 `id`、`default-sort-order` 改 `desc` | `account-sort-default-id-desc` |
+| 4 | `frontend/src/views/admin/AccountsView.vue` | `loadInitialAccountSortState` | 兜底值改 id/desc；新增一次性迁移键 `account-table-sort-default-version`，覆盖旧浏览器里存着的 name/asc | `account-sort-default-id-desc-fallback` |
+| 5 | `frontend/src/components/admin/account/AccountTableFilters.vue` | `<SearchInput>` | 去掉 `@search` → `change` 的转发，搜索只保留一条触发路径 | `account-search-single-trigger` |
+
+第 2 处的 `reload()` 是 AccountsView 自己的包装（重置分页并刷新今日统计），不是 `useTableLoader` 的 `reload`。第 4 处不覆盖的话，已访问过的浏览器会一直沿用旧的默认排序，改动等于没生效。首尾空格后端 `account_handler.go` 本来就有 `strings.TrimSpace`，第 2 处是让输入框内容与请求参数保持一致。按 ID 排序不需要改后端：`account_repo.go` 的 `accountListOrder` 早就支持 `sort_by=id`。
 
 ## 3. 发版方式
 
