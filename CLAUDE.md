@@ -70,7 +70,7 @@ git add -f CLAUDE.md
 | 6 | `build-binaries` / `release` 两处 env | `DOCKERHUB_USERNAME` 从 `secrets.DOCKERHUB_USERNAME \|\| 'skip'` 改为固定 `skip` | 不依赖 secret，渠道恒定失效 |
 | 7 | Telegram 通知步骤 env | `DOCKERHUB_USERNAME` 从 secret 改为空串 `''` | 该脚本用 `[ -n "$DOCKERHUB_USERNAME" ]` 判断，`skip` 会被当成"有值"而输出 `skip/sub2api` 脏命令，必须留空 |
 | 8 | `sync-version-file` 作业 | `if` 改为 `false`，整作业停用 | 该作业会把发版版本号 commit 回默认分支，导致 `main` 与上游分叉，`git pull --ff-only` 从此失败 |
-| 9 | `build-frontend` 作业 | 新增两步：`python fork/frontend/patch_dist.py` 把三处前端补丁打进 dist，再跑 `node fork/frontend/test_patched_dist.mjs` | 让镜像自带前端补丁，部署后不必再往 `data/public/` 放覆盖文件 |
+| 9 | `build-frontend` 作业 | 新增两步：`python fork/frontend/patch_dist.py` 把两处前端补丁打进 dist，再跑 `node fork/frontend/test_patched_dist.mjs` | 让镜像自带前端补丁，部署后不必再往 `data/public/` 放覆盖文件 |
 | 10 | `release` 作业 | 新增 `Reset release tag and release` 步骤（非 dry-run）：`git tag -f` + `git push --force` + `gh release delete` | 同名 tag / Release 一律重建，保证 tag 指向本次发版的提交 |
 | 11 | `build-frontend` 作业 | 新增 `Fork embed override tests`：`go test -tags=embed -run TestFork ./internal/web/`，并校验恰好 2 个用例通过 | 上游 CI 只跑 `-tags=unit`，不编译 embed 代码，二开的覆盖改动不会被它覆盖，必须在这里把关；`-run` 匹配不到用例时 `go test` 也返回 0，必须核对数量 |
 
@@ -135,15 +135,15 @@ git add -f CLAUDE.md
 
 ### 2.6 `frontend/src/components/layout/AppSidebar.vue`（改上游文件）
 
-两处改动，各带一个锚点：
+四处改动，各带一个锚点：
 
-**（1）屏蔽管理端侧栏三项入口**（`FORK-ANCHOR: sidebar-admin-entries`）——只删菜单项、不删路由，页面仍可直接输地址访问：
+**（1）屏蔽管理端侧栏三项入口**（`FORK-ANCHOR: sidebar-announcements-entry` / `sidebar-redeem-promo-entries`）——只删菜单项、不删路由，页面仍可直接输地址访问：
 
 - `/admin/announcements`（公告）
 - `/admin/redeem`（兑换码）
 - `/admin/promo-codes`（优惠码）
 
-随之删掉只为它们服务的 `BellIcon`、`TicketIcon` 图标定义（`noUnusedLocals` 会让未使用的 const 编译失败）。`GiftIcon` 仍被用户端 `/redeem` 使用，保留。
+随之删掉只为它们服务的 `BellIcon`、`TicketIcon` 图标定义（`noUnusedLocals` 会让未使用的 const 编译失败）（`FORK-ANCHOR: sidebar-removed-icons`）。`GiftIcon` 仍被用户端 `/redeem` 使用，保留。
 
 **（2）新增「分组模型账号」侧栏入口**（`FORK-ANCHOR: sidebar-group-model-accounts`）——在 `adminNavItems` 的「账号管理」之后插入一条指向 `/admin/group-model-accounts` 的菜单项，图标用上游已有的 `FolderIcon`。
 
@@ -158,8 +158,6 @@ git add -f CLAUDE.md
 两种视角（模型→分组→账号、分组→模型→账号）、搜索、仅已调度过滤、刷新，行为对齐被它取代的注入面板。
 
 **为什么不再用注入面板**：注入面板挂在 `/custom/group-model-accounts` 这个「自定义页面」路由上，而该路由的菜单项 `url` 必须填 `md:<slug>` 或绝对 http(s) 地址；站点对所有响应都发 `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'`，绝对地址的 iframe 会被浏览器直接拒绝，`md:` 又只能渲染 Markdown。真路由页没有这些限制，且随镜像发布、升级后不用重建。
-
-### 2.7 `backend/internal/web/embed_fork_test.go`（新增文件）
 
 ### 2.7 `backend/internal/web/embed_fork_test.go`（新增文件）
 
