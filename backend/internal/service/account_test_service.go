@@ -396,9 +396,12 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 
 	// Route to platform-specific test method
 	if account.IsCNProvider() {
+		if isDeepseekDSGroupAccount(account) {
+			return s.probeCNProviderProtocolsConnection(c, account, modelID, prompt, testOpts.SyncProtocols)
+		}
 		// FORK-ANCHOR: fork-api-protocols-test-matrix-routing (二开：请求"更新支持协议"时走协议探测矩阵)
 		if testOpts.SyncProtocols {
-			return s.probeCNProviderProtocolsConnection(c, account, modelID, prompt)
+			return s.probeCNProviderProtocolsConnection(c, account, modelID, prompt, true)
 		}
 		// FORK-ANCHOR: fork-api-protocols-test-routing (二开：协议复选账号逐个验证已勾选的原生端点)
 		if account.HasExplicitAPIProtocols() {

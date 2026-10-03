@@ -8,20 +8,92 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
 )
 
-// protocolSyncTestRepo 记录 Update 收到的账号，用于断言回写结果。
 type protocolSyncTestRepo struct {
 	openAIAccountTestRepo
-	updated *Account
+	mu            sync.Mutex
+	updated       *Account
+	setErrorCalls int
 }
 
 func (r *protocolSyncTestRepo) Update(_ context.Context, account *Account) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.updated = account
 	return nil
+}
+
+func (r *protocolSyncTestRepo) SetError(context.Context, int64, string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.setErrorCalls++
+	return nil
+}
+
+type protocolMatrixTestUpstream struct {
+	mu               sync.Mutex
+	active           int
+	maxActive        int
+	expectedRequests int
+	concurrent       bool
+	ready            chan struct{}
+	once             sync.Once
+	requests         []*http.Request
+	responses        map[string]func() *http.Response
+}
+
+func (u *protocolMatrixTestUpstream) Do(req *http.Request, proxyURL string, accountID int64, concurrency int) (*http.Response, error) {
+	return u.DoWithTLS(req, proxyURL, accountID, concurrency, nil)
+}
+
+func (u *protocolMatrixTestUpstream) DoWithTLS(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	u.mu.Lock()
+	u.active++
+	u.requests = append(u.requests, req)
+	if u.active > u.maxActive {
+		u.maxActive = u.active
+	}
+	requestCount := len(u.requests)
+	u.mu.Unlock()
+	defer func() {
+		u.mu.Lock()
+		u.active--
+		u.mu.Unlock()
+	}()
+	if u.concurrent {
+		if requestCount >= u.expectedRequests {
+			u.once.Do(func() { close(u.ready) })
+		}
+		<-u.ready
+	}
+	protocol := APIProtocolChatCompletions
+	switch {
+	case strings.Contains(req.URL.Path, "/v1/messages"):
+		protocol = APIProtocolAnthropic
+	case strings.HasSuffix(req.URL.Path, "/responses"):
+		protocol = APIProtocolResponses
+	}
+	return u.responses[protocol](), nil
+}
+
+func protocolMatrixResponses(chat, anthropic, responses func() *http.Response) map[string]func() *http.Response {
+	out := map[string]func() *http.Response{}
+	if chat != nil {
+		out[APIProtocolChatCompletions] = chat
+	}
+	if anthropic != nil {
+		out[APIProtocolAnthropic] = anthropic
+	}
+	if responses != nil {
+		out[APIProtocolResponses] = responses
+	}
+	return out
 }
 
 func protocolSyncTestAccount(id int64, platform string, protocols []any) *Account {
@@ -32,6 +104,7 @@ func protocolSyncTestAccount(id int64, platform string, protocols []any) *Accoun
 		Type:        AccountTypeAPIKey,
 		Status:      StatusActive,
 		Concurrency: 1,
+		Groups:      []*Group{{Name: "赛博羊毛-DS"}},
 		Credentials: map[string]any{
 			"api_key":           "sk-protocol-sync",
 			"api_protocol":      APIProtocolAdaptive,
@@ -46,7 +119,7 @@ func protocolSyncTestAccount(id int64, platform string, protocols []any) *Accoun
 	}
 }
 
-func protocolSyncTestService(account *Account, responses ...*http.Response) (*AccountTestService, *httpUpstreamRecorder, *protocolSyncTestRepo) {
+func protocolSyncTestService(account *Account, responses map[string]func() *http.Response, concurrent ...bool) (*AccountTestService, *protocolMatrixTestUpstream, *protocolSyncTestRepo) {
 	repo := &protocolSyncTestRepo{
 		openAIAccountTestRepo: openAIAccountTestRepo{
 			mockAccountRepoForGemini: mockAccountRepoForGemini{
@@ -54,7 +127,12 @@ func protocolSyncTestService(account *Account, responses ...*http.Response) (*Ac
 			},
 		},
 	}
-	upstream := &httpUpstreamRecorder{responses: responses}
+	upstream := &protocolMatrixTestUpstream{
+		expectedRequests: len(responses),
+		concurrent:       len(concurrent) > 0 && concurrent[0],
+		ready:            make(chan struct{}),
+		responses:        responses,
+	}
 	return &AccountTestService{
 		accountRepo:  repo,
 		httpUpstream: upstream,
@@ -67,21 +145,27 @@ func TestForkProtocolSyncMatrixAppliesPassedProtocols(t *testing.T) {
 	account := protocolSyncTestAccount(901, PlatformKimi, []any{
 		APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses,
 	})
-	svc, upstream, repo := protocolSyncTestService(
-		account,
-		adaptiveCNChatTestResponse(),
-		newJSONResponse(http.StatusBadRequest, `{"error":"no anthropic endpoint"}`),
-		adaptiveCNResponsesTestResponse(),
-	)
+	svc, upstream, repo := protocolSyncTestService(account, protocolMatrixResponses(
+		func() *http.Response { return adaptiveCNChatTestResponse() },
+		func() *http.Response {
+			return newJSONResponse(http.StatusBadRequest, `{"error":"no anthropic endpoint"}`)
+		},
+		func() *http.Response { return adaptiveCNResponsesTestResponse() },
+	))
 	c, recorder := newTestContext()
 
 	err := svc.TestAccountConnection(c, account.ID, "kimi-k2", "hello", AccountTestModeDefault, AccountTestOptions{SyncProtocols: true})
 
 	require.NoError(t, err)
 	require.Len(t, upstream.requests, 3, "三个协议各探测一次")
-	require.Equal(t, "http://chat.example/v1/chat/completions", upstream.requests[0].URL.String())
-	require.Equal(t, "http://anthropic.example/v1/messages", upstream.requests[1].URL.String())
-	require.Equal(t, "http://responses.example/v1/responses", upstream.requests[2].URL.String())
+	require.Equal(t, 1, upstream.maxActive, "非 DS 分组保留串行探测")
+	paths := map[string]bool{}
+	for _, request := range upstream.requests {
+		paths[request.URL.Path] = true
+	}
+	require.True(t, paths["/v1/chat/completions"])
+	require.True(t, paths["/v1/messages"])
+	require.True(t, paths["/v1/responses"])
 
 	require.NotNil(t, repo.updated, "探测结果必须回写账号")
 	require.Equal(t, []string{APIProtocolChatCompletions, APIProtocolResponses}, repo.updated.Credentials["api_protocols"])
@@ -100,18 +184,18 @@ func TestForkProtocolSyncMatrixAppliesPassedProtocols(t *testing.T) {
 // 语义：三个协议全失败时不改动账号配置，并明确告知未回写。
 func TestForkProtocolSyncMatrixAllFailedKeepsConfig(t *testing.T) {
 	account := protocolSyncTestAccount(902, PlatformDeepseek, []any{APIProtocolAnthropic})
-	svc, upstream, repo := protocolSyncTestService(
-		account,
-		newJSONResponse(http.StatusBadRequest, `{"error":"chat down"}`),
-		newJSONResponse(http.StatusBadRequest, `{"error":"anthropic down"}`),
-		newJSONResponse(http.StatusBadRequest, `{"error":"responses down"}`),
-	)
+	svc, upstream, repo := protocolSyncTestService(account, protocolMatrixResponses(
+		func() *http.Response { return newJSONResponse(http.StatusBadRequest, `{"error":"chat down"}`) },
+		func() *http.Response { return newJSONResponse(http.StatusBadRequest, `{"error":"anthropic down"}`) },
+		func() *http.Response { return newJSONResponse(http.StatusBadRequest, `{"error":"responses down"}`) },
+	), true)
 	c, recorder := newTestContext()
 
 	err := svc.TestAccountConnection(c, account.ID, "deepseek-chat", "hello", AccountTestModeDefault, AccountTestOptions{SyncProtocols: true})
 
 	require.NoError(t, err)
 	require.Len(t, upstream.requests, 3)
+	require.Equal(t, 3, upstream.maxActive, "DS 分组同步测试也应并发探测")
 	require.Nil(t, repo.updated, "全部失败时不得写库")
 	require.Equal(t, []any{APIProtocolAnthropic}, account.Credentials["api_protocols"], "原勾选集合保持不变")
 
@@ -125,16 +209,38 @@ func TestForkProtocolSyncMatrixAllFailedKeepsConfig(t *testing.T) {
 	require.NotContains(t, body, `"type":"error"`, "单协议失败不产生终止错误事件")
 }
 
+// 普通连接测试在赛博羊毛-DS 中也并发探测三协议，但不写回账号配置。
+func TestForkDeepseekDSConnectionTestProbesAllProtocolsConcurrently(t *testing.T) {
+	account := protocolSyncTestAccount(904, PlatformDeepseek, []any{APIProtocolChatCompletions})
+	svc, upstream, repo := protocolSyncTestService(account, protocolMatrixResponses(
+		func() *http.Response { return adaptiveCNChatTestResponse() },
+		func() *http.Response { return newJSONResponse(http.StatusUnauthorized, `{"error":"invalid token"}`) },
+		func() *http.Response { return adaptiveCNResponsesTestResponse() },
+	), true)
+	c, recorder := newTestContext()
+
+	err := svc.TestAccountConnection(c, account.ID, "deepseek-chat", "hello", AccountTestModeDefault)
+
+	require.NoError(t, err)
+	require.Len(t, upstream.requests, 3)
+	require.Equal(t, 3, upstream.maxActive, "三个协议请求应同时进行")
+	require.Nil(t, repo.updated, "普通连接测试不得写回协议配置")
+	require.Zero(t, repo.setErrorCalls, "单协议认证失败不得把账号状态改成 error")
+	require.Equal(t, 3, strings.Count(recorder.Body.String(), `"type":"protocol_result"`))
+	require.Contains(t, recorder.Body.String(), `"protocol":"anthropic","protocol_ok":false`)
+	require.NotContains(t, recorder.Body.String(), `"protocol_applied":true`)
+}
+
 // 语义：平台没有原生 Responses 端点时跳过该协议，不发请求。
 func TestForkProtocolSyncMatrixSkipsUnsupportedResponses(t *testing.T) {
 	account := protocolSyncTestAccount(903, PlatformZhipu, []any{
 		APIProtocolChatCompletions, APIProtocolAnthropic,
 	})
-	svc, upstream, repo := protocolSyncTestService(
-		account,
-		adaptiveCNChatTestResponse(),
-		adaptiveCNAnthropicTestResponse(),
-	)
+	svc, upstream, repo := protocolSyncTestService(account, protocolMatrixResponses(
+		func() *http.Response { return adaptiveCNChatTestResponse() },
+		func() *http.Response { return adaptiveCNAnthropicTestResponse() },
+		nil,
+	))
 	c, recorder := newTestContext()
 
 	err := svc.TestAccountConnection(c, account.ID, "glm-4.7", "hello", AccountTestModeDefault, AccountTestOptions{SyncProtocols: true})

@@ -13,7 +13,11 @@
 package service
 
 import (
+	"context"
+	"errors"
+	"net/http/httptest"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/gin-gonic/gin"
@@ -30,12 +34,21 @@ var cnProtocolProbeOrder = []string{APIProtocolChatCompletions, APIProtocolAnthr
 // forkBoolPtr 取 bool 地址（本包 ops_metrics_collector.go 已有 boolPtr，避免重名）。
 func forkBoolPtr(v bool) *bool { return &v }
 
-// probeCNProviderProtocolsConnection 逐个探测三个原生协议端点并回写勾选集合。
-//
-// 与 testCNProviderSelectedProtocolsConnection 的区别：后者按账号已勾选集合裁剪、
-// 首个失败即终止；这里三个协议各测一次，每个协议的成功/失败单独成事件，
-// 全部测完再按结果更新账号配置。
-func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
+type protocolProbeAccountRepository struct {
+	AccountRepository
+}
+
+func (protocolProbeAccountRepository) SetError(context.Context, int64, string) error { return nil }
+func (protocolProbeAccountRepository) ClearError(context.Context, int64) error       { return nil }
+func (protocolProbeAccountRepository) SetRateLimited(context.Context, int64, time.Time) error {
+	return nil
+}
+
+// probeCNProviderProtocolsConnection 并发探测三个原生协议端点；仅显式同步时回写通过集合。
+func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, account *Account, modelID string, prompt string, syncProtocols bool) error {
+	if !isDeepseekDSGroupAccount(account) {
+		return s.probeCNProviderProtocolsConnectionSequential(c, account, modelID, prompt)
+	}
 	authToken := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
 	if authToken == "" {
 		return s.sendErrorAndEnd(c, "No API key available")
@@ -46,25 +59,96 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 	}
 	testModelID = account.GetMappedModel(testModelID)
 
-	// 两层抑制：单个协议失败是"该协议不支持"的结论而非终止错误；内层探针的
-	// test_complete 也不能提前冒泡，否则前端会在矩阵跑完前就判定测试结束。
+	type result struct {
+		protocol string
+		err      error
+	}
+	results := make(chan result, len(cnProtocolProbeOrder))
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
+	for _, protocol := range cnProtocolProbeOrder {
+		s.sendEvent(c, TestEvent{Type: "protocol_probe", Protocol: protocol})
+		go func(protocol string) {
+			if protocol == APIProtocolResponses && !account.SupportsNativeCNResponses() {
+				results <- result{protocol: protocol, err: errors.New("provider has no native Responses endpoint")}
+				return
+			}
+			probeContext, _ := gin.CreateTestContext(httptest.NewRecorder())
+			probeContext.Request = c.Request.Clone(c.Request.Context())
+			probeContext.Set(accountTestSuppressErrorContextKey, true)
+			probeContext.Set(accountTestSuppressCompletionContextKey, true)
+			probeAccount := *account
+			probeAccount.modelMappingCache = nil
+			probeAccount.modelMappingCacheReady = false
+			probeAccount.modelMappingCacheCredentialsPtr = 0
+			probeAccount.modelMappingCacheRawPtr = 0
+			probeAccount.modelMappingCacheRawLen = 0
+			probeAccount.modelMappingCacheRawSig = 0
+			probeAccount.modelMappingCacheRuntimeVersion = 0
+			probeAccount.headerOverrideCache = nil
+			probeAccount.headerOverrideCacheReady = false
+			probeAccount.headerOverrideCacheCredentialsPtr = 0
+			probeAccount.headerOverrideCacheRawPtr = 0
+			probeAccount.headerOverrideCacheRawLen = 0
+			probeAccount.headerOverrideCacheRawSig = 0
+			probeService := *s
+			if !syncProtocols {
+				probeService.accountRepo = protocolProbeAccountRepository{AccountRepository: s.accountRepo}
+			}
+			var err error
+			switch protocol {
+			case APIProtocolAnthropic:
+				err = probeService.testCNProviderAdaptiveAnthropicConnection(probeContext, &probeAccount, testModelID, authToken)
+			case APIProtocolResponses:
+				err = probeService.testCNProviderAdaptiveResponsesConnection(probeContext, &probeAccount, testModelID, authToken)
+			default:
+				err = probeService.testCNProviderChatCompletionsConnection(probeContext, &probeAccount, modelID, prompt)
+			}
+			results <- result{protocol: protocol, err: err}
+		}(protocol)
+	}
+
+	passed := make([]string, 0, len(cnProtocolProbeOrder))
+	for range cnProtocolProbeOrder {
+		result := <-results
+		ok := result.err == nil
+		if ok {
+			passed = append(passed, result.protocol)
+		}
+		event := TestEvent{Type: "protocol_result", Protocol: result.protocol, ProtocolOK: forkBoolPtr(ok)}
+		if result.err != nil {
+			event.Error = result.err.Error()
+		}
+		s.sendEvent(c, event)
+	}
+
+	applied := false
+	if syncProtocols && len(passed) > 0 {
+		applied = s.applyProbedCNProtocols(c, account, passed)
+	}
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: len(passed) > 0, ProtocolApplied: applied})
+	return nil
+}
+
+func (s *AccountTestService) probeCNProviderProtocolsConnectionSequential(c *gin.Context, account *Account, modelID string, prompt string) error {
+	authToken := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
+	if authToken == "" {
+		return s.sendErrorAndEnd(c, "No API key available")
+	}
+	testModelID := strings.TrimSpace(modelID)
+	if testModelID == "" {
+		testModelID = openai.DefaultTestModel
+	}
+	testModelID = account.GetMappedModel(testModelID)
 	c.Set(accountTestSuppressErrorContextKey, true)
 	c.Set(accountTestSuppressCompletionContextKey, true)
 	defer func() {
 		c.Set(accountTestSuppressErrorContextKey, false)
 		c.Set(accountTestSuppressCompletionContextKey, false)
 	}()
-
 	passed := make([]string, 0, len(cnProtocolProbeOrder))
 	for _, protocol := range cnProtocolProbeOrder {
-		// 平台本身没有原生 Responses 端点（如 zhipu）：直接判定为不支持，不发请求。
 		if protocol == APIProtocolResponses && !account.SupportsNativeCNResponses() {
-			s.sendEvent(c, TestEvent{
-				Type:       "protocol_result",
-				Protocol:   protocol,
-				ProtocolOK: forkBoolPtr(false),
-				Error:      "provider has no native Responses endpoint",
-			})
+			s.sendEvent(c, TestEvent{Type: "protocol_result", Protocol: protocol, ProtocolOK: forkBoolPtr(false), Error: "provider has no native Responses endpoint"})
 			continue
 		}
 		s.sendEvent(c, TestEvent{Type: "protocol_probe", Protocol: protocol})
@@ -82,18 +166,23 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 		}
 		s.sendEvent(c, TestEvent{Type: "protocol_result", Protocol: protocol, ProtocolOK: forkBoolPtr(err == nil)})
 	}
-
-	applied := false
-	if len(passed) > 0 {
-		applied = s.applyProbedCNProtocols(c, account, passed)
-	}
-
-	// 先解除两层抑制再发最终事件，否则这条 test_complete 会被自己吞掉
-	// （defer 里的解除要等函数返回才执行，来不及）。
+	applied := len(passed) > 0 && s.applyProbedCNProtocols(c, account, passed)
 	c.Set(accountTestSuppressErrorContextKey, false)
 	c.Set(accountTestSuppressCompletionContextKey, false)
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: len(passed) > 0, ProtocolApplied: applied})
 	return nil
+}
+
+func isDeepseekDSGroupAccount(account *Account) bool {
+	if account == nil || account.Platform != PlatformDeepseek {
+		return false
+	}
+	for _, group := range account.Groups {
+		if group != nil && group.Name == "赛博羊毛-DS" {
+			return true
+		}
+	}
+	return false
 }
 
 // applyProbedCNProtocols 把探测通过的协议写回账号复选配置。
