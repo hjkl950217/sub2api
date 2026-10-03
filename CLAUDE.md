@@ -44,11 +44,11 @@ git add -f CLAUDE.md
   ```
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **125 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **132 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   注意：上面那条 grep 命令**不覆盖 `.github/` 下的 15 个锚点**（`.github` 是隐藏目录，`grep -r .` 默认跳过），
   核对总数时要把它一起算上：`grep -rn "FORK-ANCHOR:" .github/`。
 
-当前锚点全量清单（**125 个** = 源码目录 110 个 + `.github/` 15 个，合并上游后逐个确认还在、且只出现一次）：
+当前锚点全量清单（**132 个** = 源码目录 117 个 + `.github/` 15 个，合并上游后逐个确认还在、且只出现一次）：
 
 | 锚点 | 文件 |
 |---|---|
@@ -84,10 +84,12 @@ git add -f CLAUDE.md
 | `fork-api-protocols-responses-base-passthrough` | `backend/internal/service/openai_gateway_passthrough.go` |
 | `fork-api-protocols-responses-base-ws` | `backend/internal/service/openai_ws_forwarder_payload.go` |
 | `fork-api-protocols-ollama-responses-base` | `backend/internal/service/openai_gateway_ollama_cloud_max_tokens.go` |
-| `fork-api-protocols-test-routing` / `fork-api-protocols-test-matrix-routing` / `fork-api-protocols-test-suppress-error` / `fork-api-protocols-test-event-protocol` / `fork-api-protocols-test-sync-option` | `backend/internal/service/account_test_service.go` |
-| `fork-api-protocols-test-selected` | `backend/internal/service/account_test_service_cn_adaptive.go` |
+| `fork-api-protocols-test-routing` / `fork-api-protocols-test-matrix-routing` / `fork-api-protocols-test-suppress-error` / `fork-api-protocols-test-event-protocol` / `fork-api-protocols-test-sync-option` / `cn-test-prompt-chat` | `backend/internal/service/account_test_service.go` |
+| `fork-api-protocols-test-selected` / `cn-test-prompt-anthropic` / `cn-test-prompt-responses` | `backend/internal/service/account_test_service_cn_adaptive.go` |
 | `fork-api-protocols-billing-probe-base` | `backend/internal/service/upstream_billing_probe.go` |
-| `fork-api-protocols-test-sync-request` / `fork-api-protocols-test-sync-option-pass` | `backend/internal/handler/admin/account_handler.go` |
+| `fork-api-protocols-test-sync-request` / `fork-api-protocols-test-sync-option-pass` / `account-probed-protocols-update` | `backend/internal/handler/admin/account_handler.go` |
+| `account-probed-protocols-route` | `backend/internal/server/routes/admin.go` |
+| `account-probed-protocols-api` / `account-probed-protocols-api-export` | `frontend/src/api/admin/accounts.ts` |
 
 ### 2.1 `.github/workflows/release.yml`
 
@@ -377,6 +379,16 @@ chat_completions / anthropic / responses。OpenCode Go 平台**保持原单选 U
 同样让"全失败"的完成事件看起来像成功，断言与前端判定都改为按 `protocol_ok` / 非 true 处理。`boolPtr` 与
 本包 `ops_metrics_collector.go` 重名，新文件用 `forkBoolPtr`。`httpProtocolSyncUpstream` 的 `DoWithTLS`
 签名写错（用了 `any` 而非 `*tlsfingerprint.Profile`），已复用既有的 `httpUpstreamRecorder`。
+
+### 2.14 使用已有协议探测结果更新配置
+
+- 「更新支持协议」只提交本轮连接测试收到的 `protocol_result`，不重新请求上游，成功后弹窗保持打开。
+- 保存走 `PUT /api/v1/admin/accounts/:id/protocols`，不走通用账号更新入口，避免触发额外的 Responses 能力探测；服务端只接受国产供应商与有效协议名，兜底按 chat_completions > anthropic > responses 选取。
+- 国产供应商三协议连接测试统一发送：`我想使用你，你是什么模型呢？只回复我名字即可`。
+
+### 2.15 本地验证与真实环境验证
+
+本机没有线上账号数据，也无法访问真实上游；本地优先运行可行的单测和编译检查。若真实上游或线上数据是验收必要条件，不为此搭建临时模拟环境；经用户授权后直接推送到 fork，等待 GitHub Actions CI 通过，再部署到 NAS 做真实验证。本次实测结论以 CI 和 NAS 的实际结果为准。
 
 ## 3. 发版方式
 

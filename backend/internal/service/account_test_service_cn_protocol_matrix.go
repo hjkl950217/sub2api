@@ -19,9 +19,12 @@ import (
 	"strings"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/gin-gonic/gin"
 )
+
+const cnProviderConnectionTestPrompt = "我想使用你，你是什么模型呢？只回复我名字即可"
 
 // accountTestSuppressErrorContextKey 抑制探测过程中的 error 事件。
 // 协议矩阵要把每个协议的失败当作"该协议不支持"的正常结论继续往下测，
@@ -46,6 +49,7 @@ func (protocolProbeAccountRepository) SetRateLimited(context.Context, int64, tim
 
 // probeCNProviderProtocolsConnection 并发探测三个原生协议端点；仅显式同步时回写通过集合。
 func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, account *Account, modelID string, prompt string, syncProtocols bool) error {
+	prompt = cnProviderConnectionTestPrompt
 	if !isDeepseekDSGroupAccount(account) {
 		return s.probeCNProviderProtocolsConnectionSequential(c, account, modelID, prompt)
 	}
@@ -186,8 +190,41 @@ func isDeepseekDSGroupAccount(account *Account) bool {
 }
 
 // applyProbedCNProtocols 把探测通过的协议写回账号复选配置。
-// 返回是否真的落库成功；未落库时前端不应提示"已更新"。
 func (s *AccountTestService) applyProbedCNProtocols(c *gin.Context, account *Account, passed []string) bool {
+	if !setProbedCNProtocols(account, passed) || s.accountRepo == nil {
+		return false
+	}
+	if err := s.accountRepo.Update(c.Request.Context(), account); err != nil {
+		s.sendEvent(c, TestEvent{Type: "status", Text: "Failed to save probed protocols: " + err.Error()})
+		return false
+	}
+	return true
+}
+
+func (s *AccountTestService) UpdateProbedCNProtocols(ctx context.Context, accountID int64, passed []string) error {
+	if len(passed) == 0 {
+		return infraerrors.BadRequest("NO_PROBED_PROTOCOLS", "at least one passed protocol is required")
+	}
+	for _, protocol := range passed {
+		if !stringSliceContains(cnProtocolProbeOrder, protocol) {
+			return infraerrors.BadRequest("INVALID_PROBED_PROTOCOL", "unsupported protocol: "+protocol)
+		}
+	}
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	if !account.IsCNProvider() {
+		return infraerrors.BadRequest("INVALID_ACCOUNT_PLATFORM", "protocol sync is only supported for CN providers")
+	}
+	if !setProbedCNProtocols(account, passed) {
+		return infraerrors.BadRequest("NO_PROBED_PROTOCOLS", "at least one passed protocol is required")
+	}
+	return s.accountRepo.Update(ctx, account)
+}
+
+func setProbedCNProtocols(account *Account, passed []string) bool {
+	// 旧字段继续映射到 Chat 端点与当前兜底协议，兼容既有账号读取路径。
 	selected := make([]string, 0, len(cnProtocolProbeOrder))
 	for _, protocol := range cnProtocolProbeOrder {
 		if stringSliceContains(passed, protocol) {
@@ -204,21 +241,12 @@ func (s *AccountTestService) applyProbedCNProtocols(c *gin.Context, account *Acc
 	credentials[apiProtocolsCredentialKey] = selected
 	credentials[fallbackProtocolCredentialKey] = selected[0]
 	account.Credentials = credentials
-	// 旧字段与新字段保持同一契约：base_url 指向 chat_completions 端点（未勾选时
-	// 指向兜底协议端点），api_protocol 只在"仅勾选一个且它就是兜底"时写协议名。
 	if baseURL := account.GetCNProtocolBaseURL(APIProtocolChatCompletions); baseURL != "" {
 		credentials["base_url"] = baseURL
 	}
 	credentials["api_protocol"] = APIProtocolAdaptive
 	if len(selected) == 1 {
 		credentials["api_protocol"] = selected[0]
-	}
-	if s.accountRepo == nil {
-		return false
-	}
-	if err := s.accountRepo.Update(c.Request.Context(), account); err != nil {
-		s.sendEvent(c, TestEvent{Type: "status", Text: "Failed to save probed protocols: " + err.Error()})
-		return false
 	}
 	return true
 }

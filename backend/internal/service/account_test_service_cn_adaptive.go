@@ -108,6 +108,10 @@ func (s *AccountTestService) testCNProviderAdaptiveAnthropicConnection(c *gin.Co
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create adaptive Anthropic test payload")
 	}
+	// FORK-ANCHOR: cn-test-prompt-anthropic (二开：原生 Anthropic 测试使用统一提示词)
+	messages := payload["messages"].([]map[string]any)
+	content := messages[0]["content"].([]map[string]any)
+	content[0]["text"] = cnProviderConnectionTestPrompt
 	payloadBytes, _ := json.Marshal(payload)
 
 	s.sendEvent(c, TestEvent{Type: "status", Text: "正在通过原生 /v1/messages 测试自适应 Anthropic 端点"})
@@ -204,6 +208,10 @@ func (s *AccountTestService) testCNProviderAdaptiveResponsesConnection(c *gin.Co
 	apiURL := buildOpenAIResponsesURLForPlatform(account.Platform, baseURL)
 
 	payload := createOpenAITestPayload(testModelID, false)
+	// FORK-ANCHOR: cn-test-prompt-responses (二开：原生 Responses 测试使用统一提示词)
+	payload["input"] = []map[string]any{
+		{"role": "user", "content": []map[string]any{{"type": "input_text", "text": cnProviderConnectionTestPrompt}}},
+	}
 	// DeepSeek / Kimi native Responses endpoints are stateless and do not need
 	// the OpenAI probe's synthetic instructions.
 	delete(payload, "instructions")

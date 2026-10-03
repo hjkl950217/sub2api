@@ -243,6 +243,12 @@ export async function update(id: number, updates: UpdateAccountRequest): Promise
   return data
 }
 
+// FORK-ANCHOR: account-probed-protocols-api (二开：提交已有协议探测通过结果)
+export async function updateProbedProtocols(id: number, protocols: string[]): Promise<{ updated: boolean }> {
+  const { data } = await apiClient.put<{ updated: boolean }>(`/admin/accounts/${id}/protocols`, { protocols })
+  return data
+}
+
 export async function getGrokMediaEligibility(id: number): Promise<GrokMediaEligibilityState> {
   const { data } = await apiClient.get<GrokMediaEligibilityState>(
     `/admin/accounts/${id}/grok-media-eligibility`
@@ -1139,6 +1145,8 @@ export const accountsAPI = {
   create,
   duplicate,
   update,
+  // FORK-ANCHOR: account-probed-protocols-api-export (二开：导出探测结果保存接口)
+  updateProbedProtocols,
   getGrokMediaEligibility,
   updateGrokMediaEligibility,
   checkMixedChannelRisk,

@@ -2,8 +2,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountTestModal from '../AccountTestModal.vue'
 
-const { getAvailableModels, copyToClipboard, showSuccess, showError } = vi.hoisted(() => ({
+const { getAvailableModels, updateProbedProtocols, copyToClipboard, showSuccess, showError } = vi.hoisted(() => ({
   getAvailableModels: vi.fn(),
+  updateProbedProtocols: vi.fn(),
   copyToClipboard: vi.fn(),
   showSuccess: vi.fn(),
   showError: vi.fn()
@@ -17,7 +18,8 @@ vi.mock('@/stores/app', () => ({
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
-      getAvailableModels
+      getAvailableModels,
+      updateProbedProtocols
     }
   }
 }))
@@ -215,14 +217,13 @@ describe('AccountTestModal', () => {
     expect(openaiWrapper.find('[data-testid="sync-protocols-button"]').exists()).toBe(false)
   })
 
-  it('点击「更新支持协议」发送 sync_protocols，并按结果渲染逐协议结论', async () => {
+  it('点击「更新支持协议」只提交本轮通过结果，不重复测试且不关闭弹窗', async () => {
     global.fetch = vi.fn().mockResolvedValue(
       createStreamResponse([
-        'data: {"type":"protocol_probe","protocol":"chat_completions"}\n',
         'data: {"type":"protocol_result","protocol":"chat_completions","protocol_ok":true}\n',
-        'data: {"type":"protocol_probe","protocol":"anthropic"}\n',
         'data: {"type":"protocol_result","protocol":"anthropic","protocol_ok":false}\n',
-        'data: {"type":"test_complete","success":true,"protocol_applied":true}\n'
+        'data: {"type":"protocol_result","protocol":"responses","protocol_ok":true}\n',
+        'data: {"type":"test_complete","success":true}\n'
       ])
     ) as any
 
@@ -236,36 +237,30 @@ describe('AccountTestModal', () => {
     await wrapper.setProps({ show: true })
     await flushPromises()
 
+    ;(wrapper.vm as any).selectedModelId = 'deepseek-chat'
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
     await wrapper.get('[data-testid="sync-protocols-button"]').trigger('click')
     await flushPromises()
-    await flushPromises()
 
+    expect(updateProbedProtocols).toHaveBeenCalledWith(7, ['chat_completions', 'responses'])
     expect(global.fetch).toHaveBeenCalledTimes(1)
-    const [, request] = (global.fetch as any).mock.calls[0]
-    expect(JSON.parse(request.body)).toMatchObject({ sync_protocols: true })
-
-    // 逐协议结论面板：通过/未通过各一条
-    expect(wrapper.find('[data-testid="protocol-results"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="protocol-result-chat_completions"]').text()).toContain(
-      'admin.accounts.protocolProbePassed'
-    )
-    expect(wrapper.find('[data-testid="protocol-result-anthropic"]').text()).toContain(
-      'admin.accounts.protocolProbeFailed'
-    )
-
-    // 回写成功 → 通知外层刷新账号
+    const [, testRequest] = (global.fetch as any).mock.calls[0]
+    expect(JSON.parse(testRequest.body)).not.toHaveProperty('sync_protocols')
+    expect(wrapper.emitted('close')).toBeUndefined()
     expect(showSuccess).toHaveBeenCalledWith('admin.accounts.syncProtocolsSuccess')
     expect(wrapper.emitted('protocols-updated')).toHaveLength(1)
   })
 
-  it('三个协议都没通过时不刷新账号，并提示配置未改动', async () => {
+  it('三个协议都没通过时不更新账号，并提示配置未改动', async () => {
     global.fetch = vi.fn().mockResolvedValue(
       createStreamResponse([
         'data: {"type":"protocol_result","protocol":"chat_completions","protocol_ok":false}\n',
+        'data: {"type":"protocol_result","protocol":"anthropic","protocol_ok":false}\n',
+        'data: {"type":"protocol_result","protocol":"responses","protocol_ok":false}\n',
         'data: {"type":"test_complete"}\n'
       ])
     ) as any
-
     const wrapper = mountModal({
       id: 7,
       name: 'DeepSeek',
@@ -276,10 +271,13 @@ describe('AccountTestModal', () => {
     await wrapper.setProps({ show: true })
     await flushPromises()
 
+    ;(wrapper.vm as any).selectedModelId = 'deepseek-chat'
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
     await wrapper.get('[data-testid="sync-protocols-button"]').trigger('click')
     await flushPromises()
-    await flushPromises()
 
+    expect(updateProbedProtocols).not.toHaveBeenCalled()
     expect(showError).toHaveBeenCalledWith('admin.accounts.syncProtocolsNonePassed')
     expect(wrapper.emitted('protocols-updated')).toBeUndefined()
   })

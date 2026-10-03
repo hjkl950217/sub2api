@@ -6,6 +6,7 @@ package service
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -140,6 +141,16 @@ func protocolSyncTestService(account *Account, responses map[string]func() *http
 	}, upstream, repo
 }
 
+func protocolMatrixRequestBody(t *testing.T, request *http.Request) string {
+	t.Helper()
+	body, err := request.GetBody()
+	require.NoError(t, err)
+	defer body.Close()
+	payload, err := io.ReadAll(body)
+	require.NoError(t, err)
+	return string(payload)
+}
+
 // 语义：三个协议各测一次，测通的写回 api_protocols，兜底取 chat_completions 优先。
 func TestForkProtocolSyncMatrixAppliesPassedProtocols(t *testing.T) {
 	account := protocolSyncTestAccount(901, PlatformKimi, []any{
@@ -224,11 +235,29 @@ func TestForkDeepseekDSConnectionTestProbesAllProtocolsConcurrently(t *testing.T
 	require.NoError(t, err)
 	require.Len(t, upstream.requests, 3)
 	require.Equal(t, 3, upstream.maxActive, "三个协议请求应同时进行")
+	for _, request := range upstream.requests {
+		require.Contains(t, protocolMatrixRequestBody(t, request), cnProviderConnectionTestPrompt)
+	}
 	require.Nil(t, repo.updated, "普通连接测试不得写回协议配置")
 	require.Zero(t, repo.setErrorCalls, "单协议认证失败不得把账号状态改成 error")
 	require.Equal(t, 3, strings.Count(recorder.Body.String(), `"type":"protocol_result"`))
 	require.Contains(t, recorder.Body.String(), `"protocol":"anthropic","protocol_ok":false`)
 	require.NotContains(t, recorder.Body.String(), `"protocol_applied":true`)
+}
+
+func TestForkUpdateProbedCNProtocolsSavesResultsWithoutUpstreamRequests(t *testing.T) {
+	account := protocolSyncTestAccount(905, PlatformDeepseek, []any{APIProtocolAnthropic})
+	svc, upstream, repo := protocolSyncTestService(account, nil)
+
+	err := svc.UpdateProbedCNProtocols(context.Background(), account.ID, []string{
+		APIProtocolResponses, APIProtocolChatCompletions,
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, upstream.requests, "保存既有结果不得请求上游")
+	require.NotNil(t, repo.updated)
+	require.Equal(t, []string{APIProtocolChatCompletions, APIProtocolResponses}, repo.updated.Credentials["api_protocols"])
+	require.Equal(t, APIProtocolChatCompletions, repo.updated.Credentials["fallback_protocol"])
 }
 
 // 语义：平台没有原生 Responses 端点时跳过该协议，不发请求。

@@ -486,6 +486,10 @@ func (s *AccountTestService) testOpenCodeGoResponsesConnection(c *gin.Context, a
 }
 
 func (s *AccountTestService) testCNProviderChatCompletionsConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
+	// FORK-ANCHOR: cn-test-prompt-chat (二开：统一国产供应商 Chat 测试提示词)
+	if account.IsCNProvider() {
+		prompt = cnProviderConnectionTestPrompt
+	}
 	testModelID := strings.TrimSpace(modelID)
 	if testModelID == "" {
 		testModelID = openai.DefaultTestModel

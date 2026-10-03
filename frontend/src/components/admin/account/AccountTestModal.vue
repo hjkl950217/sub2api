@@ -347,17 +347,17 @@
           v-if="supportsProtocolSync"
           type="button"
           data-testid="sync-protocols-button"
-          :disabled="status === 'connecting'"
+          :disabled="status === 'connecting' || savingProtocols || protocolResults.length !== 3"
           :title="t('admin.accounts.syncProtocolsHint')"
           @click="startProtocolSync"
           :class="[
             'mr-auto flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all',
-            status === 'connecting'
+            status === 'connecting' || savingProtocols
               ? 'cursor-not-allowed bg-indigo-300 text-white'
               : 'bg-indigo-500 text-white hover:bg-indigo-600'
           ]"
         >
-          <Icon name="refresh" size="sm" :stroke-width="2" :class="status === 'connecting' ? 'animate-spin' : ''" />
+          <Icon name="refresh" size="sm" :stroke-width="2" :class="savingProtocols ? 'animate-spin' : ''" />
           <span>{{ t('admin.accounts.syncProtocols') }}</span>
         </button>
         <button
@@ -456,6 +456,7 @@ interface ProtocolProbeResult {
 }
 const protocolResults = ref<ProtocolProbeResult[]>([])
 const syncingProtocols = ref(false)
+const savingProtocols = ref(false)
 const protocolLabelKey = (protocol: string): string => {
   if (protocol === 'anthropic') return 'anthropic'
   if (protocol === 'responses') return 'responses'
@@ -737,8 +738,8 @@ const testModeSummary = computed(() => {
 })
 
 const canStartTest = computed(() => {
-  if (status.value === 'connecting') return false
-  // FORK-ANCHOR: test-modal-sync-no-model-required (二开：协议探测矩阵模式不依赖测试模型)
+  if (status.value === 'connecting' || savingProtocols.value) return false
+  // FORK-ANCHOR: test-modal-sync-no-model-required (二开：保留显式探测模式下无模型限制)
   if (syncingProtocols.value) return true
   if (isGrokAccount.value) {
     if (
@@ -892,10 +893,24 @@ const scrollToBottom = async () => {
   }
 }
 
-// FORK-ANCHOR: test-modal-sync-protocols-start (二开：「更新支持协议」入口，按探测结果回写勾选集合)
+// FORK-ANCHOR: test-modal-sync-protocols-start (二开：根据已有探测结果保存协议，不重测)
 const startProtocolSync = async () => {
-  if (!props.account || status.value === 'connecting') return
-  await startTest(true)
+  if (!props.account || status.value === 'connecting' || savingProtocols.value) return
+  const passed = protocolResults.value.filter((result) => result.success).map((result) => result.protocol)
+  if (passed.length === 0) {
+    appStore.showError(t('admin.accounts.syncProtocolsNonePassed'))
+    return
+  }
+  savingProtocols.value = true
+  try {
+    await adminAPI.accounts.updateProbedProtocols(props.account.id, passed)
+    appStore.showSuccess(t('admin.accounts.syncProtocolsSuccess'))
+    emit('protocols-updated')
+  } catch (error: unknown) {
+    appStore.showError(error instanceof Error ? error.message : t('common.unknownError'))
+  } finally {
+    savingProtocols.value = false
+  }
 }
 
 const startTest = async (syncProtocols = false) => {

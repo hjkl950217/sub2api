@@ -1260,6 +1260,33 @@ func (h *AccountHandler) Delete(c *gin.Context) {
 	response.Success(c, gin.H{"message": "Account deleted successfully"})
 }
 
+type UpdateProbedProtocolsRequest struct {
+	Protocols []string `json:"protocols" binding:"required,min=1"`
+}
+
+// FORK-ANCHOR: account-probed-protocols-update (二开：仅保存已有探测结果，不发起连接测试)
+func (h *AccountHandler) UpdateProbedProtocols(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+	var req UpdateProbedProtocolsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if h.accountTestService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Account test service unavailable")
+		return
+	}
+	if err := h.accountTestService.UpdateProbedCNProtocols(c.Request.Context(), accountID, req.Protocols); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"updated": true})
+}
+
 // TestAccountRequest represents the request body for testing an account
 type TestAccountRequest struct {
 	ModelID string `json:"model_id"`
