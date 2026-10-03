@@ -42,7 +42,8 @@ func (s *OpenAIGatewayService) buildOpenAIResponsesWSURL(account *Account) (stri
 		}
 	case AccountTypeAPIKey:
 		baseURL := account.GetOpenAIBaseURL()
-		if account.UsesNativeCNResponses() && account.IsAdaptiveAPIProtocol() {
+		// FORK-ANCHOR: fork-api-protocols-responses-base-ws (二开：复选模式下原生 Responses 取 responses 端点地址)
+		if account.UsesNativeCNResponses() && (account.IsAdaptiveAPIProtocol() || account.HasExplicitAPIProtocols()) {
 			baseURL = account.GetCNProtocolBaseURL(APIProtocolResponses)
 		}
 		if baseURL == "" {

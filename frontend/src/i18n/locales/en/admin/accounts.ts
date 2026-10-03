@@ -131,6 +131,11 @@ export default {
           anthropicDesc: 'Native passthrough to the provider’s Anthropic endpoint — ideal for Claude Code.',
           responses: 'Responses',
           responsesDesc: 'Provider’s native Responses endpoint — ideal for Codex.',
+          // FORK-ANCHOR: i18n-cn-fallback-protocol-en (multi-select protocols and fallback relay copy)
+          protocolsHint: 'Select every upstream protocol this site actually supports (multi-select).',
+          fallback: 'Fallback protocol',
+          fallbackHint: 'Used when an inbound request protocol is not among the selected protocols above.',
+          selectAtLeastOne: 'Select at least one protocol',
         },
         zhipuTeam: {
           title: 'Team Plan Organization / Project ID',

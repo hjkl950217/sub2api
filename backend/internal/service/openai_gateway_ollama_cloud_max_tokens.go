@@ -42,7 +42,8 @@ func clampOllamaCloudUpstreamMaxTokens(account *Account, body []byte) []byte {
 // base_url，取值与 buildUpstreamRequest 一致：adaptive 原生 CN 账号用 api_base_urls
 // 的 responses 地址，其余用 GetOpenAIBaseURL。
 func ollamaCloudResponsesUpstreamBaseURL(account *Account) string {
-	if account.UsesNativeCNResponses() && account.IsAdaptiveAPIProtocol() {
+	// FORK-ANCHOR: fork-api-protocols-ollama-responses-base (二开：复选模式下原生 Responses 取 responses 端点地址)
+	if account.UsesNativeCNResponses() && (account.IsAdaptiveAPIProtocol() || account.HasExplicitAPIProtocols()) {
 		return account.GetCNProtocolBaseURL(APIProtocolResponses)
 	}
 	return account.GetOpenAIBaseURL()

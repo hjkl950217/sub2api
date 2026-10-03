@@ -28,7 +28,8 @@
 
       <!-- API Key fields (only for apikey type) -->
       <div v-if="account.type === 'apikey'" class="space-y-4">
-        <div v-if="!isCNApiKeyAccount || editApiProtocol !== 'adaptive'">
+        <!-- FORK-ANCHOR: edit-cn-base-url-single (CN 平台走端点输入区，opencode_go 非自适应档仍用单 base_url) -->
+        <div v-if="!isCNApiKeyAccount || (isOpenCodeGoPlatform && editApiProtocol !== 'adaptive')">
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
           <input
             v-model="editBaseUrl"
@@ -62,14 +63,30 @@
             @select="onCnPresetSelect"
           />
         </div>
+        <!-- FORK-ANCHOR: edit-cn-protocol-endpoints (CN 平台端点输入区只渲染已勾选协议) -->
         <div v-else>
           <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.endpoints') }}</label>
           <div class="mt-2 space-y-3">
-            <div v-for="item in editAdaptiveProtocolOptions" :key="item.value">
+            <div v-for="item in editEndpointProtocolOptions" :key="item.value">
               <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
                 {{ t(`admin.accounts.cnProviders.apiProtocol.${item.labelKey}`) }}
               </label>
-              <input v-model="editAdaptiveBaseUrls[item.value]" type="text" class="input" />
+              <input
+                v-model="editAdaptiveBaseUrls[item.value]"
+                type="text"
+                class="input"
+                :data-testid="`cn-adaptive-base-url-${item.value}`"
+              />
+              <!-- FORK-ANCHOR: edit-cn-endpoint-presets (已勾选协议端点保留快捷预设填充) -->
+              <CnBaseUrlPresets
+                v-if="isEditCNPlatform"
+                class="mt-2"
+                :platform="cnPresetPlatform"
+                :mode="editAccountMode"
+                :protocol="item.value"
+                :current-url="editAdaptiveBaseUrls[item.value]"
+                @select="onCnPresetSelect"
+              />
             </div>
           </div>
           <p v-if="!cnSupportsNativeResponses(account.platform)" class="input-hint">
@@ -151,24 +168,64 @@
         </div>
         <!-- API Protocol Selection (CN providers / OpenCode) -->
         <div v-if="isCNApiKeyAccount">
-          <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.title') }}</label>
-          <div class="mt-2 flex flex-wrap gap-2">
-            <button
-              v-for="opt in cnProtocolOptions"
-              :key="opt.value"
-              type="button"
-              :class="[
-                'rounded-lg border-2 px-3 py-1.5 text-xs transition-all',
-                editApiProtocol === opt.value
-                  ? 'border-primary-500 bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
-                  : 'border-gray-200 text-gray-700 hover:border-gray-400 dark:border-dark-600 dark:text-gray-300 dark:hover:border-gray-600'
-              ]"
-              @click="editApiProtocol = opt.value"
-            >
-              {{ t(`admin.accounts.cnProviders.apiProtocol.${opt.labelKey}`) }}
-            </button>
-          </div>
-          <p class="input-hint">{{ t(`admin.accounts.cnProviders.apiProtocol.${cnProtocolDescKey}Desc`) }}</p>
+          <!-- FORK-ANCHOR: edit-cn-protocol-multiselect (CN 平台协议改为多选卡片 + 兜底转发协议下拉) -->
+          <template v-if="isEditCNPlatform">
+            <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.title') }}</label>
+            <div class="mt-2 flex flex-wrap gap-2">
+              <button
+                v-for="opt in cnNativeProtocolOptions"
+                :key="opt.value"
+                type="button"
+                :data-testid="`cn-api-protocol-${opt.value}`"
+                :aria-pressed="editApiProtocols.includes(opt.value)"
+                :class="[
+                  'rounded-lg border-2 px-3 py-1.5 text-xs transition-all',
+                  editApiProtocols.includes(opt.value)
+                    ? 'border-primary-500 bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                    : 'border-gray-200 text-gray-700 hover:border-gray-400 dark:border-dark-600 dark:text-gray-300 dark:hover:border-gray-600'
+                ]"
+                @click="toggleEditCnProtocol(opt.value)"
+              >
+                {{ editApiProtocols.includes(opt.value) ? '✓ ' : '' }}{{ t(`admin.accounts.cnProviders.apiProtocol.${opt.labelKey}`) }}
+              </button>
+            </div>
+            <p class="input-hint">{{ t('admin.accounts.cnProviders.apiProtocol.protocolsHint') }}</p>
+            <div class="mt-3">
+              <label class="input-label" for="edit-cn-fallback-protocol-select">{{ t('admin.accounts.cnProviders.apiProtocol.fallback') }}</label>
+              <select
+                id="edit-cn-fallback-protocol-select"
+                v-model="editFallbackProtocol"
+                data-testid="cn-fallback-protocol"
+                class="input"
+              >
+                <option v-for="value in editApiProtocols" :key="value" :value="value">
+                  {{ t(`admin.accounts.cnProviders.apiProtocol.${cnProtocolLabelKey(value)}`) }}
+                </option>
+              </select>
+              <p class="input-hint">{{ t('admin.accounts.cnProviders.apiProtocol.fallbackHint') }}</p>
+            </div>
+          </template>
+          <!-- FORK-ANCHOR: edit-opencode-protocol-single (opencode_go 沿用原单选 UI，行为不变) -->
+          <template v-else>
+            <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.title') }}</label>
+            <div class="mt-2 flex flex-wrap gap-2">
+              <button
+                v-for="opt in cnProtocolOptions"
+                :key="opt.value"
+                type="button"
+                :class="[
+                  'rounded-lg border-2 px-3 py-1.5 text-xs transition-all',
+                  editApiProtocol === opt.value
+                    ? 'border-primary-500 bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                    : 'border-gray-200 text-gray-700 hover:border-gray-400 dark:border-dark-600 dark:text-gray-300 dark:hover:border-gray-600'
+                ]"
+                @click="editApiProtocol = opt.value"
+              >
+                {{ t(`admin.accounts.cnProviders.apiProtocol.${opt.labelKey}`) }}
+              </button>
+            </div>
+            <p class="input-hint">{{ t(`admin.accounts.cnProviders.apiProtocol.${cnProtocolDescKey}Desc`) }}</p>
+          </template>
         </div>
         <OpenCodeGoProtocolRulesEditor
           v-if="account.platform === 'opencode_go' && editApiProtocol === 'adaptive'"
@@ -3158,10 +3215,16 @@ import {
   isHeaderOverrideCapable,
   splitHeaderOverridesObject,
   validateHeaderOverrideRows,
+  cnProtocolsFromLegacy,
   cnSupportsNativeResponses,
+  CN_API_PROTOCOLS,
   defaultCNAdaptiveBaseUrls,
   defaultCNBaseUrl,
+  defaultFallbackProtocol,
   isCNProviderPlatform,
+  isCnNativeProtocol,
+  legacyProtocolFromSelection,
+  normalizeCnProtocols,
   HEADER_OVERRIDE_ENABLED_CREDENTIAL_KEY,
   HEADER_OVERRIDES_CREDENTIAL_KEY,
   type CnAccountMode,
@@ -3375,6 +3438,11 @@ const adaptivePresetPlatform = computed<CnProviderPlatform | 'opencode_go'>(() =
   return cnPresetPlatform.value
 })
 const editApiProtocol = ref<CnApiProtocol>('adaptive')
+// FORK-ANCHOR: edit-cn-protocol-state (CN 平台协议多选 + 兜底转发协议状态)
+const editApiProtocols = ref<CnNativeApiProtocol[]>([])
+const editFallbackProtocol = ref<CnNativeApiProtocol | ''>('')
+const isEditCNPlatform = computed(() => isCNProviderPlatform(props.account?.platform ?? ''))
+const isOpenCodeGoPlatform = computed(() => props.account?.platform === 'opencode_go')
 const editOpenCodeGoProtocolRules = ref<OpenCodeGoProtocolRule[]>(cloneOpenCodeGoProtocolRules())
 const editAccountMode = ref<CnAccountMode>('payg')
 const editOpenCodeAccountMode = ref<OpenCodeAccountMode>('go')
@@ -3425,8 +3493,42 @@ const editAdaptiveProtocolOptions = computed<Array<{ value: CnNativeApiProtocol;
   if (cnSupportsNativeResponses(props.account?.platform ?? '')) opts.push({ value: 'responses', labelKey: 'responses' })
   return opts
 })
+// FORK-ANCHOR: edit-cn-protocol-multiselect-computed (多选卡片/端点输入/兜底选项派生)
+const cnNativeProtocolOptions = computed<Array<{ value: CnNativeApiProtocol; labelKey: string }>>(() =>
+  editAdaptiveProtocolOptions.value
+)
+// 端点输入区：CN 平台只渲染已勾选协议；
+// opencode_go 没有多选状态，仍渲染全部支持的原生协议端点（原行为）。
+const editEndpointProtocolOptions = computed(() =>
+  isEditCNPlatform.value
+    ? editAdaptiveProtocolOptions.value.filter(item => editApiProtocols.value.includes(item.value))
+    : editAdaptiveProtocolOptions.value
+)
+function cnProtocolLabelKey(protocol: CnNativeApiProtocol): string {
+  return editAdaptiveProtocolOptions.value.find(item => item.value === protocol)?.labelKey ?? 'chatCompletions'
+}
+// 兜底协议必须在已勾选集合内；勾选变化导致失配时回落到优先顺序第一个。
+function ensureEditFallbackProtocol(): void {
+  if (!editApiProtocols.value.includes(editFallbackProtocol.value as CnNativeApiProtocol)) {
+    editFallbackProtocol.value = defaultFallbackProtocol(editApiProtocols.value)
+  }
+}
+// 至少保留一个勾选：取消最后一个勾选时忽略该操作。
+function toggleEditCnProtocol(protocol: CnNativeApiProtocol): void {
+  if (editApiProtocols.value.includes(protocol)) {
+    if (editApiProtocols.value.length <= 1) return
+    editApiProtocols.value = editApiProtocols.value.filter(item => item !== protocol)
+  } else {
+    editApiProtocols.value = [...editApiProtocols.value, protocol].sort(
+      (a, b) => CN_API_PROTOCOLS.indexOf(a) - CN_API_PROTOCOLS.indexOf(b)
+    )
+  }
+  ensureEditFallbackProtocol()
+}
 watch(editApiProtocol, (protocol, previousProtocol) => {
   if (!isCNApiKeyAccount.value || syncingForm.value) return
+  // FORK-ANCHOR: edit-cn-protocol-watch-skip (CN 平台不再用 editApiProtocol 驱动端点输入区)
+  if (isEditCNPlatform.value) return
   if (protocol === 'adaptive') {
     const defaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, currentOpenCodeOrCNMode())
     for (const item of editAdaptiveProtocolOptions.value) {
@@ -3462,7 +3564,10 @@ watch(editAccountMode, (mode, previousMode) => {
         editAdaptiveBaseUrls.value[item.value] = nextDefaults[item.value]
       }
     }
-    editBaseUrl.value = editAdaptiveBaseUrls.value.chat_completions
+    // FORK-ANCHOR: edit-cn-mode-watch-fallback-base (CN 平台 base_url 取兜底协议端点)
+    editBaseUrl.value = isEditCNPlatform.value
+      ? (editAdaptiveBaseUrls.value[editFallbackProtocol.value as CnNativeApiProtocol] || editBaseUrl.value)
+      : editAdaptiveBaseUrls.value.chat_completions
     return
   }
   editBaseUrl.value = defaultCNBaseUrl(props.account!.platform, mode, editApiProtocol.value)
@@ -3494,6 +3599,17 @@ function onCnPresetSelect(preset: { mode: CnAccountMode; protocol: CnApiProtocol
   editAccountMode.value = preset.mode
   editApiProtocol.value = preset.protocol
   editBaseUrl.value = preset.url
+  // FORK-ANCHOR: edit-cn-preset-sync-protocols (快捷预设同步到多选状态与端点)
+  if (isEditCNPlatform.value && isCnNativeProtocol(preset.protocol)) {
+    if (!editApiProtocols.value.includes(preset.protocol)) {
+      editApiProtocols.value = normalizeCnProtocols(
+        [...editApiProtocols.value, preset.protocol],
+        props.account?.platform ?? ''
+      )
+    }
+    editAdaptiveBaseUrls.value[preset.protocol] = preset.url
+    editFallbackProtocol.value = preset.protocol
+  }
 }
 // Bedrock credentials
 const editBedrockAccessKeyId = ref('')
@@ -3999,6 +4115,14 @@ const defaultBaseUrl = computed(() => {
     props.account?.platform === 'deepseek' ||
     props.account?.platform === 'opencode_go'
   ) {
+    // FORK-ANCHOR: edit-cn-default-base-url-fallback (CN 平台默认 base_url 取兜底协议端点)
+    if (isEditCNPlatform.value) {
+      return defaultCNBaseUrl(
+        props.account.platform,
+        currentOpenCodeOrCNMode(),
+        (editFallbackProtocol.value || 'chat_completions') as CnApiProtocol
+      )
+    }
     return defaultCNBaseUrl(props.account.platform, currentOpenCodeOrCNMode(), editApiProtocol.value)
   }
   return 'https://api.anthropic.com'
@@ -4391,6 +4515,17 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       if (!cnSupportsNativeResponses(newAccount.platform) && editApiProtocol.value === 'responses') {
         editApiProtocol.value = 'chat_completions'
       }
+      // FORK-ANCHOR: edit-cn-protocol-backfill (按读取规则回填勾选协议与兜底协议)
+      if (isCNProviderPlatform(newAccount.platform)) {
+        const storedProtocols = normalizeCnProtocols(credentials.api_protocols, newAccount.platform)
+        editApiProtocols.value = storedProtocols.length > 0
+          ? storedProtocols
+          : cnProtocolsFromLegacy(newAccount.platform, credentials.api_protocol)
+        const storedFallback = credentials.fallback_protocol
+        editFallbackProtocol.value = editApiProtocols.value.includes(storedFallback as CnNativeApiProtocol)
+          ? (storedFallback as CnNativeApiProtocol)
+          : defaultFallbackProtocol(editApiProtocols.value)
+      }
       const adaptiveDefaults = defaultCNAdaptiveBaseUrls(newAccount.platform, currentOpenCodeOrCNMode())
       const storedBaseUrls = (credentials.api_base_urls as Record<string, unknown> | undefined) || {}
       const legacyBaseUrl = typeof credentials.base_url === 'string' ? credentials.base_url.trim() : ''
@@ -4444,10 +4579,21 @@ const syncFormFromAccount = (newAccount: Account | null) => {
                 newAccount.platform === 'zhipu' ||
                 newAccount.platform === 'deepseek' ||
                 newAccount.platform === 'opencode_go'
-              ? defaultCNBaseUrl(newAccount.platform, currentOpenCodeOrCNMode(), editApiProtocol.value)
+              // FORK-ANCHOR: edit-cn-platform-default-url-fallback (CN 平台回落 base_url 取兜底协议端点)
+              ? defaultCNBaseUrl(
+                  newAccount.platform,
+                  currentOpenCodeOrCNMode(),
+                  (isCNProviderPlatform(newAccount.platform) && editFallbackProtocol.value
+                    ? editFallbackProtocol.value
+                    : editApiProtocol.value) as CnApiProtocol
+                )
               : 'https://api.anthropic.com'
+    // FORK-ANCHOR: edit-cn-backfill-base-url (CN 平台回填 base_url 取兜底协议端点)
     editBaseUrl.value = isCNApiKeyAccount.value && editApiProtocol.value === 'adaptive'
-      ? editAdaptiveBaseUrls.value.chat_completions
+      ? (isEditCNPlatform.value
+          ? (editAdaptiveBaseUrls.value[editFallbackProtocol.value as CnNativeApiProtocol] ||
+              editAdaptiveBaseUrls.value.chat_completions)
+          : editAdaptiveBaseUrls.value.chat_completions)
       : (credentials.base_url as string) || platformDefaultUrl
 
     // Load model mappings and detect mode
@@ -5179,7 +5325,31 @@ const handleSubmit = async () => {
       if (isCNApiKeyAccount.value) {
         newCredentials.account_mode = currentOpenCodeOrCNMode()
         newCredentials.api_protocol = editApiProtocol.value
-        if (editApiProtocol.value === 'adaptive') {
+        // FORK-ANCHOR: edit-cn-protocol-credentials (按字段契约写入 api_protocols/fallback_protocol/api_base_urls/base_url)
+        if (isEditCNPlatform.value) {
+          // 兜底：勾选集合为空（理论上不会发生）时回落到旧字段映射，保证 api_protocols 非空。
+          const normalizedProtocols = normalizeCnProtocols(editApiProtocols.value, props.account.platform)
+          const selectedProtocols = normalizedProtocols.length > 0
+            ? normalizedProtocols
+            : cnProtocolsFromLegacy(props.account.platform, editApiProtocol.value)
+          const selectedFallback = (selectedProtocols.includes(editFallbackProtocol.value as CnNativeApiProtocol)
+            ? editFallbackProtocol.value
+            : defaultFallbackProtocol(selectedProtocols)) as CnNativeApiProtocol | ''
+          const defaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, currentOpenCodeOrCNMode())
+          const protocolBaseUrls: Record<string, string> = {}
+          for (const protocol of selectedProtocols) {
+            protocolBaseUrls[protocol] = (
+              editAdaptiveBaseUrls.value[protocol] || defaults[protocol]
+            ).trim()
+          }
+          newCredentials.api_protocols = selectedProtocols
+          newCredentials.fallback_protocol = selectedFallback
+          newCredentials.api_base_urls = protocolBaseUrls
+          newCredentials.base_url = protocolBaseUrls.chat_completions ||
+            protocolBaseUrls[selectedFallback as CnNativeApiProtocol] ||
+            newBaseUrl
+          newCredentials.api_protocol = legacyProtocolFromSelection(selectedProtocols, selectedFallback)
+        } else if (editApiProtocol.value === 'adaptive') {
           const defaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, currentOpenCodeOrCNMode())
           const protocolBaseUrls: Record<string, string> = {}
           for (const item of editAdaptiveProtocolOptions.value) {

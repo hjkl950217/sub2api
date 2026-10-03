@@ -1356,9 +1356,16 @@ func (a *Account) GetOpenAIBaseURL() string {
 	if !a.IsOpenAI() && !a.IsCNProvider() && !a.IsOpenCodeGo() {
 		return ""
 	}
-	if a.IsMultiProtocolAPIKey() && a.IsAdaptiveAPIProtocol() {
+	// FORK-ANCHOR: fork-api-protocols-openai-base-url (二开：复选模式取 chat_completions 端点，未勾选则取兜底协议端点)
+	if a.IsMultiProtocolAPIKey() && (a.IsAdaptiveAPIProtocol() || a.HasExplicitAPIProtocols()) {
+		target := APIProtocolChatCompletions
+		if a.HasExplicitAPIProtocols() && !a.SupportsAPIProtocol(APIProtocolChatCompletions) {
+			if fallback := a.GetFallbackAPIProtocol(); fallback != "" {
+				target = fallback
+			}
+		}
 		if baseURLs, ok := a.Credentials["api_base_urls"].(map[string]any); ok {
-			if baseURL, ok := baseURLs[APIProtocolChatCompletions].(string); ok && strings.TrimSpace(baseURL) != "" {
+			if baseURL, ok := baseURLs[target].(string); ok && strings.TrimSpace(baseURL) != "" {
 				return strings.TrimSpace(baseURL)
 			}
 		}
@@ -1450,11 +1457,146 @@ func (a *Account) SupportsNativeCNResponses() bool {
 	}
 }
 
+// FORK-ANCHOR: fork-api-protocols-parse (二开：协议复选 + 兜底转发协议解析)
+// 二开新增两个凭据字段，与旧的 api_protocol 四选一正交：
+//   credentials["api_protocols"]       []string 该站实际支持的上游协议（复选，非空）
+//   credentials["fallback_protocol"]   string   入站协议不在勾选集合内时的兜底转发协议
+// 未配置 api_protocols 时下列方法一律返回"未配置"语义，调用方继续走旧的
+// api_protocol 逻辑，保证旧账号行为零变化。
+const (
+	apiProtocolsCredentialKey     = "api_protocols"
+	fallbackProtocolCredentialKey = "fallback_protocol"
+)
+
+// isNativeAPIProtocol 报告字符串是否为三个原生上游协议之一（不含 adaptive）。
+func isNativeAPIProtocol(protocol string) bool {
+	switch protocol {
+	case APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses:
+		return true
+	default:
+		return false
+	}
+}
+
+// protocolStringsFromAny 把凭据里的协议集合解析成字符串切片，兼容
+// []string / []any / "a,b" 三种落库形态。
+func protocolStringsFromAny(raw any) []string {
+	switch v := raw.(type) {
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = append(out, strings.TrimSpace(s))
+			}
+		}
+		return out
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return nil
+		}
+		parts := strings.Split(v, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if t := strings.TrimSpace(p); t != "" {
+				out = append(out, t)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// GetSelectedAPIProtocols 返回协议复选勾选的协议，按固定顺序
+// chat_completions > anthropic > responses 去重输出；未配置、全部非法或该平台
+// 不支持 responses 时返回 nil，表示"未启用复选，沿用旧 api_protocol"。
+func (a *Account) GetSelectedAPIProtocols() []string {
+	if a == nil || !a.IsMultiProtocolAPIKey() {
+		return nil
+	}
+	raw, ok := a.Credentials[apiProtocolsCredentialKey]
+	if !ok {
+		return nil
+	}
+	declared := protocolStringsFromAny(raw)
+	if len(declared) == 0 {
+		return nil
+	}
+	out := make([]string, 0, 3)
+	for _, candidate := range []string{APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses} {
+		if !stringSliceContains(declared, candidate) {
+			continue
+		}
+		if candidate == APIProtocolResponses && !a.SupportsNativeCNResponses() {
+			continue
+		}
+		out = append(out, candidate)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// HasExplicitAPIProtocols 报告账号是否使用二开的协议复选配置。
+func (a *Account) HasExplicitAPIProtocols() bool {
+	return len(a.GetSelectedAPIProtocols()) > 0
+}
+
+// GetFallbackAPIProtocol 返回兜底转发协议。必须落在勾选集合内，否则回落勾选
+// 集合中 chat_completions > anthropic > responses 的第一个。
+func (a *Account) GetFallbackAPIProtocol() string {
+	protocols := a.GetSelectedAPIProtocols()
+	if len(protocols) == 0 {
+		return ""
+	}
+	want := strings.TrimSpace(a.GetCredential(fallbackProtocolCredentialKey))
+	if isNativeAPIProtocol(want) && stringSliceContains(protocols, want) {
+		return want
+	}
+	for _, candidate := range []string{APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses} {
+		if stringSliceContains(protocols, candidate) {
+			return candidate
+		}
+	}
+	return protocols[0]
+}
+
+// SupportsAPIProtocol 报告账号是否声明支持该上游协议。未启用复选时恒为 true，
+// 保持旧的"协议可任意配置"语义。
+func (a *Account) SupportsAPIProtocol(protocol string) bool {
+	protocols := a.GetSelectedAPIProtocols()
+	if len(protocols) == 0 {
+		return true
+	}
+	return stringSliceContains(protocols, protocol)
+}
+
+// ResolveAPIProtocolForInbound 把入站协议解析为实际出站协议：入站协议在勾选
+// 集合内则零转换直通，否则改用兜底转发协议。未启用复选时返回空串，调用方
+// 继续走旧的四选一逻辑。
+func (a *Account) ResolveAPIProtocolForInbound(inbound string) string {
+	protocols := a.GetSelectedAPIProtocols()
+	if len(protocols) == 0 {
+		return ""
+	}
+	if stringSliceContains(protocols, inbound) {
+		return inbound
+	}
+	return a.GetFallbackAPIProtocol()
+}
+
 // UsesNativeCNResponses 报告当前账号是否应按原生 Responses 协议转发
-// （显式 responses，或 adaptive 且平台具备原生端点）。
+// （显式 responses，或 adaptive 且平台具备原生端点；二开复选时看 responses 是否在勾选集合内）。
 func (a *Account) UsesNativeCNResponses() bool {
 	if a == nil || !a.SupportsNativeCNResponses() {
 		return false
+	}
+	// FORK-ANCHOR: fork-api-protocols-native-responses (二开：复选集合决定是否用原生 Responses)
+	if a.HasExplicitAPIProtocols() {
+		return a.SupportsAPIProtocol(APIProtocolResponses)
 	}
 	switch a.GetAPIProtocol() {
 	case APIProtocolResponses, APIProtocolAdaptive:
@@ -1475,6 +1617,25 @@ func (a *Account) IsAdaptiveAPIProtocol() bool {
 func (a *Account) GetCNProtocolBaseURL(protocol string) string {
 	if a == nil || !a.IsMultiProtocolAPIKey() {
 		return ""
+	}
+	// FORK-ANCHOR: fork-api-protocols-cn-base-url (二开：复选模式下未勾选协议的端点请求改用兜底协议地址)
+	if a.HasExplicitAPIProtocols() {
+		if !a.SupportsAPIProtocol(protocol) {
+			if fallback := a.GetFallbackAPIProtocol(); fallback != "" {
+				protocol = fallback
+			}
+		}
+		if baseURLs, ok := a.Credentials["api_base_urls"].(map[string]any); ok {
+			if baseURL, ok := baseURLs[protocol].(string); ok && strings.TrimSpace(baseURL) != "" {
+				return strings.TrimSpace(baseURL)
+			}
+		}
+		if protocol == APIProtocolChatCompletions {
+			if baseURL := strings.TrimSpace(a.GetCredential("base_url")); baseURL != "" {
+				return baseURL
+			}
+		}
+		return a.defaultCNProtocolBaseURL(protocol)
 	}
 	if a.IsAdaptiveAPIProtocol() {
 		if baseURLs, ok := a.Credentials["api_base_urls"].(map[string]any); ok {
@@ -1542,7 +1703,17 @@ func (a *Account) IsAnthropicProtocol() bool {
 // （上游路径为 {base}/v1/messages）。优先取凭证 base_url，缺失时按
 // 供应商 × 接入模式返回默认端点。非 Anthropic 协议账号返回空串。
 func (a *Account) GetAnthropicProtocolBaseURL() string {
-	if a == nil || (!a.IsAnthropicProtocol() && !a.IsAdaptiveAPIProtocol()) {
+	if a == nil {
+		return ""
+	}
+	// FORK-ANCHOR: fork-api-protocols-anthropic-base (二开：复选模式按勾选集合决定 Anthropic 端点是否可用)
+	if a.HasExplicitAPIProtocols() {
+		if !a.SupportsAPIProtocol(APIProtocolAnthropic) {
+			return ""
+		}
+		return a.GetCNProtocolBaseURL(APIProtocolAnthropic)
+	}
+	if !a.IsAnthropicProtocol() && !a.IsAdaptiveAPIProtocol() {
 		return ""
 	}
 	if a.IsAdaptiveAPIProtocol() {
@@ -1578,7 +1749,17 @@ func (a *Account) GetAnthropicProtocolBaseURL() string {
 // 端点，不能拿来拼 OpenAI 路径，此时返回该供应商 × 模式的 Chat Completions
 // 默认 base（模型同步等协议族共用路径仍可用）。
 func (a *Account) GetOpenAIFormatBaseURL() string {
-	if a == nil || !a.IsAnthropicProtocol() {
+	if a == nil {
+		return ""
+	}
+	// FORK-ANCHOR: fork-api-protocols-openai-format-base (二开：复选模式未勾选 CC 时回退平台默认 CC 地址)
+	if a.HasExplicitAPIProtocols() {
+		if a.SupportsAPIProtocol(APIProtocolChatCompletions) {
+			return a.GetOpenAIBaseURL()
+		}
+		return a.defaultCNProtocolBaseURL(APIProtocolChatCompletions)
+	}
+	if !a.IsAnthropicProtocol() {
 		return a.GetOpenAIBaseURL()
 	}
 	switch a.Platform {

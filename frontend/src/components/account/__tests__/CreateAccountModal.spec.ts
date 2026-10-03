@@ -445,6 +445,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(probeUpstreamBillingMock).not.toHaveBeenCalled()
   })
 
+  // FORK-ANCHOR: test-create-opencode-untouched (opencode_go 仍走原单选 adaptive UI，契约不变)
   it('submits OpenCode Zen default protocol rules with adaptive endpoints', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenCode')
@@ -472,6 +473,17 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
         { pattern: 'qwen*', protocol: 'anthropic' }
       ]
     })
+    // opencode_go 不受 CN 多选影响：不写 api_protocols / fallback_protocol
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).not.toHaveProperty('api_protocols')
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).not.toHaveProperty('fallback_protocol')
+    expect(wrapper.find('[data-testid="cn-fallback-protocol"]').exists()).toBe(false)
+    // 仍渲染全部原生协议端点输入（opencode_go 没有多选状态，保持原 UI）
+    expect(wrapper.find('[data-testid="cn-adaptive-base-url-chat_completions"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="cn-adaptive-base-url-anthropic"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="cn-adaptive-base-url-responses"]').exists()).toBe(true)
+    // 非自适应档回落单 base_url 输入
+    await selectButtonByText(wrapper, 'admin.accounts.cnProviders.apiProtocol.anthropic')
+    expect(wrapper.find('[data-testid="cn-adaptive-base-url-chat_completions"]').exists()).toBe(false)
   })
 
   it('submits OpenCode GO endpoints after switching account type', async () => {
@@ -504,10 +516,11 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     })
   })
 
-  it('submits adaptive Kimi protocol endpoints', async () => {
+  // FORK-ANCHOR: test-create-cn-protocols-default (CN 平台默认勾选全部支持协议，写新字段契约)
+  it('submits Kimi multi-selected protocol endpoints with the new credential contract', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'Kimi')
-    await wrapper.get('form#create-account-form input[type="text"]').setValue('Kimi adaptive')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Kimi multi')
     await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-kimi')
 
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
@@ -516,17 +529,21 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock).toHaveBeenCalledTimes(1)
     expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
       account_mode: 'payg',
-      api_protocol: 'adaptive',
+      api_protocols: ['chat_completions', 'anthropic', 'responses'],
+      fallback_protocol: 'chat_completions',
+      // 勾选了 chat_completions → base_url 用它的地址
       base_url: 'https://api.moonshot.cn/v1',
       api_base_urls: {
         chat_completions: 'https://api.moonshot.cn/v1',
         anthropic: 'https://api.moonshot.cn/anthropic',
         responses: 'https://api.moonshot.cn/v1'
-      }
+      },
+      // 勾选不止一个 → 旧字段回退值 adaptive
+      api_protocol: 'adaptive'
     })
   })
 
-  it('submits adaptive Kimi Coding Plan Responses endpoint', async () => {
+  it('submits Kimi Coding Plan endpoints with the new credential contract', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'Kimi')
     await selectButtonByText(wrapper, 'admin.accounts.cnProviders.accountMode.coding')
@@ -539,20 +556,22 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock).toHaveBeenCalledTimes(1)
     expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
       account_mode: 'coding',
-      api_protocol: 'adaptive',
+      api_protocols: ['chat_completions', 'anthropic', 'responses'],
+      fallback_protocol: 'chat_completions',
       base_url: 'https://api.kimi.com/coding/v1',
       api_base_urls: {
         chat_completions: 'https://api.kimi.com/coding/v1',
         anthropic: 'https://api.kimi.com/coding',
         responses: 'https://api.kimi.com/coding/v1'
-      }
+      },
+      api_protocol: 'adaptive'
     })
   })
 
-  it('submits adaptive MiniMax protocol endpoints', async () => {
+  it('submits MiniMax multi-selected protocol endpoints with the new credential contract', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'MiniMax')
-    await wrapper.get('form#create-account-form input[type="text"]').setValue('MiniMax adaptive')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('MiniMax multi')
     await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-minimax')
 
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
@@ -561,17 +580,76 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock).toHaveBeenCalledTimes(1)
     expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
       account_mode: 'payg',
-      api_protocol: 'adaptive',
+      api_protocols: ['chat_completions', 'anthropic', 'responses'],
+      fallback_protocol: 'chat_completions',
       base_url: 'https://api.minimaxi.com/v1',
       api_base_urls: {
         chat_completions: 'https://api.minimaxi.com/v1',
         anthropic: 'https://api.minimaxi.com/anthropic',
         responses: 'https://api.minimaxi.com/v1'
+      },
+      api_protocol: 'adaptive'
+    })
+  })
+
+  // FORK-ANCHOR: test-create-cn-protocol-toggle (卡片多选 toggle + 兜底协议联动 + 至少保留一个)
+  it('toggles CN protocol cards and keeps the fallback protocol in sync', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Kimi')
+
+    const chatCard = wrapper.get('[data-testid="cn-api-protocol-chat_completions"]')
+    const anthropicCard = wrapper.get('[data-testid="cn-api-protocol-anthropic"]')
+    const responsesCard = wrapper.get('[data-testid="cn-api-protocol-responses"]')
+    const fallback = wrapper.get<HTMLSelectElement>('[data-testid="cn-fallback-protocol"]')
+
+    // 默认全选，兜底为 chat_completions
+    expect(chatCard.attributes('aria-pressed')).toBe('true')
+    expect(anthropicCard.attributes('aria-pressed')).toBe('true')
+    expect(responsesCard.attributes('aria-pressed')).toBe('true')
+    expect(fallback.element.value).toBe('chat_completions')
+    expect(Array.from(fallback.element.options).map(o => o.value)).toEqual([
+      'chat_completions',
+      'anthropic',
+      'responses'
+    ])
+
+    // 取消 chat_completions：勾选集合变化 → 兜底自动回落到 anthropic
+    await chatCard.trigger('click')
+    expect(chatCard.attributes('aria-pressed')).toBe('false')
+    expect(fallback.element.value).toBe('anthropic')
+    expect(Array.from(fallback.element.options).map(o => o.value)).toEqual(['anthropic', 'responses'])
+    // 端点输入区只渲染已勾选协议
+    expect(wrapper.find('[data-testid="cn-adaptive-base-url-chat_completions"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="cn-adaptive-base-url-anthropic"]').exists()).toBe(true)
+
+    // 手选兜底为 responses
+    await fallback.setValue('responses')
+    expect(fallback.element.value).toBe('responses')
+
+    // 至少保留一个勾选：再取消 responses 后只剩 anthropic，继续取消被忽略
+    await responsesCard.trigger('click')
+    expect(responsesCard.attributes('aria-pressed')).toBe('false')
+    await anthropicCard.trigger('click')
+    expect(anthropicCard.attributes('aria-pressed')).toBe('true')
+    expect(fallback.element.value).toBe('anthropic')
+
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-toggle')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
+      api_protocols: ['anthropic'],
+      fallback_protocol: 'anthropic',
+      // 单协议且等于兜底 → 旧字段回退值写该协议名
+      api_protocol: 'anthropic',
+      base_url: 'https://api.moonshot.cn/anthropic',
+      api_base_urls: {
+        anthropic: 'https://api.moonshot.cn/anthropic'
       }
     })
   })
 
-  it('uses the edited adaptive Chat endpoint when previewing upstream models', async () => {
+  it('uses the edited CN endpoint when previewing upstream models', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'Kimi')
     await wrapper

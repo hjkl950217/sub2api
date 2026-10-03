@@ -64,6 +64,15 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		default:
 			return s.forwardAnthropicViaRawChatCompletions(ctx, c, account, body, defaultMappedModel)
 		}
+	} else if account.HasExplicitAPIProtocols() {
+		// FORK-ANCHOR: fork-api-protocols-messages-inbound (二开：/v1/messages 入站按勾选协议选端点，未勾选改走兜底协议)
+		switch account.ResolveAPIProtocolForInbound(APIProtocolAnthropic) {
+		case APIProtocolAnthropic:
+			return s.forwardAnthropicViaNativeAnthropicEndpoint(ctx, c, account, body, defaultMappedModel)
+		case APIProtocolChatCompletions:
+			return s.forwardAnthropicViaRawChatCompletions(ctx, c, account, body, defaultMappedModel)
+		}
+		// responses：未勾选 Anthropic 也无 CC 兜底时落到下方 Responses 转换链。
 	} else if account.IsAnthropicProtocol() || account.IsAdaptiveAPIProtocol() {
 		// 入口分流（国产供应商 Anthropic 协议）：上游为供应商原生 Anthropic 端点时，
 		// /v1/messages 请求零转换直通（仅模型名映射 + 少量 body 清洗），完整保留

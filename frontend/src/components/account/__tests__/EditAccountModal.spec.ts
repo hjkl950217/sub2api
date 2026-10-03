@@ -509,6 +509,11 @@ describe('EditAccountModal', () => {
         { pattern: 'qwen*', protocol: 'anthropic' }
       ]
     })
+    // opencode_go 不受 CN 多选影响，仍渲染全部原生协议端点输入
+    expect(wrapper.find('[data-testid="cn-fallback-protocol"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="cn-adaptive-base-url-chat_completions"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="cn-adaptive-base-url-anthropic"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="cn-adaptive-base-url-responses"]').exists()).toBe(true)
   })
 
   it('treats a legacy OpenCode account without account_mode as GO', async () => {
@@ -538,7 +543,8 @@ describe('EditAccountModal', () => {
     })
   })
 
-  it('preserves adaptive Kimi Responses endpoint on submit', async () => {
+  // FORK-ANCHOR: test-edit-cn-protocols-backfill (旧 adaptive 账号回填为全量勾选，写新字段契约)
+  it('preserves Kimi protocol endpoints on submit under the new contract', async () => {
     const account = buildAccount()
     account.platform = 'kimi'
     account.credentials = {
@@ -561,17 +567,19 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toMatchObject({
       account_mode: 'payg',
-      api_protocol: 'adaptive',
+      api_protocols: ['chat_completions', 'anthropic', 'responses'],
+      fallback_protocol: 'chat_completions',
       base_url: 'https://api.moonshot.cn/v1',
       api_base_urls: {
         chat_completions: 'https://api.moonshot.cn/v1',
         anthropic: 'https://api.moonshot.cn/anthropic',
         responses: 'https://api.moonshot.cn/v1'
-      }
+      },
+      api_protocol: 'adaptive'
     })
   })
 
-  it('preserves adaptive GLM endpoints on submit', async () => {
+  it('preserves GLM endpoints on submit under the new contract', async () => {
     const account = buildAccount()
     account.platform = 'zhipu'
     account.credentials = {
@@ -593,12 +601,15 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toMatchObject({
       account_mode: 'coding',
-      api_protocol: 'adaptive',
+      // zhipu 不支持原生 responses，回填只勾选 chat_completions + anthropic
+      api_protocols: ['chat_completions', 'anthropic'],
+      fallback_protocol: 'chat_completions',
       base_url: 'https://open.bigmodel.cn/api/coding/paas/v4',
       api_base_urls: {
         chat_completions: 'https://open.bigmodel.cn/api/coding/paas/v4',
         anthropic: 'https://open.bigmodel.cn/api/anthropic'
-      }
+      },
+      api_protocol: 'adaptive'
     })
   })
 
@@ -623,13 +634,17 @@ describe('EditAccountModal', () => {
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
-    const submittedCredentials = updateAccountMock.mock.calls[0]?.[1]?.credentials
-    expect(submittedCredentials).toMatchObject({
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toMatchObject({
       account_mode: 'payg',
+      api_protocols: ['chat_completions'],
+      fallback_protocol: 'chat_completions',
+      // 单协议且等于兜底 → 旧字段回退值写该协议名
       api_protocol: 'chat_completions',
-      base_url: 'https://relay.example.com/v1'
+      base_url: 'https://relay.example.com/v1',
+      api_base_urls: {
+        chat_completions: 'https://relay.example.com/v1'
+      }
     })
-    expect(submittedCredentials).not.toHaveProperty('api_base_urls')
   })
 
   it('uses the legacy base_url when adaptive endpoints are missing', async () => {
@@ -652,6 +667,8 @@ describe('EditAccountModal', () => {
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toMatchObject({
+      api_protocols: ['chat_completions', 'anthropic'],
+      fallback_protocol: 'chat_completions',
       api_protocol: 'adaptive',
       base_url: 'https://relay.example.com/v1',
       api_base_urls: {
@@ -661,7 +678,8 @@ describe('EditAccountModal', () => {
     })
   })
 
-  it('carries a fixed Chat relay into Adaptive when the user switches protocols', async () => {
+  // FORK-ANCHOR: test-edit-cn-protocol-toggle (卡片多选 toggle + 兜底协议联动 + 至少保留一个)
+  it('toggles CN protocol cards and keeps the fallback protocol in sync', async () => {
     const account = buildAccount()
     account.platform = 'zhipu'
     account.credentials = {
@@ -674,19 +692,48 @@ describe('EditAccountModal', () => {
     checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
 
     const wrapper = mountModal(account)
-    const adaptiveButton = wrapper
-      .findAll('button')
-      .find(button => button.text().includes('admin.accounts.cnProviders.apiProtocol.adaptive'))
-    expect(adaptiveButton).toBeDefined()
-    await adaptiveButton!.trigger('click')
+    const chatCard = wrapper.get('[data-testid="cn-api-protocol-chat_completions"]')
+    const anthropicCard = wrapper.get('[data-testid="cn-api-protocol-anthropic"]')
+    const fallback = wrapper.get<HTMLSelectElement>('[data-testid="cn-fallback-protocol"]')
+
+    // 回填：单协议 chat_completions，兜底同步
+    expect(chatCard.attributes('aria-pressed')).toBe('true')
+    expect(anthropicCard.attributes('aria-pressed')).toBe('false')
+    expect(fallback.element.value).toBe('chat_completions')
+    // 兜底下拉只列已勾选协议
+    expect(Array.from(fallback.element.options).map(o => o.value)).toEqual(['chat_completions'])
+
+    // 勾上 anthropic：兜底集合扩展，原兜底保持
+    await anthropicCard.trigger('click')
+    expect(anthropicCard.attributes('aria-pressed')).toBe('true')
+    expect(fallback.element.value).toBe('chat_completions')
+    expect(Array.from(fallback.element.options).map(o => o.value)).toEqual([
+      'chat_completions',
+      'anthropic'
+    ])
+
+    // 取消 chat_completions：兜底自动回落到 anthropic，端点输入区只剩已勾选协议
+    await chatCard.trigger('click')
+    expect(chatCard.attributes('aria-pressed')).toBe('false')
+    expect(fallback.element.value).toBe('anthropic')
+    expect(wrapper.find('[data-testid="cn-adaptive-base-url-chat_completions"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="cn-adaptive-base-url-anthropic"]').exists()).toBe(true)
+
+    // 至少保留一个勾选：再取消 anthropic 被忽略
+    await anthropicCard.trigger('click')
+    expect(anthropicCard.attributes('aria-pressed')).toBe('true')
+
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    // chat_completions 被取消后它那格的 relay 不再提交，端点回落该平台默认
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toMatchObject({
-      api_protocol: 'adaptive',
-      base_url: 'https://relay.example.com/v1',
+      api_protocols: ['anthropic'],
+      fallback_protocol: 'anthropic',
+      api_protocol: 'anthropic',
+      base_url: 'https://open.bigmodel.cn/api/anthropic',
       api_base_urls: {
-        chat_completions: 'https://relay.example.com/v1'
+        anthropic: 'https://open.bigmodel.cn/api/anthropic'
       }
     })
   })
@@ -697,9 +744,7 @@ describe('EditAccountModal', () => {
       platform: 'zhipu',
       protocol: 'anthropic',
       baseUrl: 'https://relay.example.com/anthropic',
-      expectedBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
       expectedProtocolUrls: {
-        chat_completions: 'https://open.bigmodel.cn/api/paas/v4',
         anthropic: 'https://relay.example.com/anthropic'
       }
     },
@@ -708,14 +753,11 @@ describe('EditAccountModal', () => {
       platform: 'deepseek',
       protocol: 'responses',
       baseUrl: 'https://relay.example.com/responses',
-      expectedBaseUrl: 'https://api.deepseek.com',
       expectedProtocolUrls: {
-        chat_completions: 'https://api.deepseek.com',
-        anthropic: 'https://api.deepseek.com/anthropic',
         responses: 'https://relay.example.com/responses'
       }
     }
-  ])('keeps a fixed $name relay in its protocol slot when switching to Adaptive', async (testCase) => {
+  ])('keeps a fixed $name relay in its protocol slot under the new contract', async (testCase) => {
     const account = buildAccount()
     account.platform = testCase.platform
     account.credentials = {
@@ -728,17 +770,18 @@ describe('EditAccountModal', () => {
     checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
 
     const wrapper = mountModal(account)
-    const adaptiveButton = wrapper
-      .findAll('button')
-      .find(button => button.text().includes('admin.accounts.cnProviders.apiProtocol.adaptive'))
-    expect(adaptiveButton).toBeDefined()
-    await adaptiveButton!.trigger('click')
+    // 旧字段单协议 → 只勾选它自己，兜底也是它
+    expect(
+      wrapper.get(`[data-testid="cn-api-protocol-${testCase.protocol}"]`).attributes('aria-pressed')
+    ).toBe('true')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toMatchObject({
-      api_protocol: 'adaptive',
-      base_url: testCase.expectedBaseUrl,
+      api_protocols: [testCase.protocol],
+      fallback_protocol: testCase.protocol,
+      api_protocol: testCase.protocol,
+      base_url: testCase.baseUrl,
       api_base_urls: testCase.expectedProtocolUrls
     })
   })

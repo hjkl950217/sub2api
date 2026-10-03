@@ -626,7 +626,8 @@ func (s *UpstreamBillingProbeService) probeLoadedAccount(ctx context.Context, ac
 		return s.persistProbeFailure(ctx, account, intervalMinutes, now, 0, "missing_api_key", 0)
 	}
 	baseURL := account.GetCredential("base_url")
-	if account.IsCNProvider() && account.IsAdaptiveAPIProtocol() {
+	// FORK-ANCHOR: fork-api-protocols-billing-probe-base (二开：复选模式下计费探测同样取 chat_completions 端点)
+	if account.IsCNProvider() && (account.IsAdaptiveAPIProtocol() || account.HasExplicitAPIProtocols()) {
 		baseURL = account.GetCNProtocolBaseURL(APIProtocolChatCompletions)
 	}
 	if account.Platform == PlatformOpenAI {

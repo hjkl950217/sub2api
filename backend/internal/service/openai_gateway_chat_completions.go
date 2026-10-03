@@ -148,10 +148,19 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		}
 	}
 
-	// 自适应账号的标准 Chat Completions 入站使用供应商原生 CC 端点。
-	// Responses 形状下，DeepSeek / Kimi 继续走下方原生 Responses 链；GLM
-	// 没有 Responses 端点，先转换成 Chat Completions 再直转。
-	if account.IsAdaptiveAPIProtocol() && !account.IsOpenCodeGo() {
+	// FORK-ANCHOR: fork-api-protocols-chat-inbound (二开：/v1/chat/completions 入站按勾选协议选端点，未勾选改走兜底协议)
+	if account.HasExplicitAPIProtocols() && !account.IsOpenCodeGo() {
+		switch account.ResolveAPIProtocolForInbound(APIProtocolChatCompletions) {
+		case APIProtocolAnthropic:
+			return s.forwardChatCompletionsViaNativeAnthropic(ctx, c, account, body, defaultMappedModel)
+		case APIProtocolChatCompletions:
+			return s.forwardAsRawChatCompletions(ctx, c, account, body, defaultMappedModel)
+		}
+		// responses：CC 入站但只勾选了原生 Responses，落到下方 CC→Responses 转换链。
+	} else if account.IsAdaptiveAPIProtocol() && !account.IsOpenCodeGo() {
+		// 自适应账号的标准 Chat Completions 入站使用供应商原生 CC 端点。
+		// Responses 形状下，DeepSeek / Kimi 继续走下方原生 Responses 链；GLM
+		// 没有 Responses 端点，先转换成 Chat Completions 再直转。
 		if !isResponsesShape {
 			return s.forwardAsRawChatCompletions(ctx, c, account, body, defaultMappedModel)
 		}

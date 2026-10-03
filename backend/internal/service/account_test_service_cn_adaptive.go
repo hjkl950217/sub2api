@@ -55,6 +55,47 @@ func (s *AccountTestService) testCNProviderAdaptiveConnection(c *gin.Context, ac
 	return nil
 }
 
+// FORK-ANCHOR: fork-api-protocols-test-selected (二开：协议复选账号按勾选集合逐个探测上游端点)
+// testCNProviderSelectedProtocolsConnection 验证协议复选账号勾选的每一个上游端点，
+// 与 adaptive 探针语义一致：中间端点全部通过前不发 test_complete。
+func (s *AccountTestService) testCNProviderSelectedProtocolsConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
+	protocols := account.GetSelectedAPIProtocols()
+	if len(protocols) == 0 {
+		return s.testCNProviderChatCompletionsConnection(c, account, modelID, prompt)
+	}
+	testModelID := strings.TrimSpace(modelID)
+	if testModelID == "" {
+		testModelID = openai.DefaultTestModel
+	}
+	testModelID = account.GetMappedModel(testModelID)
+	authToken := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
+	if authToken == "" {
+		return s.sendErrorAndEnd(c, "No API key available")
+	}
+
+	c.Set(accountTestSuppressCompletionContextKey, true)
+	defer c.Set(accountTestSuppressCompletionContextKey, false)
+	for _, protocol := range protocols {
+		switch protocol {
+		case APIProtocolAnthropic:
+			if err := s.testCNProviderAdaptiveAnthropicConnection(c, account, testModelID, authToken); err != nil {
+				return err
+			}
+		case APIProtocolResponses:
+			if err := s.testCNProviderAdaptiveResponsesConnection(c, account, testModelID, authToken); err != nil {
+				return err
+			}
+		default:
+			if err := s.testCNProviderChatCompletionsConnection(c, account, modelID, prompt); err != nil {
+				return err
+			}
+		}
+	}
+	c.Set(accountTestSuppressCompletionContextKey, false)
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	return nil
+}
+
 func (s *AccountTestService) testCNProviderAdaptiveAnthropicConnection(c *gin.Context, account *Account, testModelID string, authToken string) error {
 	ctx := c.Request.Context()
 	baseURL, err := s.validateUpstreamBaseURL(account.GetCNProtocolBaseURL(APIProtocolAnthropic))

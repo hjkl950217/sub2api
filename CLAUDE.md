@@ -44,9 +44,9 @@ git add -f CLAUDE.md
   ```
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **42 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **96 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
 
-当前锚点全量清单（**42 个**，合并上游后逐个确认还在、且只出现一次）：
+当前锚点全量清单（**96 个**，合并上游后逐个确认还在、且只出现一次）：
 
 | 锚点 | 文件 |
 |---|---|
@@ -66,6 +66,22 @@ git add -f CLAUDE.md
 | `sidebar-compact-width` | `frontend/src/components/layout/AppSidebar.vue` |
 | `sidebar-compact-width-css` | `frontend/src/style.css` |
 | `layout-compact-offset` | `frontend/src/components/layout/AppLayout.vue` |
+| `cn-protocol-selection-helpers` | `frontend/src/components/account/credentialsBuilder.ts` |
+| `create-cn-protocol-multiselect` / `create-opencode-protocol-single` / `create-cn-base-url-single` / `create-cn-protocol-endpoints` / `create-cn-endpoint-presets` / `create-cn-protocol-state` / `create-cn-protocol-multiselect-computed` / `create-cn-protocol-defaults-on-reset` / `create-cn-platform-default-protocols` / `create-cn-preset-sync-protocols` / `create-cn-preview-base-url` / `create-cn-platform-watch-reset` / `create-cn-protocol-reset-form` / `create-cn-protocol-credentials` | `frontend/src/components/account/CreateAccountModal.vue` |
+| `edit-cn-base-url-single` / `edit-cn-protocol-endpoints` / `edit-cn-endpoint-presets` / `edit-cn-protocol-multiselect` / `edit-opencode-protocol-single` / `edit-cn-protocol-state` / `edit-cn-protocol-multiselect-computed` / `edit-cn-protocol-watch-skip` / `edit-cn-mode-watch-fallback-base` / `edit-cn-preset-sync-protocols` / `edit-cn-default-base-url-fallback` / `edit-cn-protocol-backfill` / `edit-cn-platform-default-url-fallback` / `edit-cn-backfill-base-url` / `edit-cn-protocol-credentials` | `frontend/src/components/account/EditAccountModal.vue` |
+| `test-create-opencode-untouched` / `test-create-cn-protocols-default` / `test-create-cn-protocol-toggle` | `frontend/src/components/account/__tests__/CreateAccountModal.spec.ts` |
+| `test-edit-cn-protocols-backfill` / `test-edit-cn-protocol-toggle` | `frontend/src/components/account/__tests__/EditAccountModal.spec.ts` |
+| `i18n-cn-fallback-protocol-zh` / `i18n-cn-fallback-protocol-en` | `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` |
+| `fork-api-protocols-parse` / `fork-api-protocols-openai-base-url` / `fork-api-protocols-native-responses` / `fork-api-protocols-cn-base-url` / `fork-api-protocols-anthropic-base` / `fork-api-protocols-openai-format-base` | `backend/internal/service/account.go` |
+| `fork-api-protocols-responses-inbound` / `fork-api-protocols-raw-cc-gate` / `fork-api-protocols-responses-base-forward` | `backend/internal/service/openai_gateway_forward.go` |
+| `fork-api-protocols-chat-inbound` | `backend/internal/service/openai_gateway_chat_completions.go` |
+| `fork-api-protocols-messages-inbound` | `backend/internal/service/openai_gateway_messages.go` |
+| `fork-api-protocols-responses-base-passthrough` | `backend/internal/service/openai_gateway_passthrough.go` |
+| `fork-api-protocols-responses-base-ws` | `backend/internal/service/openai_ws_forwarder_payload.go` |
+| `fork-api-protocols-ollama-responses-base` | `backend/internal/service/openai_gateway_ollama_cloud_max_tokens.go` |
+| `fork-api-protocols-test-routing` | `backend/internal/service/account_test_service.go` |
+| `fork-api-protocols-test-selected` | `backend/internal/service/account_test_service_cn_adaptive.go` |
+| `fork-api-protocols-billing-probe-base` | `backend/internal/service/upstream_billing_probe.go` |
 
 ### 2.1 `.github/workflows/release.yml`
 
@@ -229,6 +245,76 @@ git add -f CLAUDE.md
 | 3 | `AppLayout.vue` | 内容区 `lg:ml-64` → `lg:ml-52` | `layout-compact-offset` |
 
 208px 的算法：内容区 `px-3`(24) + 链接内边距(31) + 图标(20) + 间距(12) = 87px 固定开销，剩 121px 给文字，8 个 14px 汉字需 112px。改 `w-48`（192px）只剩 105px，8 字会被截断。
+
+### 2.12 国产供应商「API 协议」复选 + 兜底转发协议（改上游文件，新增 45 个锚点）
+
+**背景**：原来 `credentials.api_protocol` 是**四选一**（adaptive / chat_completions / anthropic / responses）。
+实际接入中会遇到「某站同时支持 OpenAI Chat Completions 与 Anthropic Messages，但**不支持** Responses」的站点，
+单选无法表达「同时支持哪几个协议」，也没有「请求协议不在支持范围内时改用哪个协议转发」的表达能力。
+
+**改动**：协议维度由单选改为**三协议复选** + 一个**兜底转发协议**（去掉 adaptive 选项）。三个协议仍是
+chat_completions / anthropic / responses。OpenCode Go 平台**保持原单选 UI 不变**（它依赖 adaptive + 模型协议规则）。
+
+#### 字段契约
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `credentials.api_protocols` | `string[]` | 该站实际支持的上游协议（复选，非空、去重、只含平台支持的协议） |
+| `credentials.fallback_protocol` | `string` | **兜底转发协议**：入站协议不在 `api_protocols` 内时改用该协议转发；必为 `api_protocols` 之一 |
+| `credentials.api_base_urls` | `map[string]string` | 只包含已勾选协议的端点地址 |
+| `credentials.base_url` | `string` | 勾选了 chat_completions 就用它的地址，否则用兜底协议的地址 |
+| `credentials.api_protocol` | `string` | **兼容旧版的回退值**：勾选恰好 1 个协议且等于兜底协议时写该协议名，否则写 `adaptive` |
+
+#### 路由语义
+
+「勾选 = 声明该协议有原生端点，可零转换直通」：
+
+| 入站请求 | 勾选集合含该协议 | 未勾选（走兜底） |
+|---|---|---|
+| `/v1/chat/completions` | 原生 CC 端点直通 | 按 `fallback_protocol` 转发（anthropic → 转 Anthropic；responses → CC→Responses 转换链） |
+| `/v1/messages` | 原生 Anthropic 端点直通 | 同上 |
+| `/v1/responses` | 原生 Responses 端点直通 | 同上（CC 兜底即转成 Chat Completions 再发） |
+
+**向后兼容**：未配置 `api_protocols` 的旧账号完全走原 `api_protocol` 四选一逻辑，行为零变化
+（`GetSelectedAPIProtocols()` 返回 nil 时所有新增分支都不接管）。
+
+#### 后端改动（17 处锚点，全部在 `backend/internal/service/`）
+
+| 文件 | 锚点 | 改动 |
+|---|---|---|
+| `account.go` | `fork-api-protocols-parse` | 新增解析层：GetSelectedAPIProtocols / HasExplicitAPIProtocols / GetFallbackAPIProtocol / SupportsAPIProtocol / ResolveAPIProtocolForInbound，兼容 []string / []any / 逗号串三种落库形态 |
+| `account.go` | `fork-api-protocols-native-responses` | UsesNativeCNResponses 在复选模式下看 responses 是否在勾选集合内 |
+| `account.go` | `fork-api-protocols-openai-base-url` / `-cn-base-url` / `-anthropic-base` / `-openai-format-base` | 端点地址解析：未勾选协议的端点请求回落到兜底协议地址；只勾 anthropic 时 OpenAI 格式端点回落平台默认 CC |
+| `openai_gateway_forward.go` | `fork-api-protocols-responses-inbound` | /v1/responses 入站按勾选协议选端点 |
+| `openai_gateway_forward.go` | `fork-api-protocols-raw-cc-gate` | shouldForwardOpenAIResponsesViaRawChatCompletions：responses 未勾选即转 CC 转发 |
+| `openai_gateway_chat_completions.go` | `fork-api-protocols-chat-inbound` | /v1/chat/completions 入站分流 |
+| `openai_gateway_messages.go` | `fork-api-protocols-messages-inbound` | /v1/messages 入站分流 |
+| `openai_gateway_forward.go` / `openai_gateway_passthrough.go` / `openai_ws_forwarder_payload.go` | `fork-api-protocols-responses-base-forward` / `-passthrough` / `-ws` | 原生 Responses 出站取 responses 端点地址 |
+| `openai_gateway_ollama_cloud_max_tokens.go` | `fork-api-protocols-ollama-responses-base` | 同上（ollama 路径） |
+| `account_test_service.go` | `fork-api-protocols-test-routing` | 测试连接：复选账号走新探针 |
+| `account_test_service_cn_adaptive.go` | `fork-api-protocols-test-selected` | 新增 testCNProviderSelectedProtocolsConnection：逐个验证已勾选的原生端点 |
+| `upstream_billing_probe.go` | `fork-api-protocols-billing-probe-base` | 计费探测同样取 chat_completions 端点 |
+
+新增文件 `backend/internal/service/fork_api_protocols_test.go`（带 `FORK:` 头，不算改上游）：6 个用例覆盖
+解析、兜底回落、入站路由、端点地址解析与旧账号零回归。
+
+#### 前端改动（28 处锚点）
+
+| 文件 | 改动 |
+|---|---|
+| `credentialsBuilder.ts` | 新增 CN_API_PROTOCOLS / isCnNativeProtocol / normalizeCnProtocols / defaultFallbackProtocol / cnProtocolsFromLegacy / legacyProtocolFromSelection（字段契约的单一事实源） |
+| `CreateAccountModal.vue` / `EditAccountModal.vue` | CN 平台：三协议**多选卡片** + **兜底转发协议下拉**（至少保留一个勾选，勾选变化自动联动兜底）；端点输入区只渲染已勾选协议；opencode_go 完整保留原单选 UI + 协议规则编辑器 |
+| `{zh,en}/admin/accounts.ts` | 新增 protocolsHint / fallback / fallbackHint / selectAtLeastOne |
+| 两个 spec | 期望改为新契约，新增「卡片 toggle 复选 + 兜底下拉联动」用例 |
+
+#### 验证
+
+- 后端：`go build ./...` 与 `go vet ./internal/service/` 通过；`go test -tags=unit -run TestForkProtocols ./internal/service/` 全绿。
+  全量 `go test -tags=unit` 仅 `TestOllamaProbeCallback_StaleLongDoesNotOverrideNewShort` 失败——已用干净 HEAD 的
+  git worktree 复现（8 次跑挂 5 次），确认是**上游既有的时间竞争 flake**，与本次改动无关。
+- 前端：`vue-tsc --noEmit` 0 错误；`vitest run` 334 文件 / 2562 用例全绿。
+- **注意**：本机 `NODE_ENV=production` 会让 vitest 里 VTU 的 stubs 全部失效（Vue 3.5 生产分支不接
+  `transformVNodeArgs`），跑前端测试前必须设 NODE_ENV=test；这是环境问题，干净 HEAD 上同样全红。
 
 ## 3. 发版方式
 

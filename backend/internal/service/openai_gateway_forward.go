@@ -174,7 +174,17 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	// CN 供应商 anthropic 协议账号：/v1/responses 入站是交叉协议组合
 	// （Responses 客户端 × Anthropic 上游），转成 Anthropic 请求走原生端点。
 	// 不能落到下面的 raw-CC 分支——其 URL 构造会把 anthropic base 当 CC base 用。
-	if account.IsAnthropicProtocol() {
+	//
+	// FORK-ANCHOR: fork-api-protocols-responses-inbound (二开：/v1/responses 入站按勾选协议选端点，未勾选改走兜底协议)
+	if account.HasExplicitAPIProtocols() && !account.IsOpenCodeGo() {
+		switch account.ResolveAPIProtocolForInbound(APIProtocolResponses) {
+		case APIProtocolAnthropic:
+			return s.forwardResponsesViaNativeAnthropic(ctx, c, account, body, reqModel)
+		case APIProtocolChatCompletions:
+			return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body)
+		}
+		// responses：勾选集合含原生 Responses，继续走下方原生链。
+	} else if account.IsAnthropicProtocol() {
 		return s.forwardResponsesViaNativeAnthropic(ctx, c, account, body, reqModel)
 	}
 	if account.IsOpenAIApiKey() {
@@ -1353,6 +1363,10 @@ func shouldForwardOpenAIResponsesViaRawChatCompletions(account *Account) bool {
 		return false
 	}
 	if account.IsCNProvider() {
+		// FORK-ANCHOR: fork-api-protocols-raw-cc-gate (二开：复选模式下 responses 未勾选即转 Chat Completions 转发)
+		if account.HasExplicitAPIProtocols() {
+			return !account.SupportsAPIProtocol(APIProtocolResponses)
+		}
 		// CN 的显式协议配置优先于异步探针 Extra；adaptive 仅 DeepSeek / Kimi
 		// 有原生 Responses，GLM 回退 Chat Completions。
 		switch account.GetAPIProtocol() {
@@ -1383,7 +1397,8 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	case AccountTypeAPIKey:
 		// API Key accounts use Platform API or custom base URL
 		baseURL := account.GetOpenAIBaseURL()
-		if account.UsesNativeCNResponses() && account.IsAdaptiveAPIProtocol() {
+		// FORK-ANCHOR: fork-api-protocols-responses-base-forward (二开：复选模式下原生 Responses 取 responses 端点地址)
+		if account.UsesNativeCNResponses() && (account.IsAdaptiveAPIProtocol() || account.HasExplicitAPIProtocols()) {
 			baseURL = account.GetCNProtocolBaseURL(APIProtocolResponses)
 		}
 		if baseURL == "" {

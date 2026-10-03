@@ -384,6 +384,10 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 
 	// Route to platform-specific test method
 	if account.IsCNProvider() {
+		// FORK-ANCHOR: fork-api-protocols-test-routing (二开：协议复选账号逐个验证已勾选的原生端点)
+		if account.HasExplicitAPIProtocols() {
+			return s.testCNProviderSelectedProtocolsConnection(c, account, modelID, prompt)
+		}
 		switch account.GetAPIProtocol() {
 		case APIProtocolAdaptive:
 			return s.testCNProviderAdaptiveConnection(c, account, modelID, prompt)

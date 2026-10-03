@@ -334,6 +334,11 @@ export default {
           anthropicDesc: '直通供应商原生 Anthropic 端点，零转换，适配 Claude Code。',
           responses: 'Responses',
           responsesDesc: '供应商原生 Responses 端点，适配 Codex。',
+          // FORK-ANCHOR: i18n-cn-fallback-protocol-zh (协议多选与兜底转发协议文案)
+          protocolsHint: '勾选该站点实际支持的上游协议，可多选。',
+          fallback: '兜底转发协议',
+          fallbackHint: '入站请求的协议不在上方勾选范围内时，改用该协议转发到上游。',
+          selectAtLeastOne: '至少勾选一个协议',
         },
         zhipuTeam: {
           title: '团队版组织 / 项目 ID',

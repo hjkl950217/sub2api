@@ -594,36 +594,89 @@
 
       <!-- API Protocol Selection (Kimi / Zhipu / DeepSeek / OpenCode) -->
       <div v-if="isMultiProtocolPlatform" class="mt-4">
-        <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.title') }}</label>
-        <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <button
-            v-for="opt in cnProtocolOptions"
-            :key="opt.value"
-            type="button"
-            @click="apiProtocol = opt.value"
-            :class="[
-              'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
-              apiProtocol === opt.value
-                ? cnAccentActiveClass
-                : 'border-gray-200 hover:border-gray-400 dark:border-dark-600 dark:hover:border-gray-600'
-            ]"
-          >
-            <div
+        <!-- FORK-ANCHOR: create-cn-protocol-multiselect (国产供应商协议改为多选卡片，opencode_go 保持原单选 UI) -->
+        <template v-if="isCNPlatform">
+          <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.title') }}</label>
+          <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <button
+              v-for="opt in cnNativeProtocolOptions"
+              :key="opt.value"
+              type="button"
+              :data-testid="`cn-api-protocol-${opt.value}`"
+              :aria-pressed="apiProtocols.includes(opt.value)"
+              @click="toggleCnProtocol(opt.value)"
               :class="[
-                'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
-                apiProtocol === opt.value
-                  ? cnAccentIconClass
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+                apiProtocols.includes(opt.value)
+                  ? cnAccentActiveClass
+                  : 'border-gray-200 hover:border-gray-400 dark:border-dark-600 dark:hover:border-gray-600'
               ]"
             >
-              <Icon :name="opt.value === 'adaptive' ? 'swap' : opt.value === 'anthropic' ? 'sparkles' : opt.value === 'responses' ? 'terminal' : 'chat'" size="sm" />
-            </div>
-            <div>
-              <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t(`admin.accounts.cnProviders.apiProtocol.${opt.labelKey}`) }}</span>
-              <span class="text-xs text-gray-500 dark:text-gray-400">{{ t(`admin.accounts.cnProviders.apiProtocol.${opt.labelKey}Desc`) }}</span>
-            </div>
-          </button>
-        </div>
+              <div
+                :class="[
+                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+                  apiProtocols.includes(opt.value)
+                    ? cnAccentIconClass
+                    : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                ]"
+              >
+                <Icon :name="apiProtocols.includes(opt.value) ? 'check' : opt.icon" size="sm" />
+              </div>
+              <div>
+                <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t(`admin.accounts.cnProviders.apiProtocol.${opt.labelKey}`) }}</span>
+                <span class="text-xs text-gray-500 dark:text-gray-400">{{ t(`admin.accounts.cnProviders.apiProtocol.${opt.labelKey}Desc`) }}</span>
+              </div>
+            </button>
+          </div>
+          <p class="input-hint">{{ t('admin.accounts.cnProviders.apiProtocol.protocolsHint') }}</p>
+          <div class="mt-3">
+            <label class="input-label" for="cn-fallback-protocol-select">{{ t('admin.accounts.cnProviders.apiProtocol.fallback') }}</label>
+            <select
+              id="cn-fallback-protocol-select"
+              v-model="fallbackProtocol"
+              data-testid="cn-fallback-protocol"
+              class="input"
+            >
+              <option v-for="value in apiProtocols" :key="value" :value="value">
+                {{ t(`admin.accounts.cnProviders.apiProtocol.${cnProtocolLabelKey(value)}`) }}
+              </option>
+            </select>
+            <p class="input-hint">{{ t('admin.accounts.cnProviders.apiProtocol.fallbackHint') }}</p>
+          </div>
+        </template>
+        <!-- FORK-ANCHOR: create-opencode-protocol-single (opencode_go 沿用原自适应单选，行为不变) -->
+        <template v-else>
+          <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.title') }}</label>
+          <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <button
+              v-for="opt in cnProtocolOptions"
+              :key="opt.value"
+              type="button"
+              @click="apiProtocol = opt.value"
+              :class="[
+                'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+                apiProtocol === opt.value
+                  ? cnAccentActiveClass
+                  : 'border-gray-200 hover:border-gray-400 dark:border-dark-600 dark:hover:border-gray-600'
+              ]"
+            >
+              <div
+                :class="[
+                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+                  apiProtocol === opt.value
+                    ? cnAccentIconClass
+                    : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                ]"
+              >
+                <Icon :name="opt.value === 'adaptive' ? 'swap' : opt.value === 'anthropic' ? 'sparkles' : opt.value === 'responses' ? 'terminal' : 'chat'" size="sm" />
+              </div>
+              <div>
+                <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t(`admin.accounts.cnProviders.apiProtocol.${opt.labelKey}`) }}</span>
+                <span class="text-xs text-gray-500 dark:text-gray-400">{{ t(`admin.accounts.cnProviders.apiProtocol.${opt.labelKey}Desc`) }}</span>
+              </div>
+            </button>
+          </div>
+        </template>
       </div>
 
       <!-- Zhipu 团队版 Coding Plan：组织/项目 ID（可选，填写后额度探测走团队版端点） -->
@@ -1359,7 +1412,8 @@
 
       <!-- API Key input (only for apikey type, excluding Antigravity which has its own fields) -->
       <div v-if="form.type === 'apikey' && form.platform !== 'antigravity'" class="space-y-4">
-        <div v-if="!isMultiProtocolPlatform || apiProtocol !== 'adaptive'">
+        <!-- FORK-ANCHOR: create-cn-base-url-single (非多协议平台，或 opencode_go 非自适应档，仍用单 base_url 输入) -->
+        <div v-if="!isMultiProtocolPlatform || (isOpenCodeGoPlatform && apiProtocol !== 'adaptive')">
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
           <input
             v-model="apiKeyBaseUrl"
@@ -1383,10 +1437,11 @@
             @select="onCnPresetSelect"
           />
         </div>
+        <!-- FORK-ANCHOR: create-cn-protocol-endpoints (端点输入区只渲染已勾选协议) -->
         <div v-else>
           <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.endpoints') }}</label>
           <div class="mt-2 space-y-3">
-            <div v-for="item in cnAdaptiveProtocolOptions" :key="item.value">
+            <div v-for="item in cnEndpointProtocolOptions" :key="item.value">
               <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
                 {{ t(`admin.accounts.cnProviders.apiProtocol.${item.labelKey}`) }}
               </label>
@@ -1395,6 +1450,16 @@
                 type="text"
                 class="input"
                 :data-testid="`cn-adaptive-base-url-${item.value}`"
+              />
+              <!-- FORK-ANCHOR: create-cn-endpoint-presets (已勾选协议端点保留快捷预设填充) -->
+              <CnBaseUrlPresets
+                v-if="isCNPlatform"
+                class="mt-2"
+                :platform="cnPresetPlatform"
+                :mode="accountMode"
+                :protocol="item.value"
+                :current-url="adaptiveBaseUrls[item.value]"
+                @select="onCnPresetSelect"
               />
             </div>
           </div>
@@ -3949,11 +4014,17 @@ import {
   applyInterceptWarmup,
   applyOpenCodeGoProtocolRules,
   cloneOpenCodeGoProtocolRules,
+  cnProtocolsFromLegacy,
   cnSupportsNativeResponses,
+  CN_API_PROTOCOLS,
   defaultCNAdaptiveBaseUrls,
   defaultCNBaseUrl,
+  defaultFallbackProtocol,
   defaultOpenCodeProtocolRules,
   isCNProviderPlatform,
+  isCnNativeProtocol,
+  legacyProtocolFromSelection,
+  normalizeCnProtocols,
   isHeaderOverrideCapable,
   validateHeaderOverrideRows,
   type CnAccountMode,
@@ -4161,7 +4232,11 @@ const accountMode = ref<CnAccountMode>('payg')
 const openCodeAccountMode = ref<OpenCodeAccountMode>('zen')
 // API 协议决定转发端点与格式：cc=现有转换链，anthropic=原生直通（Claude Code），
 // responses=deepseek / kimi 原生 Responses 端点（Codex）。与账号类型正交。
+// 保留 apiProtocol 供 opencode_go 单选与旧逻辑使用；国产供应商改用下面的多选状态。
 const apiProtocol = ref<CnApiProtocol>('adaptive')
+// FORK-ANCHOR: create-cn-protocol-state (国产供应商协议多选 + 兜底转发协议状态)
+const apiProtocols = ref<CnNativeApiProtocol[]>([])
+const fallbackProtocol = ref<CnNativeApiProtocol | ''>('')
 const openCodeGoProtocolRules = ref<OpenCodeGoProtocolRule[]>(
   cloneOpenCodeGoProtocolRules(defaultOpenCodeProtocolRules('zen'))
 )
@@ -4212,11 +4287,57 @@ const cnAdaptiveProtocolOptions = computed<Array<{ value: CnNativeApiProtocol; l
   return opts
 })
 
+// FORK-ANCHOR: create-cn-protocol-multiselect-computed (多选卡片/端点输入/兜底选项派生)
+type CnProtocolIcon = 'sparkles' | 'terminal' | 'chat'
+function cnProtocolIcon(protocol: CnNativeApiProtocol): CnProtocolIcon {
+  if (protocol === 'anthropic') return 'sparkles'
+  if (protocol === 'responses') return 'terminal'
+  return 'chat'
+}
+const cnNativeProtocolOptions = computed<Array<{ value: CnNativeApiProtocol; labelKey: string; icon: CnProtocolIcon }>>(
+  () => cnAdaptiveProtocolOptions.value.map(item => ({ ...item, icon: cnProtocolIcon(item.value) }))
+)
+// 端点输入区：CN 平台只渲染已勾选协议（顺序与卡片一致）；
+// opencode_go 没有多选状态，仍渲染全部支持的原生协议端点（原行为）。
+const cnEndpointProtocolOptions = computed(() =>
+  isCNPlatform.value
+    ? cnAdaptiveProtocolOptions.value.filter(item => apiProtocols.value.includes(item.value))
+    : cnAdaptiveProtocolOptions.value
+)
+function cnProtocolLabelKey(protocol: CnNativeApiProtocol): string {
+  return cnAdaptiveProtocolOptions.value.find(item => item.value === protocol)?.labelKey ?? 'chatCompletions'
+}
+// 兜底协议必须在已勾选集合内；勾选变化导致失配时回落到优先顺序第一个。
+function ensureFallbackProtocol(): void {
+  if (!apiProtocols.value.includes(fallbackProtocol.value as CnNativeApiProtocol)) {
+    fallbackProtocol.value = defaultFallbackProtocol(apiProtocols.value)
+  }
+}
+// 至少保留一个勾选：取消最后一个勾选时忽略该操作。
+function toggleCnProtocol(protocol: CnNativeApiProtocol): void {
+  if (apiProtocols.value.includes(protocol)) {
+    if (apiProtocols.value.length <= 1) return
+    apiProtocols.value = apiProtocols.value.filter(item => item !== protocol)
+  } else {
+    apiProtocols.value = [...apiProtocols.value, protocol].sort(
+      (a, b) => CN_API_PROTOCOLS.indexOf(a) - CN_API_PROTOCOLS.indexOf(b)
+    )
+  }
+  ensureFallbackProtocol()
+}
+// 新选 CN 平台/模式：默认勾选该平台支持的全部协议，兜底取优先顺序第一个。
+function applyDefaultCnProtocolSelection(platform: CnProviderPlatform): void {
+  apiProtocols.value = normalizeCnProtocols(CN_API_PROTOCOLS, platform)
+  fallbackProtocol.value = defaultFallbackProtocol(apiProtocols.value)
+}
+
 function resetAdaptiveBaseUrls(
   platform: CnProviderPlatform | 'opencode_go',
   mode: CnAccountMode | OpenCodeAccountMode
 ) {
   adaptiveBaseUrls.value = defaultCNAdaptiveBaseUrls(platform, mode)
+  // FORK-ANCHOR: create-cn-protocol-defaults-on-reset (切换平台/账号类型时重置勾选与兜底默认值)
+  if (platform !== 'opencode_go') applyDefaultCnProtocolSelection(platform)
 }
 // 当前选中平台的品牌色（选中卡片描边 / 图标底色），与 platformColors 取色一致。
 const cnAccentActiveClass = computed(() => {
@@ -4261,8 +4382,10 @@ function selectCNPlatform(platform: CnProviderPlatform) {
   if (platform === 'deepseek') {
     accountMode.value = 'payg'
   }
-  apiKeyBaseUrl.value = defaultCNBaseUrl(platform, accountMode.value, apiProtocol.value)
   resetAdaptiveBaseUrls(platform, accountMode.value)
+  // FORK-ANCHOR: create-cn-platform-default-protocols (选 CN 平台时默认勾选全部支持协议并同步 base url)
+  apiKeyBaseUrl.value = adaptiveBaseUrls.value[fallbackProtocol.value as CnNativeApiProtocol] ||
+    defaultCNBaseUrl(platform, accountMode.value, apiProtocol.value)
 }
 function selectOpenCodeGoPlatform() {
   form.platform = 'opencode_go'
@@ -4326,12 +4449,26 @@ function onCnPresetSelect(preset: { mode: CnAccountMode; protocol: CnApiProtocol
   accountMode.value = preset.mode
   apiProtocol.value = preset.protocol
   apiKeyBaseUrl.value = preset.url
+  // FORK-ANCHOR: create-cn-preset-sync-protocols (快捷预设同步到多选状态与端点)
+  if (isCNPlatform.value && isCnNativeProtocol(preset.protocol)) {
+    if (!apiProtocols.value.includes(preset.protocol)) {
+      apiProtocols.value = normalizeCnProtocols([...apiProtocols.value, preset.protocol], form.platform)
+    }
+    adaptiveBaseUrls.value[preset.protocol] = preset.url
+    fallbackProtocol.value = preset.protocol
+  }
 }
 
 const syncPreviewCredentials = computed(() => {
   if (!apiKeyValue.value) return undefined
+  // FORK-ANCHOR: create-cn-preview-base-url (预览凭据 base_url 取兜底/已勾选协议端点)
+  const cnPreviewProtocol = isCNPlatform.value
+    ? ((fallbackProtocol.value || defaultFallbackProtocol(apiProtocols.value)) as CnNativeApiProtocol | '')
+    : ''
   const baseUrl = isMultiProtocolPlatform.value && apiProtocol.value === 'adaptive'
-    ? adaptiveBaseUrls.value.chat_completions.trim() || apiKeyBaseUrl.value.trim()
+    ? (isCNPlatform.value
+        ? (cnPreviewProtocol ? adaptiveBaseUrls.value[cnPreviewProtocol] : '').trim() || apiKeyBaseUrl.value.trim()
+        : adaptiveBaseUrls.value.chat_completions.trim() || apiKeyBaseUrl.value.trim())
     : apiKeyBaseUrl.value.trim()
   const modelMapping = buildModelMappingObject(
     modelRestrictionMode.value,
@@ -4838,7 +4975,12 @@ watch(
     // Reset base URL based on platform
     if (isCNProviderPlatform(newPlatform) || newPlatform === 'opencode_go') {
       const mode = newPlatform === 'opencode_go' ? openCodeAccountMode.value : accountMode.value
-      apiKeyBaseUrl.value = defaultCNBaseUrl(newPlatform, mode, apiProtocol.value)
+      // FORK-ANCHOR: create-cn-platform-watch-reset (切换平台时重置端点与协议勾选默认值)
+      resetAdaptiveBaseUrls(newPlatform, mode)
+      apiKeyBaseUrl.value = newPlatform === 'opencode_go'
+        ? defaultCNBaseUrl(newPlatform, mode, apiProtocol.value)
+        : (adaptiveBaseUrls.value[fallbackProtocol.value as CnNativeApiProtocol] ||
+            defaultCNBaseUrl(newPlatform, mode, apiProtocol.value))
     } else {
       apiKeyBaseUrl.value =
         (newPlatform === 'openai')
@@ -5316,6 +5458,9 @@ const resetForm = () => {
   apiProtocol.value = 'adaptive'
   openCodeGoProtocolRules.value = cloneOpenCodeGoProtocolRules(defaultOpenCodeProtocolRules('zen'))
   adaptiveBaseUrls.value = { chat_completions: '', anthropic: '', responses: '' }
+  // FORK-ANCHOR: create-cn-protocol-reset-form (重置表单时清空协议勾选与兜底)
+  apiProtocols.value = []
+  fallbackProtocol.value = ''
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
   upstreamRequestIdHeader.value = ''
@@ -5792,7 +5937,30 @@ const handleSubmit = async () => {
   if (isCNProviderPlatform(form.platform) || form.platform === 'opencode_go') {
     credentials.account_mode = form.platform === 'opencode_go' ? openCodeAccountMode.value : accountMode.value
     credentials.api_protocol = apiProtocol.value
-    if (apiProtocol.value === 'adaptive') {
+    // FORK-ANCHOR: create-cn-protocol-credentials (按字段契约写入 api_protocols/fallback_protocol/api_base_urls/base_url)
+    if (isCNPlatform.value) {
+      // 兜底：勾选集合为空（理论上不会发生）时回落到旧字段映射，保证 api_protocols 非空。
+      const normalizedProtocols = normalizeCnProtocols(apiProtocols.value, form.platform)
+      const selectedProtocols = normalizedProtocols.length > 0
+        ? normalizedProtocols
+        : cnProtocolsFromLegacy(form.platform, apiProtocol.value)
+      const selectedFallback = (selectedProtocols.includes(fallbackProtocol.value as CnNativeApiProtocol)
+        ? fallbackProtocol.value
+        : defaultFallbackProtocol(selectedProtocols)) as CnNativeApiProtocol | ''
+      const protocolBaseUrls: Record<string, string> = {}
+      for (const protocol of selectedProtocols) {
+        protocolBaseUrls[protocol] = (
+          adaptiveBaseUrls.value[protocol] || defaultCNBaseUrl(form.platform, accountMode.value, protocol)
+        ).trim()
+      }
+      credentials.api_protocols = selectedProtocols
+      credentials.fallback_protocol = selectedFallback
+      credentials.api_base_urls = protocolBaseUrls
+      credentials.base_url = protocolBaseUrls.chat_completions ||
+        protocolBaseUrls[selectedFallback as CnNativeApiProtocol] ||
+        apiKeyBaseUrl.value.trim()
+      credentials.api_protocol = legacyProtocolFromSelection(selectedProtocols, selectedFallback)
+    } else if (apiProtocol.value === 'adaptive') {
       const defaults = defaultCNAdaptiveBaseUrls(
         form.platform,
         form.platform === 'opencode_go' ? openCodeAccountMode.value : accountMode.value
@@ -5804,11 +5972,13 @@ const handleSubmit = async () => {
       credentials.api_base_urls = protocolBaseUrls
       credentials.base_url = protocolBaseUrls.chat_completions
     }
-    const resolvedCNBase = (
-      apiKeyBaseUrl.value.trim() || defaultCNBaseUrl(form.platform, currentOpenCodeOrCNMode(), apiProtocol.value)
-    ).trim()
-    if (apiProtocol.value !== 'adaptive' && resolvedCNBase) {
-      credentials.base_url = resolvedCNBase
+    if (!isCNPlatform.value) {
+      const resolvedCNBase = (
+        apiKeyBaseUrl.value.trim() || defaultCNBaseUrl(form.platform, currentOpenCodeOrCNMode(), apiProtocol.value)
+      ).trim()
+      if (apiProtocol.value !== 'adaptive' && resolvedCNBase) {
+        credentials.base_url = resolvedCNBase
+      }
     }
     // 智谱团队版 Coding Plan：组织/项目 ID 写入凭据（非空才写）
     if (form.platform === 'zhipu' && accountMode.value === 'coding') {

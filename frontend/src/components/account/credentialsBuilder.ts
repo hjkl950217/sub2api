@@ -459,6 +459,82 @@ export function defaultCNAdaptiveBaseUrls(
   }
 }
 
+// FORK-ANCHOR: cn-protocol-selection-helpers (国产供应商协议多选 + 兜底转发协议的字段契约与旧值映射)
+// 保存契约（后端已实现，勿改）：
+//   api_protocols: string[] 勾选的协议（非空、去重、仅含平台支持的协议）
+//   fallback_protocol: string 兜底转发协议，必为 api_protocols 之一
+//   api_base_urls: 只含已勾选协议的端点；base_url: 勾选了 chat_completions 就用它，否则用兜底协议
+//   api_protocol: 兼容旧版的回退值，见 legacyProtocolFromSelection
+
+/** 国产供应商可勾选的上游原生协议（不含 adaptive）。 */
+export const CN_API_PROTOCOLS: CnNativeApiProtocol[] = ['chat_completions', 'anthropic', 'responses']
+
+/** 兜底协议的优先顺序：chat_completions > anthropic > responses。 */
+const CN_PROTOCOL_PRIORITY: CnNativeApiProtocol[] = ['chat_completions', 'anthropic', 'responses']
+
+export function isCnNativeProtocol(v: unknown): v is CnNativeApiProtocol {
+  return v === 'chat_completions' || v === 'anthropic' || v === 'responses'
+}
+
+/**
+ * 解析已勾选协议（数组或逗号串）：去重、过滤非法值，
+ * 并剔除该平台不支持的原生 responses。
+ */
+export function normalizeCnProtocols(raw: unknown, platform: string): CnNativeApiProtocol[] {
+  const tokens: unknown[] = Array.isArray(raw)
+    ? raw
+    : typeof raw === 'string'
+      ? raw.split(',')
+      : []
+  const seen = new Set<CnNativeApiProtocol>()
+  const result: CnNativeApiProtocol[] = []
+  for (const token of tokens) {
+    const value = typeof token === 'string' ? token.trim() : token
+    if (!isCnNativeProtocol(value)) continue
+    if (value === 'responses' && !cnSupportsNativeResponses(platform)) continue
+    if (seen.has(value)) continue
+    seen.add(value)
+    result.push(value)
+  }
+  return result
+}
+
+/** 按 chat_completions > anthropic > responses 取兜底协议；空数组返回 ''。 */
+export function defaultFallbackProtocol(protocols: CnNativeApiProtocol[]): CnNativeApiProtocol | '' {
+  for (const candidate of CN_PROTOCOL_PRIORITY) {
+    if (protocols.includes(candidate)) return candidate
+  }
+  return ''
+}
+
+/**
+ * 旧字段 api_protocol 映射为勾选协议集合：
+ * 'adaptive' → 该平台支持的全部协议；其余三个值 → 只勾选它自己；
+ * 缺失/非法 → ['chat_completions']。
+ */
+export function cnProtocolsFromLegacy(platform: string, legacy: unknown): CnNativeApiProtocol[] {
+  if (legacy === 'adaptive') {
+    return normalizeCnProtocols(CN_API_PROTOCOLS, platform)
+  }
+  if (isCnNativeProtocol(legacy)) {
+    const mapped = normalizeCnProtocols([legacy], platform)
+    if (mapped.length > 0) return mapped
+  }
+  return ['chat_completions']
+}
+
+/**
+ * 勾选协议 + 兜底协议 → 兼容旧版的 api_protocol 回退值：
+ * 恰好勾选 1 个协议且它等于兜底协议时写该协议名，否则写 'adaptive'。
+ */
+export function legacyProtocolFromSelection(
+  protocols: CnNativeApiProtocol[],
+  fallback: CnNativeApiProtocol | ''
+): CnApiProtocol {
+  if (protocols.length === 1 && fallback === protocols[0]) return protocols[0]
+  return 'adaptive'
+}
+
 // ===== 国产供应商用量单元格可见性（单一事实源） =====
 // CNProviderQuotaCell / CNProviderBalanceCell 与 AccountUsageCell 的占位符判定
 // 共用，避免多处复制条件后一处改另一处漏改。
