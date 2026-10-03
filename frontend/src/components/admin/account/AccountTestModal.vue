@@ -170,6 +170,28 @@
         <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.grok.audioUploadHint') }}</p>
       </div>
 
+      <!-- FORK-ANCHOR: test-modal-protocol-results (二开：协议探测矩阵的逐协议结果) -->
+      <div v-if="protocolResults.length > 0" class="space-y-1.5" data-testid="protocol-results">
+        <div class="text-xs font-medium text-gray-600 dark:text-gray-300">
+          {{ t('admin.accounts.protocolProbeTitle') }}
+        </div>
+        <div class="space-y-1">
+          <div
+            v-for="item in protocolResults"
+            :key="item.protocol"
+            class="flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs"
+            :class="item.success
+              ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-400'
+              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400'"
+            :data-testid="`protocol-result-${item.protocol}`"
+          >
+            <Icon :name="item.success ? 'check' : 'x'" size="sm" :stroke-width="2" />
+            <span class="font-medium">{{ t(`admin.accounts.cnProviders.apiProtocol.${protocolLabelKey(item.protocol)}`) }}</span>
+            <span class="ml-auto">{{ item.success ? t('admin.accounts.protocolProbePassed') : t('admin.accounts.protocolProbeFailed') }}</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Terminal Output -->
       <div class="group relative">
         <div
@@ -320,6 +342,24 @@
 
     <template #footer>
       <div class="flex justify-end gap-3">
+        <!-- FORK-ANCHOR: test-modal-sync-protocols-button (二开：一键按测试结果更新账号支持的协议) -->
+        <button
+          v-if="supportsProtocolSync"
+          type="button"
+          data-testid="sync-protocols-button"
+          :disabled="status === 'connecting'"
+          :title="t('admin.accounts.syncProtocolsHint')"
+          @click="startProtocolSync"
+          :class="[
+            'mr-auto flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+            status === 'connecting'
+              ? 'cursor-not-allowed bg-indigo-300 text-white'
+              : 'bg-indigo-500 text-white hover:bg-indigo-600'
+          ]"
+        >
+          <Icon name="refresh" size="sm" :stroke-width="2" :class="status === 'connecting' ? 'animate-spin' : ''" />
+          <span>{{ t('admin.accounts.syncProtocols') }}</span>
+        </button>
         <button
           @click="handleClose"
           class="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500"
@@ -327,7 +367,7 @@
           {{ t('common.close') }}
         </button>
         <button
-          @click="startTest"
+          @click="startTest()"
           :disabled="!canStartTest"
           :class="[
             'flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all',
@@ -375,10 +415,12 @@ import { useClipboard } from '@/composables/useClipboard'
 import { buildApiUrl } from '@/api/client'
 import { ADMIN_UI_REQUEST_HEADER } from '@/api/adminUIRequest'
 import { adminAPI } from '@/api/admin'
+import { useAppStore } from '@/stores/app'
 import type { Account, ClaudeModel } from '@/types'
 
 const { t } = useI18n()
 const { copyToClipboard } = useClipboard()
+const appStore = useAppStore()
 
 interface OutputLine {
   text: string
@@ -397,7 +439,28 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'close'): void
+  // FORK-ANCHOR: test-modal-protocols-updated-event (二开：协议探测回写成功后通知列表刷新)
+  (e: 'protocols-updated'): void
 }>()
+
+// FORK-ANCHOR: test-modal-sync-protocols-state (二开：协议探测矩阵状态与平台判定)
+// 「更新支持协议」只对国产供应商（kimi/zhipu/deepseek/minimax）生效：这些平台
+// 才有多协议复选配置，opencode_go 的协议是按模型规则推导的，不适用。
+const CN_PROTOCOL_PLATFORMS = ['kimi', 'zhipu', 'deepseek', 'minimax']
+const supportsProtocolSync = computed(
+  () => !!props.account && CN_PROTOCOL_PLATFORMS.includes(props.account.platform)
+)
+interface ProtocolProbeResult {
+  protocol: string
+  success: boolean
+}
+const protocolResults = ref<ProtocolProbeResult[]>([])
+const syncingProtocols = ref(false)
+const protocolLabelKey = (protocol: string): string => {
+  if (protocol === 'anthropic') return 'anthropic'
+  if (protocol === 'responses') return 'responses'
+  return 'chatCompletions'
+}
 
 const terminalRef = ref<HTMLElement | null>(null)
 const status = ref<'idle' | 'connecting' | 'success' | 'error'>('idle')
@@ -675,6 +738,8 @@ const testModeSummary = computed(() => {
 
 const canStartTest = computed(() => {
   if (status.value === 'connecting') return false
+  // FORK-ANCHOR: test-modal-sync-no-model-required (二开：协议探测矩阵模式不依赖测试模型)
+  if (syncingProtocols.value) return true
   if (isGrokAccount.value) {
     if (
       grokTestMode.value === 'search' ||
@@ -799,6 +864,8 @@ const resetState = () => {
   generatedAudios.value = []
   generatedVideos.value = []
   previewImageUrl.value = ''
+  // FORK-ANCHOR: test-modal-protocol-results-reset (二开：重跑测试时清空上一轮协议探测结果)
+  protocolResults.value = []
 }
 
 const handleClose = () => {
@@ -825,10 +892,18 @@ const scrollToBottom = async () => {
   }
 }
 
-const startTest = async () => {
-  if (!props.account || !canStartTest.value) return
+// FORK-ANCHOR: test-modal-sync-protocols-start (二开：「更新支持协议」入口，按探测结果回写勾选集合)
+const startProtocolSync = async () => {
+  if (!props.account || status.value === 'connecting') return
+  await startTest(true)
+}
+
+const startTest = async (syncProtocols = false) => {
+  if (!props.account) return
+  if (!syncProtocols && !canStartTest.value) return
 
   resetState()
+  syncingProtocols.value = syncProtocols
   status.value = 'connecting'
   addLine(t('admin.accounts.startingTestForAccount', { name: props.account.name }), 'text-blue-400')
   addLine(t('admin.accounts.testAccountTypeLabel', { type: props.account.type }), 'text-gray-400')
@@ -850,9 +925,14 @@ const startTest = async () => {
       mode?: string
       image_data_url?: string
       audio_data_url?: string
+      sync_protocols?: boolean
     } = {
       model_id: showModelSelect.value ? selectedModelId.value : '',
       prompt: supportsPromptInput.value ? testPrompt.value.trim() : ''
+    }
+    // FORK-ANCHOR: test-modal-sync-protocols-flag (二开：请求协议探测矩阵)
+    if (syncingProtocols.value) {
+      requestBody.sync_protocols = true
     }
     if (isOpenAIAccount.value) {
       requestBody.mode = testMode.value
@@ -948,8 +1028,30 @@ const handleEvent = (event: {
   audio_url?: string
   video_url?: string
   mime_type?: string
+  protocol?: string
+  protocol_ok?: boolean
+  protocol_applied?: boolean
 }) => {
   switch (event.type) {
+    // FORK-ANCHOR: test-modal-protocol-events (二开：协议探测矩阵的逐协议事件)
+    case 'protocol_probe':
+      if (event.protocol) {
+        addLine(
+          t('admin.accounts.protocolProbing', {
+            protocol: t(`admin.accounts.cnProviders.apiProtocol.${protocolLabelKey(event.protocol)}`)
+          }),
+          'text-cyan-300'
+        )
+      }
+      break
+
+    case 'protocol_result':
+      if (event.protocol) {
+        // 后端用 protocol_ok 上报结论（success 字段带 omitempty，false 会被省略）
+        protocolResults.value.push({ protocol: event.protocol, success: event.protocol_ok === true })
+      }
+      break
+
     case 'test_start':
       addLine(t('admin.accounts.connectedToApi'), 'text-green-400')
       if (event.model) {
@@ -1034,9 +1136,20 @@ const handleEvent = (event: {
         status.value = 'error'
         errorMessage.value = event.error || t('admin.accounts.testFailed')
       }
+      // FORK-ANCHOR: test-modal-sync-protocols-done (二开：协议探测结果提示与账号列表刷新)
+      if (syncingProtocols.value) {
+        if (event.protocol_applied) {
+          appStore.showSuccess(t('admin.accounts.syncProtocolsSuccess'))
+          emit('protocols-updated')
+        } else {
+          appStore.showError(t('admin.accounts.syncProtocolsNonePassed'))
+        }
+        syncingProtocols.value = false
+      }
       break
 
     case 'error':
+      syncingProtocols.value = false
       status.value = 'error'
       errorMessage.value = event.error || t('common.unknownError')
       if (streamingContent.value) {

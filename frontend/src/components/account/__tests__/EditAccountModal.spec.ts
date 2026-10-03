@@ -726,16 +726,44 @@ describe('EditAccountModal', () => {
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
-    // chat_completions 被取消后它那格的 relay 不再提交，端点回落该平台默认
+    // 勾上 anthropic 时沿用了 chat 那格的自定义 relay（见
+    // edit-cn-protocol-endpoint-copy：多站点三协议共用一个地址）；
+    // chat_completions 被取消后它那格不再提交，端点集合只剩 anthropic。
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toMatchObject({
       api_protocols: ['anthropic'],
       fallback_protocol: 'anthropic',
       api_protocol: 'anthropic',
-      base_url: 'https://open.bigmodel.cn/api/anthropic',
+      base_url: 'https://relay.example.com/v1',
       api_base_urls: {
-        anthropic: 'https://open.bigmodel.cn/api/anthropic'
+        anthropic: 'https://relay.example.com/v1'
       }
     })
+  })
+
+  // FORK-ANCHOR: test-edit-cn-endpoint-block (端点配置区位于兜底转发协议下方，新勾选协议沿用上一个端点)
+  it('renders the CN endpoint block below the fallback protocol and reuses the previous endpoint', async () => {
+    const account = buildAccount()
+    account.platform = 'zhipu'
+    account.credentials = {
+      api_key: 'sk-glm',
+      account_mode: 'payg',
+      api_protocol: 'chat_completions',
+      base_url: 'https://relay.example.com/v1'
+    }
+    const wrapper = mountModal(account)
+
+    // 端点配置区在「兜底转发协议」之后（DOM 顺序即视觉顺序）
+    const fallback = wrapper.get('[data-testid="cn-fallback-protocol"]').element
+    const endpoint = wrapper.get('[data-testid="cn-adaptive-base-url-chat_completions"]').element
+    expect(
+      fallback.compareDocumentPosition(endpoint) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+
+    // 勾上 anthropic：chat 的地址是用户自定义的 relay → 新端点沿用该地址
+    await wrapper.get('[data-testid="cn-api-protocol-anthropic"]').trigger('click')
+    expect(
+      (wrapper.get('[data-testid="cn-adaptive-base-url-anthropic"]').element as HTMLInputElement).value
+    ).toBe('https://relay.example.com/v1')
   })
 
   it.each([

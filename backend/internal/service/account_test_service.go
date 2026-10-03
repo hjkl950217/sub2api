@@ -63,6 +63,14 @@ type TestEvent struct {
 	Data     any    `json:"data,omitempty"`
 	Success  bool   `json:"success,omitempty"`
 	Error    string `json:"error,omitempty"`
+	// FORK-ANCHOR: fork-api-protocols-test-event-protocol (二开：协议探测矩阵按协议上报结果)
+	// Protocol 标识该事件属于哪个上游协议（protocol_probe / protocol_result 事件用）。
+	Protocol string `json:"protocol,omitempty"`
+	// ProtocolOK 是 protocol_result 上的探测结论。用指针而非 bool：success 带
+	// omitempty 会把 false 整个丢掉，前端无法区分"失败"和"字段缺失"。
+	ProtocolOK *bool `json:"protocol_ok,omitempty"`
+	// ProtocolApplied 仅在 test_complete 上出现，表示探测结果是否已写回账号配置。
+	ProtocolApplied bool `json:"protocol_applied,omitempty"`
 }
 
 // AccountTestOptions carries optional media for admin connectivity tests.
@@ -70,6 +78,10 @@ type TestEvent struct {
 type AccountTestOptions struct {
 	ImageDataURL string
 	AudioDataURL string
+	// FORK-ANCHOR: fork-api-protocols-test-sync-option (二开：测试弹窗「更新支持协议」按探测结果回写勾选集合)
+	// SyncProtocols 为 true 时走协议探测矩阵：三个协议各测一次，并把通过的协议
+	// 写回账号的 api_protocols / fallback_protocol。
+	SyncProtocols bool
 }
 
 func firstAccountTestOptions(opts []AccountTestOptions) AccountTestOptions {
@@ -384,6 +396,10 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 
 	// Route to platform-specific test method
 	if account.IsCNProvider() {
+		// FORK-ANCHOR: fork-api-protocols-test-matrix-routing (二开：请求"更新支持协议"时走协议探测矩阵)
+		if testOpts.SyncProtocols {
+			return s.probeCNProviderProtocolsConnection(c, account, modelID, prompt)
+		}
 		// FORK-ANCHOR: fork-api-protocols-test-routing (二开：协议复选账号逐个验证已勾选的原生端点)
 		if account.HasExplicitAPIProtocols() {
 			return s.testCNProviderSelectedProtocolsConnection(c, account, modelID, prompt)
@@ -3257,6 +3273,14 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 	if event.Type == "test_complete" {
 		if suppress, ok := c.Get(accountTestSuppressCompletionContextKey); ok {
 			if suppressCompletion, _ := suppress.(bool); suppressCompletion {
+				return
+			}
+		}
+	}
+	// FORK-ANCHOR: fork-api-protocols-test-suppress-error (二开：协议探测矩阵把单个协议失败当结论，不当作终止错误)
+	if event.Type == "error" {
+		if suppress, ok := c.Get(accountTestSuppressErrorContextKey); ok {
+			if suppressError, _ := suppress.(bool); suppressError {
 				return
 			}
 		}

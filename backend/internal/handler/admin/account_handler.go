@@ -1265,6 +1265,9 @@ type TestAccountRequest struct {
 	ModelID string `json:"model_id"`
 	Prompt  string `json:"prompt"`
 	Mode    string `json:"mode"`
+	// FORK-ANCHOR: fork-api-protocols-test-sync-request (二开：测试弹窗「更新支持协议」请求字段)
+	// SyncProtocols 请求协议探测矩阵：三个协议各测一次，并把通过的协议写回账号勾选集合。
+	SyncProtocols bool `json:"sync_protocols"`
 	// Optional media for Grok (and future) real generation tests.
 	// ImageDataURL / AudioDataURL are data:<mime>;base64,... payloads.
 	ImageDataURL string `json:"image_data_url"`
@@ -1301,6 +1304,8 @@ func (h *AccountHandler) Test(c *gin.Context) {
 	opts := service.AccountTestOptions{
 		ImageDataURL: req.ImageDataURL,
 		AudioDataURL: req.AudioDataURL,
+		// FORK-ANCHOR: fork-api-protocols-test-sync-option-pass (二开：把「更新支持协议」开关透传给测试服务)
+		SyncProtocols: req.SyncProtocols,
 	}
 
 	// Use AccountTestService to test the account with SSE streaming

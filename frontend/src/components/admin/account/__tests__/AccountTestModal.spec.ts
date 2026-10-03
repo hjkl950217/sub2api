@@ -2,9 +2,16 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountTestModal from '../AccountTestModal.vue'
 
-const { getAvailableModels, copyToClipboard } = vi.hoisted(() => ({
+const { getAvailableModels, copyToClipboard, showSuccess, showError } = vi.hoisted(() => ({
   getAvailableModels: vi.fn(),
-  copyToClipboard: vi.fn()
+  copyToClipboard: vi.fn(),
+  showSuccess: vi.fn(),
+  showError: vi.fn()
+}))
+
+// FORK: 测试弹窗「更新支持协议」按钮依赖 app store 的提示能力
+vi.mock('@/stores/app', () => ({
+  useAppStore: () => ({ showSuccess, showError })
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -185,6 +192,96 @@ describe('AccountTestModal', () => {
       prompt: '',
       mode: 'text'
     })
+  })
+
+  // FORK-ANCHOR: test-test-modal-sync-protocols (二开：测试弹窗「更新支持协议」按钮)
+  it('国产供应商显示「更新支持协议」按钮，且非 CN 平台不显示', async () => {
+    const cnWrapper = mountModal({
+      id: 7,
+      name: 'DeepSeek',
+      platform: 'deepseek',
+      type: 'apikey',
+      status: 'active'
+    })
+    expect(cnWrapper.find('[data-testid="sync-protocols-button"]').exists()).toBe(true)
+
+    const openaiWrapper = mountModal({
+      id: 8,
+      name: 'OpenAI',
+      platform: 'openai',
+      type: 'apikey',
+      status: 'active'
+    })
+    expect(openaiWrapper.find('[data-testid="sync-protocols-button"]').exists()).toBe(false)
+  })
+
+  it('点击「更新支持协议」发送 sync_protocols，并按结果渲染逐协议结论', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_probe","protocol":"chat_completions"}\n',
+        'data: {"type":"protocol_result","protocol":"chat_completions","protocol_ok":true}\n',
+        'data: {"type":"protocol_probe","protocol":"anthropic"}\n',
+        'data: {"type":"protocol_result","protocol":"anthropic","protocol_ok":false}\n',
+        'data: {"type":"test_complete","success":true,"protocol_applied":true}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({
+      id: 7,
+      name: 'DeepSeek',
+      platform: 'deepseek',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="sync-protocols-button"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+    const [, request] = (global.fetch as any).mock.calls[0]
+    expect(JSON.parse(request.body)).toMatchObject({ sync_protocols: true })
+
+    // 逐协议结论面板：通过/未通过各一条
+    expect(wrapper.find('[data-testid="protocol-results"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="protocol-result-chat_completions"]').text()).toContain(
+      'admin.accounts.protocolProbePassed'
+    )
+    expect(wrapper.find('[data-testid="protocol-result-anthropic"]').text()).toContain(
+      'admin.accounts.protocolProbeFailed'
+    )
+
+    // 回写成功 → 通知外层刷新账号
+    expect(showSuccess).toHaveBeenCalledWith('admin.accounts.syncProtocolsSuccess')
+    expect(wrapper.emitted('protocols-updated')).toHaveLength(1)
+  })
+
+  it('三个协议都没通过时不刷新账号，并提示配置未改动', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_result","protocol":"chat_completions","protocol_ok":false}\n',
+        'data: {"type":"test_complete"}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({
+      id: 7,
+      name: 'DeepSeek',
+      platform: 'deepseek',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="sync-protocols-button"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(showError).toHaveBeenCalledWith('admin.accounts.syncProtocolsNonePassed')
+    expect(wrapper.emitted('protocols-updated')).toBeUndefined()
   })
 
   it('OpenAI Compact 探测会携带 compact 测试模式', async () => {

@@ -649,6 +649,45 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     })
   })
 
+  // FORK-ANCHOR: test-create-cn-endpoint-block (端点配置区位于兜底转发协议下方，新勾选协议沿用上一个端点)
+  it('renders the CN endpoint block below the fallback protocol and reuses the previous endpoint', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Kimi')
+
+    // 端点配置区在「兜底转发协议」之后（DOM 顺序即视觉顺序）
+    const fallback = wrapper.get('[data-testid="cn-fallback-protocol"]').element
+    const endpoint = wrapper.get('[data-testid="cn-adaptive-base-url-chat_completions"]').element
+    expect(
+      fallback.compareDocumentPosition(endpoint) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+
+    // 自定义 chat 端点 → 取消另两个协议 → 重新勾选 anthropic 时沿用 chat 的自定义地址
+    await wrapper
+      .get('[data-testid="cn-adaptive-base-url-chat_completions"]')
+      .setValue('https://relay.example.com/v1')
+    await wrapper.get('[data-testid="cn-api-protocol-anthropic"]').trigger('click')
+    await wrapper.get('[data-testid="cn-api-protocol-responses"]').trigger('click')
+    expect(wrapper.find('[data-testid="cn-adaptive-base-url-anthropic"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="cn-api-protocol-anthropic"]').trigger('click')
+    expect(
+      (wrapper.get('[data-testid="cn-adaptive-base-url-anthropic"]').element as HTMLInputElement).value
+    ).toBe('https://relay.example.com/v1')
+  })
+
+  it('keeps the official endpoint when the previous protocol still uses its platform default', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Kimi')
+
+    // 全用官方默认值：重新勾选 anthropic 不应把它的官方地址换成 chat 的地址
+    await wrapper.get('[data-testid="cn-api-protocol-anthropic"]').trigger('click')
+    await wrapper.get('[data-testid="cn-api-protocol-anthropic"]').trigger('click')
+
+    expect(
+      (wrapper.get('[data-testid="cn-adaptive-base-url-anthropic"]').element as HTMLInputElement).value
+    ).toBe('https://api.moonshot.cn/anthropic')
+  })
+
   it('uses the edited CN endpoint when previewing upstream models', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'Kimi')

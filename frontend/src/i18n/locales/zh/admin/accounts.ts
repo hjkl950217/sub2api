@@ -314,6 +314,15 @@ export default {
         minimax: 'MiniMax',
         opencode_go: 'OpenCode',
       },
+      // FORK-ANCHOR: i18n-cn-sync-protocols-zh (测试弹窗「更新支持协议」文案；代码引用的是 admin.accounts 顶层路径)
+      syncProtocols: '更新支持协议',
+      syncProtocolsHint: '把三个协议各测一次，测通的协议自动写入账号的 API 协议勾选，兜底转发协议取 Chat Completions 优先。',
+      syncProtocolsSuccess: '已按测试结果更新账号支持的协议',
+      syncProtocolsNonePassed: '三个协议都没有测通，账号配置保持不变',
+      protocolProbeTitle: '协议测试结果',
+      protocolProbing: '正在测试 {protocol} 端点…',
+      protocolProbePassed: '可用',
+      protocolProbeFailed: '不可用',
       cnProviders: {
         accountMode: {
           title: '账号类型',
@@ -339,6 +348,8 @@ export default {
           fallback: '兜底转发协议',
           fallbackHint: '入站请求的协议不在上方勾选范围内时，改用该协议转发到上游。',
           selectAtLeastOne: '至少勾选一个协议',
+          // FORK-ANCHOR: i18n-cn-endpoint-hint-zh (端点配置区说明：位于兜底转发协议下方，新勾选协议会沿用上一个端点)
+          endpointsHint: '只显示已勾选的协议。新勾选的协议会默认沿用上一个协议的地址，很多站点三个协议共用同一地址，按需单独修改。',
         },
         zhipuTeam: {
           title: '团队版组织 / 项目 ID',

@@ -44,9 +44,11 @@ git add -f CLAUDE.md
   ```
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **96 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **125 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+  注意：上面那条 grep 命令**不覆盖 `.github/` 下的 15 个锚点**（`.github` 是隐藏目录，`grep -r .` 默认跳过），
+  核对总数时要把它一起算上：`grep -rn "FORK-ANCHOR:" .github/`。
 
-当前锚点全量清单（**96 个**，合并上游后逐个确认还在、且只出现一次）：
+当前锚点全量清单（**125 个** = 源码目录 110 个 + `.github/` 15 个，合并上游后逐个确认还在、且只出现一次）：
 
 | 锚点 | 文件 |
 |---|---|
@@ -67,11 +69,14 @@ git add -f CLAUDE.md
 | `sidebar-compact-width-css` | `frontend/src/style.css` |
 | `layout-compact-offset` | `frontend/src/components/layout/AppLayout.vue` |
 | `cn-protocol-selection-helpers` | `frontend/src/components/account/credentialsBuilder.ts` |
-| `create-cn-protocol-multiselect` / `create-opencode-protocol-single` / `create-cn-base-url-single` / `create-cn-protocol-endpoints` / `create-cn-endpoint-presets` / `create-cn-protocol-state` / `create-cn-protocol-multiselect-computed` / `create-cn-protocol-defaults-on-reset` / `create-cn-platform-default-protocols` / `create-cn-preset-sync-protocols` / `create-cn-preview-base-url` / `create-cn-platform-watch-reset` / `create-cn-protocol-reset-form` / `create-cn-protocol-credentials` | `frontend/src/components/account/CreateAccountModal.vue` |
-| `edit-cn-base-url-single` / `edit-cn-protocol-endpoints` / `edit-cn-endpoint-presets` / `edit-cn-protocol-multiselect` / `edit-opencode-protocol-single` / `edit-cn-protocol-state` / `edit-cn-protocol-multiselect-computed` / `edit-cn-protocol-watch-skip` / `edit-cn-mode-watch-fallback-base` / `edit-cn-preset-sync-protocols` / `edit-cn-default-base-url-fallback` / `edit-cn-protocol-backfill` / `edit-cn-platform-default-url-fallback` / `edit-cn-backfill-base-url` / `edit-cn-protocol-credentials` | `frontend/src/components/account/EditAccountModal.vue` |
-| `test-create-opencode-untouched` / `test-create-cn-protocols-default` / `test-create-cn-protocol-toggle` | `frontend/src/components/account/__tests__/CreateAccountModal.spec.ts` |
-| `test-edit-cn-protocols-backfill` / `test-edit-cn-protocol-toggle` | `frontend/src/components/account/__tests__/EditAccountModal.spec.ts` |
-| `i18n-cn-fallback-protocol-zh` / `i18n-cn-fallback-protocol-en` | `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` |
+| `create-cn-protocol-multiselect` / `create-opencode-protocol-single` / `create-cn-base-url-single` / `create-cn-protocol-endpoints` / `create-cn-endpoint-presets` / `create-cn-endpoint-block` / `create-cn-protocol-state` / `create-cn-protocol-multiselect-computed` / `create-cn-protocol-endpoint-copy` / `create-cn-protocol-defaults-on-reset` / `create-cn-platform-default-protocols` / `create-cn-preset-sync-protocols` / `create-cn-preview-base-url` / `create-cn-platform-watch-reset` / `create-cn-protocol-reset-form` / `create-cn-protocol-credentials` | `frontend/src/components/account/CreateAccountModal.vue` |
+| `edit-cn-base-url-single` / `edit-cn-protocol-endpoints` / `edit-cn-endpoint-presets` / `edit-cn-endpoint-block` / `edit-cn-protocol-multiselect` / `edit-opencode-protocol-single` / `edit-cn-protocol-state` / `edit-cn-protocol-multiselect-computed` / `edit-cn-protocol-endpoint-copy` / `edit-cn-protocol-watch-skip` / `edit-cn-mode-watch-fallback-base` / `edit-cn-preset-sync-protocols` / `edit-cn-default-base-url-fallback` / `edit-cn-protocol-backfill` / `edit-cn-platform-default-url-fallback` / `edit-cn-backfill-base-url` / `edit-cn-protocol-credentials` | `frontend/src/components/account/EditAccountModal.vue` |
+| `test-create-opencode-untouched` / `test-create-cn-protocols-default` / `test-create-cn-protocol-toggle` / `test-create-cn-endpoint-block` | `frontend/src/components/account/__tests__/CreateAccountModal.spec.ts` |
+| `test-edit-cn-protocols-backfill` / `test-edit-cn-protocol-toggle` / `test-edit-cn-endpoint-block` | `frontend/src/components/account/__tests__/EditAccountModal.spec.ts` |
+| `i18n-cn-fallback-protocol-zh` / `i18n-cn-endpoint-hint-zh` / `i18n-cn-sync-protocols-zh` / `i18n-cn-fallback-protocol-en` / `i18n-cn-endpoint-hint-en` / `i18n-cn-sync-protocols-en` | `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` |
+| `test-modal-sync-protocols-button` / `test-modal-sync-protocols-state` / `test-modal-sync-no-model-required` / `test-modal-sync-protocols-start` / `test-modal-sync-protocols-flag` / `test-modal-sync-protocols-done` / `test-modal-protocol-events` / `test-modal-protocol-results` / `test-modal-protocol-results-reset` / `test-modal-protocols-updated-event` | `frontend/src/components/admin/account/AccountTestModal.vue` |
+| `test-test-modal-sync-protocols` | `frontend/src/components/admin/account/__tests__/AccountTestModal.spec.ts` |
+| `test-modal-protocols-updated-refresh` / `test-modal-protocols-updated-handler` | `frontend/src/views/admin/AccountsView.vue` |
 | `fork-api-protocols-parse` / `fork-api-protocols-openai-base-url` / `fork-api-protocols-native-responses` / `fork-api-protocols-cn-base-url` / `fork-api-protocols-anthropic-base` / `fork-api-protocols-openai-format-base` | `backend/internal/service/account.go` |
 | `fork-api-protocols-responses-inbound` / `fork-api-protocols-raw-cc-gate` / `fork-api-protocols-responses-base-forward` | `backend/internal/service/openai_gateway_forward.go` |
 | `fork-api-protocols-chat-inbound` | `backend/internal/service/openai_gateway_chat_completions.go` |
@@ -79,9 +84,10 @@ git add -f CLAUDE.md
 | `fork-api-protocols-responses-base-passthrough` | `backend/internal/service/openai_gateway_passthrough.go` |
 | `fork-api-protocols-responses-base-ws` | `backend/internal/service/openai_ws_forwarder_payload.go` |
 | `fork-api-protocols-ollama-responses-base` | `backend/internal/service/openai_gateway_ollama_cloud_max_tokens.go` |
-| `fork-api-protocols-test-routing` | `backend/internal/service/account_test_service.go` |
+| `fork-api-protocols-test-routing` / `fork-api-protocols-test-matrix-routing` / `fork-api-protocols-test-suppress-error` / `fork-api-protocols-test-event-protocol` / `fork-api-protocols-test-sync-option` | `backend/internal/service/account_test_service.go` |
 | `fork-api-protocols-test-selected` | `backend/internal/service/account_test_service_cn_adaptive.go` |
 | `fork-api-protocols-billing-probe-base` | `backend/internal/service/upstream_billing_probe.go` |
+| `fork-api-protocols-test-sync-request` / `fork-api-protocols-test-sync-option-pass` | `backend/internal/handler/admin/account_handler.go` |
 
 ### 2.1 `.github/workflows/release.yml`
 
@@ -315,6 +321,62 @@ chat_completions / anthropic / responses。OpenCode Go 平台**保持原单选 U
 - 前端：`vue-tsc --noEmit` 0 错误；`vitest run` 334 文件 / 2562 用例全绿。
 - **注意**：本机 `NODE_ENV=production` 会让 vitest 里 VTU 的 stubs 全部失效（Vue 3.5 生产分支不接
   `transformVNodeArgs`），跑前端测试前必须设 NODE_ENV=test；这是环境问题，干净 HEAD 上同样全红。
+
+### 2.13 端点配置区位置调整 + 一键「更新支持协议」（改上游文件，新增 29 个锚点）
+
+**背景**（长空 2026-10-03 提出）：
+
+1. 协议端点输入区原来在 API Key 区里，与「兜底转发协议」分处两处，改协议时要来回找；
+2. 很多站点三个协议**共用同一个地址**，新勾选一个协议时端点被平台默认值预填，得手抄一遍；
+3. 新接入一个站时不知道它支持哪些协议，做法是「先把三个都勾上 → 逐个测 → 手工取消测不通的」，
+   缺一个「把测试结果一键写回账号」的按钮。
+
+#### 改动 1：端点配置区移到「兜底转发协议」下方
+
+- `CreateAccountModal.vue` / `EditAccountModal.vue`：`*-cn-endpoint-block` 从 API Key 区移到兜底协议下拉之后
+  （DOM 顺序 = 视觉顺序），只渲染已勾选协议；API Key 区里只保留 opencode_go 自适应档的端点区（原行为）。
+- 新勾选协议时默认**沿用上一个已勾选协议的地址**（`*-cn-protocol-endpoint-copy`）。规则三条：
+  1. 目标端点已被用户改过（非空且 ≠ 平台默认值）→ 不动；
+  2. 上一个已勾选协议的地址是用户自定义的 → 复制过来（自建站点最常见的形态）；
+  3. 否则仅在目标端点为空时用上一个地址补空——官方平台三个协议地址本就不同，不能被覆盖。
+- 新增文案 `endpointsHint`。
+
+#### 改动 2：测试弹窗「更新支持协议」按钮（放在弹窗 footer 左侧）
+
+- 只对国产供应商（kimi / zhipu / deepseek / minimax）显示；opencode_go 的协议是按模型规则推导的，不适用。
+- 后端新增 `probeCNProviderProtocolsConnection`（新文件 `account_test_service_cn_protocol_matrix.go`，带 `FORK:` 头）：
+  三个协议**各测一次**（用账号当前的 `api_base_urls` 端点），每个协议单独发 `protocol_probe` /
+  `protocol_result` 事件；平台没有原生 Responses 端点（zhipu）时直接判定不支持、不发请求。
+- 全部测完后按结果回写：通过者进 `api_protocols`，`fallback_protocol` 取 chat_completions > anthropic > responses
+  的第一个，`base_url` 与 `api_protocol` 按既有契约同步（**全部失败则完全不改动账号配置**）。
+- 后端为支撑"单个协议失败不是终止错误"加了两个开关：`accountTestSuppressErrorContextKey`
+  （抑制 error 事件）与复用 `accountTestSuppressCompletionContextKey`（抑制内层探针的 test_complete，
+  跑完矩阵前不让前端提前判定结束）。
+- 协议结论用**指针字段** `protocol_ok` 上报：`success` 带 `omitempty`，false 会被整个省略，
+  前端无法区分"失败"和"字段缺失"。
+- 前端 `protocols-updated` 事件 → `AccountsView.vue` 重新拉账号详情并刷新列表。
+
+#### 本轮锚点（29 个）
+
+| 文件 | 锚点 |
+|---|---|
+| `backend/internal/service/account_test_service.go` | `-test-event-protocol` / `-test-sync-option` / `-test-matrix-routing` / `-test-suppress-error` |
+| `backend/internal/handler/admin/account_handler.go` | `-test-sync-request` / `-test-sync-option-pass` |
+| `frontend/.../AccountTestModal.vue` | `test-modal-sync-protocols-button` / `-state` / `-no-model-required` / `-start` / `-flag` / `-done` / `test-modal-protocol-events` / `-results` / `-results-reset` / `-protocols-updated-event` |
+| `frontend/.../AccountsView.vue` | `test-modal-protocols-updated-refresh` / `-handler` |
+| `frontend/.../CreateAccountModal.vue` | `create-cn-endpoint-block` / `create-cn-protocol-endpoint-copy` |
+| `frontend/.../EditAccountModal.vue` | `edit-cn-endpoint-block` / `edit-cn-protocol-endpoint-copy` |
+| `frontend/.../__tests__/*.spec.ts` | `test-create-cn-endpoint-block` / `test-edit-cn-endpoint-block` / `test-test-modal-sync-protocols` |
+| `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` | `i18n-cn-endpoint-hint-{zh,en}` / `i18n-cn-sync-protocols-{zh,en}` |
+
+新增测试文件 `backend/internal/service/fork_api_protocols_sync_test.go`（带 `FORK:` 头）：3 个用例覆盖
+逐协议探测、按结果回写、全失败保持原配置。前端新增 4 个用例（端点区位置与复制语义 ×2、按钮与回写提示 ×2）。
+
+**本轮踩坑**：`test_complete` 事件在函数返回前发出，而抑制开关是 `defer` 解除的，导致最终事件被自己吞掉
+（表现为前端收不到完成事件、测试全失败）；已在发最终事件前显式解除两层抑制。`success` 字段的 `omitempty`
+同样让"全失败"的完成事件看起来像成功，断言与前端判定都改为按 `protocol_ok` / 非 true 处理。`boolPtr` 与
+本包 `ops_metrics_collector.go` 重名，新文件用 `forkBoolPtr`。`httpProtocolSyncUpstream` 的 `DoWithTLS`
+签名写错（用了 `any` 而非 `*tlsfingerprint.Profile`），已复用既有的 `httpUpstreamRecorder`。
 
 ## 3. 发版方式
 

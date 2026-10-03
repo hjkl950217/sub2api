@@ -111,6 +111,15 @@ export default {
         minimax: 'MiniMax',
         opencode_go: 'OpenCode',
       },
+      // FORK-ANCHOR: i18n-cn-sync-protocols-en ("Update supported protocols" copy; code references the admin.accounts top-level path)
+      syncProtocols: 'Update supported protocols',
+      syncProtocolsHint: 'Probes all three protocols once each and writes the ones that pass into the account’s protocol selection, preferring Chat Completions as the fallback protocol.',
+      syncProtocolsSuccess: 'Account supported protocols updated from test results',
+      syncProtocolsNonePassed: 'None of the three protocols passed; account settings were left unchanged',
+      protocolProbeTitle: 'Protocol test results',
+      protocolProbing: 'Testing the {protocol} endpoint…',
+      protocolProbePassed: 'Available',
+      protocolProbeFailed: 'Unavailable',
       cnProviders: {
         accountMode: {
           title: 'Account Type',
@@ -136,6 +145,8 @@ export default {
           fallback: 'Fallback protocol',
           fallbackHint: 'Used when an inbound request protocol is not among the selected protocols above.',
           selectAtLeastOne: 'Select at least one protocol',
+          // FORK-ANCHOR: i18n-cn-endpoint-hint-en (endpoint block copy: sits under the fallback protocol; new selections reuse the previous endpoint)
+          endpointsHint: 'Only selected protocols are listed. A newly selected protocol reuses the previous protocol’s URL by default — many sites share one URL across all three — and can be edited separately.',
         },
         zhipuTeam: {
           title: 'Team Plan Organization / Project ID',

@@ -643,6 +643,36 @@
             </select>
             <p class="input-hint">{{ t('admin.accounts.cnProviders.apiProtocol.fallbackHint') }}</p>
           </div>
+          <!-- FORK-ANCHOR: create-cn-endpoint-block (端点配置区移到「兜底转发协议」下方，只渲染已勾选协议) -->
+          <div class="mt-3">
+            <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.endpoints') }}</label>
+            <p class="input-hint">{{ t('admin.accounts.cnProviders.apiProtocol.endpointsHint') }}</p>
+            <div class="mt-2 space-y-3">
+              <div v-for="item in cnEndpointProtocolOptions" :key="item.value">
+                <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                  {{ t(`admin.accounts.cnProviders.apiProtocol.${item.labelKey}`) }}
+                </label>
+                <input
+                  v-model="adaptiveBaseUrls[item.value]"
+                  type="text"
+                  class="input"
+                  :data-testid="`cn-adaptive-base-url-${item.value}`"
+                />
+                <!-- FORK-ANCHOR: create-cn-endpoint-presets (已勾选协议端点保留快捷预设填充) -->
+                <CnBaseUrlPresets
+                  class="mt-2"
+                  :platform="cnPresetPlatform"
+                  :mode="accountMode"
+                  :protocol="item.value"
+                  :current-url="adaptiveBaseUrls[item.value]"
+                  @select="onCnPresetSelect"
+                />
+              </div>
+            </div>
+            <p v-if="!cnSupportsNativeResponses(form.platform)" class="input-hint">
+              {{ t('admin.accounts.cnProviders.apiProtocol.responsesFallbackDesc') }}
+            </p>
+          </div>
         </template>
         <!-- FORK-ANCHOR: create-opencode-protocol-single (opencode_go 沿用原自适应单选，行为不变) -->
         <template v-else>
@@ -1437,8 +1467,8 @@
             @select="onCnPresetSelect"
           />
         </div>
-        <!-- FORK-ANCHOR: create-cn-protocol-endpoints (端点输入区只渲染已勾选协议) -->
-        <div v-else>
+        <!-- FORK-ANCHOR: create-cn-protocol-endpoints (端点输入区已上移到「兜底转发协议」下方，此处只保留 opencode_go 自适应档) -->
+        <div v-else-if="isOpenCodeGoPlatform">
           <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.endpoints') }}</label>
           <div class="mt-2 space-y-3">
             <div v-for="item in cnEndpointProtocolOptions" :key="item.value">
@@ -1451,21 +1481,8 @@
                 class="input"
                 :data-testid="`cn-adaptive-base-url-${item.value}`"
               />
-              <!-- FORK-ANCHOR: create-cn-endpoint-presets (已勾选协议端点保留快捷预设填充) -->
-              <CnBaseUrlPresets
-                v-if="isCNPlatform"
-                class="mt-2"
-                :platform="cnPresetPlatform"
-                :mode="accountMode"
-                :protocol="item.value"
-                :current-url="adaptiveBaseUrls[item.value]"
-                @select="onCnPresetSelect"
-              />
             </div>
           </div>
-          <p v-if="!cnSupportsNativeResponses(form.platform)" class="input-hint">
-            {{ t('admin.accounts.cnProviders.apiProtocol.responsesFallbackDesc') }}
-          </p>
         </div>
         <OpenCodeGoProtocolRulesEditor
           v-if="isOpenCodeGoPlatform && apiProtocol === 'adaptive'"
@@ -4313,15 +4330,34 @@ function ensureFallbackProtocol(): void {
     fallbackProtocol.value = defaultFallbackProtocol(apiProtocols.value)
   }
 }
+// FORK-ANCHOR: create-cn-protocol-endpoint-copy (二开：新勾选协议时复制上一个已勾选协议的端点地址)
+// 很多站点三个协议共用同一个 base url，逐个手填容易漏。规则：
+//   1. 目标端点已被用户改过（非空且不等于平台默认值）→ 不动；
+//   2. 上一个已勾选协议的地址是用户自定义的 → 复制过来（自建站点的常见形态）；
+//   3. 否则仅在目标端点为空时用上一个地址补空（官方平台各自有正确默认值，不覆盖）。
+function copyEndpointFromPreviousProtocol(protocol: CnNativeApiProtocol, previous: CnNativeApiProtocol[]): void {
+  const defaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, currentOpenCodeOrCNMode())
+  const targetDefault = (defaults[protocol] || '').trim()
+  const current = (adaptiveBaseUrls.value[protocol] || '').trim()
+  if (current && current !== targetDefault) return
+  const last = previous.length > 0 ? previous[previous.length - 1] : undefined
+  if (!last) return
+  const source = (adaptiveBaseUrls.value[last] || '').trim()
+  if (!source) return
+  const sourceCustomized = source !== (defaults[last] || '').trim()
+  if (sourceCustomized || !current) adaptiveBaseUrls.value[protocol] = source
+}
 // 至少保留一个勾选：取消最后一个勾选时忽略该操作。
 function toggleCnProtocol(protocol: CnNativeApiProtocol): void {
   if (apiProtocols.value.includes(protocol)) {
     if (apiProtocols.value.length <= 1) return
     apiProtocols.value = apiProtocols.value.filter(item => item !== protocol)
   } else {
+    const previous = [...apiProtocols.value]
     apiProtocols.value = [...apiProtocols.value, protocol].sort(
       (a, b) => CN_API_PROTOCOLS.indexOf(a) - CN_API_PROTOCOLS.indexOf(b)
     )
+    copyEndpointFromPreviousProtocol(protocol, previous)
   }
   ensureFallbackProtocol()
 }
