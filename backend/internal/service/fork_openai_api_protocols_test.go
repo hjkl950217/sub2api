@@ -7,11 +7,30 @@
 package service
 
 import (
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/stretchr/testify/require"
 )
+
+// forkOpenAIMatrixTestAccount 造一个未配置协议复选的 openai API Key 账号，
+// 用于验证普通测试也会走两协议矩阵。
+func forkOpenAIMatrixTestAccount(id int64) *Account {
+	return &Account{
+		ID:          id,
+		Name:        "fork-openai-matrix",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-openai-matrix",
+			"base_url": "http://openai.example",
+		},
+	}
+}
 
 // 未配置 api_protocols 的 openai 账号必须完全走旧逻辑（extra.openai_responses_mode）。
 func TestForkOpenAIProtocolsLegacyFallback(t *testing.T) {
@@ -134,4 +153,53 @@ func TestForkOpenAIProbedProtocolsWriteback(t *testing.T) {
 	require.Equal(t, APIProtocolAdaptive, acc.Credentials["api_protocol"])
 	require.Equal(t, "https://relay.example.com/v1", acc.Credentials["base_url"])
 	require.True(t, acc.HasExplicitAPIProtocols())
+}
+
+// 普通连接测试（非「更新支持协议」）在 openai API Key 账号上也跑两协议矩阵：
+// 逐协议上报结果，但不改动账号配置 —— 与 DeepSeek 分组账号的行为一致。
+func TestForkOpenAIProtocolsPlainTestProbesBothProtocols(t *testing.T) {
+	account := forkOpenAIMatrixTestAccount(910)
+	svc, upstream, repo := protocolSyncTestService(account, protocolMatrixResponses(
+		func() *http.Response { return adaptiveCNChatTestResponse() },
+		nil,
+		func() *http.Response { return adaptiveCNResponsesTestResponse() },
+	))
+	c, recorder := newTestContext()
+
+	err := svc.TestAccountConnection(c, account.ID, "gpt-4o", "hello", AccountTestModeDefault)
+
+	require.NoError(t, err)
+	require.Len(t, upstream.requests, 2, "chat 与 responses 各探测一次")
+	require.Nil(t, repo.updated, "普通测试不得回写协议配置")
+	require.Zero(t, repo.setErrorCalls, "单协议失败不得把账号状态改成 error")
+
+	body := recorder.Body.String()
+	require.Equal(t, 2, strings.Count(body, `"type":"protocol_result"`), "每个协议各一条结果事件")
+	require.Contains(t, body, `"protocol":"chat_completions","protocol_ok":true`)
+	require.Contains(t, body, `"protocol":"responses","protocol_ok":true`)
+	require.NotContains(t, body, `"protocol_applied":true`)
+}
+
+// 「更新支持协议」在 openai 账号上按探测结论回写：只写通的协议。
+func TestForkOpenAIProtocolsSyncTestWritesBackPassedOnly(t *testing.T) {
+	account := forkOpenAIMatrixTestAccount(911)
+	svc, upstream, repo := protocolSyncTestService(account, protocolMatrixResponses(
+		func() *http.Response { return adaptiveCNChatTestResponse() },
+		nil,
+		func() *http.Response { return newJSONResponse(http.StatusBadRequest, `{"error":"no responses endpoint"}`) },
+	))
+	c, recorder := newTestContext()
+
+	err := svc.TestAccountConnection(c, account.ID, "gpt-4o", "hello", AccountTestModeDefault, AccountTestOptions{SyncProtocols: true})
+
+	require.NoError(t, err)
+	require.Len(t, upstream.requests, 2)
+	require.NotNil(t, repo.updated, "显式同步时必须回写")
+	require.Equal(t, []string{APIProtocolChatCompletions}, repo.updated.Credentials["api_protocols"])
+	require.Equal(t, APIProtocolChatCompletions, repo.updated.Credentials["fallback_protocol"])
+
+	body := recorder.Body.String()
+	require.Contains(t, body, `"protocol":"responses","protocol_ok":false`)
+	require.Contains(t, body, `"protocol_applied":true`)
+	require.NotContains(t, body, `"type":"error"`, "单协议失败不产生终止错误事件")
 }

@@ -65,8 +65,8 @@ func openAIResponsesModeFromProbedProtocols(passed []string) openai_compat.Respo
 	return openai_compat.ResponsesSupportModeForceChatCompletions
 }
 
-// probeOpenAIAPIKeyProtocolsConnection 依次探测给定的原生协议端点；
-// 仅显式同步时回写通过集合。
+// probeOpenAIAPIKeyProtocolsConnection 依次探测 chat_completions 与 responses 两个原生端点；
+// 仅显式同步时回写通过集合，普通连接测试只上报逐协议结果（对齐 CN 协议矩阵语义）。
 func (s *AccountTestService) probeOpenAIAPIKeyProtocolsConnection(c *gin.Context, account *Account, modelID string, prompt string, protocols []string, syncProtocols bool) error {
 	authToken := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
 	if authToken == "" {
@@ -85,6 +85,12 @@ func (s *AccountTestService) probeOpenAIAPIKeyProtocolsConnection(c *gin.Context
 	normalizedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid base URL: %s", err.Error()))
+	}
+
+	// 普通测试不改动账号，探测过程中的 SetError / SetRateLimited 也不该落库。
+	probeService := *s
+	if !syncProtocols && s.accountRepo != nil {
+		probeService.accountRepo = protocolProbeAccountRepository{AccountRepository: s.accountRepo}
 	}
 
 	c.Set(accountTestSuppressErrorContextKey, true)
@@ -107,9 +113,9 @@ func (s *AccountTestService) probeOpenAIAPIKeyProtocolsConnection(c *gin.Context
 		switch protocol {
 		case APIProtocolResponses:
 			probeAccount.Extra = withOpenAIResponsesMode(account.Extra, openai_compat.ResponsesSupportModeForceResponses)
-			probeErr = s.testOpenAIAccountConnection(c, probeAccount, testModelID, prompt, AccountTestModeDefault)
+			probeErr = probeService.testOpenAIAccountConnection(c, probeAccount, testModelID, prompt, AccountTestModeDefault)
 		default:
-			probeErr = s.testOpenAIChatCompletionsConnection(c, probeAccount, testModelID, prompt, normalizedBaseURL, authToken)
+			probeErr = probeService.testOpenAIChatCompletionsConnection(c, probeAccount, testModelID, prompt, normalizedBaseURL, authToken)
 		}
 		if probeErr == nil {
 			passed = append(passed, protocol)
@@ -121,7 +127,10 @@ func (s *AccountTestService) probeOpenAIAPIKeyProtocolsConnection(c *gin.Context
 		s.sendEvent(c, event)
 	}
 
-	applied := len(passed) > 0 && s.applyProbedOpenAIAPIKeyProtocols(c, account, passed)
+	applied := false
+	if syncProtocols && len(passed) > 0 {
+		applied = s.applyProbedOpenAIAPIKeyProtocols(c, account, passed)
+	}
 	c.Set(accountTestSuppressErrorContextKey, false)
 	c.Set(accountTestSuppressCompletionContextKey, false)
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: len(passed) > 0, ProtocolApplied: applied})

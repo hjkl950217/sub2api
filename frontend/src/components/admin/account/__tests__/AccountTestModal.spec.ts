@@ -295,6 +295,41 @@ describe('AccountTestModal', () => {
     expect(wrapper.text()).toContain('[responses]responses-ok')
   })
 
+  // FORK-ANCHOR: test-test-modal-openai-sync-two-protocols (二开：openai 只有两个协议，两条结果即可启用同步按钮)
+  it('openai API Key 账号两条协议结果即可启用并提交「更新支持协议」', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_result","protocol":"chat_completions","protocol_ok":true,"text":"chat-ok"}\n',
+        'data: {"type":"protocol_result","protocol":"responses","protocol_ok":false,"text":"responses-404"}\n',
+        'data: {"type":"test_complete","success":true}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({
+      id: 8,
+      name: 'OpenAI',
+      platform: 'openai',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    ;(wrapper.vm as any).selectedModelId = 'gpt-5.4'
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="protocol-result-chat_completions"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="protocol-result-responses"]').exists()).toBe(true)
+
+    const button = wrapper.get('[data-testid="sync-protocols-button"]')
+    expect(button.attributes('disabled')).toBeUndefined()
+    await button.trigger('click')
+    await flushPromises()
+
+    expect(updateProbedProtocols).toHaveBeenCalledWith(8, ['chat_completions'])
+  })
+
   it('三个协议都没通过时不更新账号，并提示配置未改动', async () => {
     global.fetch = vi.fn().mockResolvedValue(
       createStreamResponse([

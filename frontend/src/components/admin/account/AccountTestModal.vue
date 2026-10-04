@@ -347,7 +347,7 @@
           v-if="supportsProtocolSync"
           type="button"
           data-testid="sync-protocols-button"
-          :disabled="status === 'connecting' || savingProtocols || protocolResults.length !== 3"
+          :disabled="status === 'connecting' || savingProtocols || protocolResults.length !== expectedProtocolCount"
           :title="t('admin.accounts.syncProtocolsHint')"
           @click="startProtocolSync"
           :class="[
@@ -458,6 +458,8 @@ interface ProtocolProbeResult {
   success: boolean
 }
 const protocolResults = ref<ProtocolProbeResult[]>([])
+// FORK-ANCHOR: test-modal-expected-protocol-count (二开：同步按钮的完成条件按平台协议数，openai 只有 chat 与 responses 两个)
+const expectedProtocolCount = computed(() => (props.account?.platform === 'openai' ? 2 : 3))
 const syncingProtocols = ref(false)
 const savingProtocols = ref(false)
 const protocolLabelKey = (protocol: string): string => {

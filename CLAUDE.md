@@ -44,7 +44,7 @@ git add -f CLAUDE.md
   ```
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **170 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **184 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   注意：上面那条 grep 命令**不覆盖 `.github/` 下的 15 个锚点**（`.github` 是隐藏目录，`grep -r .` 默认跳过），
   核对总数时要把它一起算上：`grep -rn "FORK-ANCHOR:" .github/`。
 
@@ -349,6 +349,63 @@ chat_completions / anthropic / responses。OpenCode Go 平台**保持原单选 U
 ### 2.15 本地验证与真实环境验证
 
 本机没有线上账号数据，也无法访问真实上游；本地优先运行可行的单测和编译检查。若真实上游或线上数据是验收必要条件，不为此搭建临时模拟环境；经用户授权后直接推送到 fork，等待 GitHub Actions CI 通过，再部署到 NAS 做真实验证。本次实测结论以 CI 和 NAS 的实际结果为准。
+
+### 2.16 openai 渠道「chat / responses」协议复选（改上游文件，新增 29 个锚点）
+
+**背景**（长空 2026-10-04 提出）：openai 平台的中转站渠道与国产供应商一样存在「只支持 chat」「只支持
+responses」「两个都支持」三种形态，但原来只有 `extra.openai_responses_mode` 三档下拉（自适应 / 强制
+responses / 强制 chat），表达不了「两个都支持、按入站协议原样直通」。目标是把 2.12 的协议复选机制推广到
+openai 平台的 API Key 账号，新增、编辑、测试三页 UI 与国产供应商一致，兜底协议保留。
+
+**三种勾选组合的入站语义**（复用 2.12 的分流，不新写路由）：
+
+| 勾选 | 入站 chat_completions | 入站 responses |
+|---|---|---|
+| 只 chat | 直连原生 CC | 转成 CC（兜底） |
+| 只 responses | 转成 responses（兜底） | 直连原生 Responses |
+| 两个都勾 | 直连原生 CC | 直连原生 Responses（零转换） |
+
+**后端改动**（`backend/internal/service/`）
+
+| 文件 | 锚点 | 改动 |
+|---|---|---|
+| `opencode_go.go` | `fork-api-protocols-openai-multiprotocol` | `IsMultiProtocolAPIKey()` 放开 openai：仅 API Key **且已写入 `api_protocols`/`fallback_protocol`** 时启用，未配置的存量账号走旧路径零变化；`IsMultiProtocolAPIKeyProvider(platform)` 保持不含 openai，分组级语义豁免不受影响 |
+| `account.go` | `fork-api-protocols-openai-native-responses` | `SupportsNativeCNResponses()` 对 openai API Key 返回 true，否则 responses 会被勾选集合过滤掉 |
+| `account.go` | `fork-api-protocols-openai-allowlist` | `GetSelectedAPIProtocols()` 对 openai 只放行 chat_completions / responses，anthropic 被剔除 |
+| `account.go` | `fork-api-protocols-openai-base-url-default` | `defaultCNProtocolBaseURL()` 对 openai 回落账号自己的 `base_url` |
+| `account.go` | `fork-api-protocols-cn-apikey-gate` | `GetCNAPIKey()` 收窄为 `IsCNProvider() \|\| IsOpenCodeGo()`，不让 openai 进 CN 余额 / 额度探测 |
+| `openai_gateway_forward.go` | `fork-api-protocols-openai-raw-cc-gate` | `shouldForwardOpenAIResponsesViaRawChatCompletions()` 把 openai 复选账号并入 CN 分支 |
+| `account_test_service.go` | `fork-api-protocols-openai-test-routing` | openai API Key 账号的**普通测试与「更新支持协议」都走两协议探测矩阵**，回写与否由 `testOpts.SyncProtocols` 决定 |
+| `account_test_service_cn_protocol_matrix.go` | `fork-api-protocols-openai-sync-platform-gate` | `UpdateProbedCNProtocols` 平台校验放行 openai API Key |
+| 新增 `account_test_service_openai_protocol_matrix.go` | 无（新文件带 `FORK:` 头） | 两协议探测矩阵、探测结论到 `extra.openai_responses_mode` 的映射、回写 |
+
+**前端改动**：`CreateAccountModal.vue` / `EditAccountModal.vue` 对 openai API Key 渲染与国产供应商相同的
+协议复选卡片 + 兜底下拉（不渲染分协议端点输入框，chat 与 responses 同域不同路径，端点共用账号
+`base_url`）；旧的 `openai_responses_mode` 三档下拉隐藏，编辑页从该字段反推勾选以兼容存量账号；
+`AccountTestModal.vue` 的「更新支持协议」按钮对 openai API Key 可见。
+
+#### 2.16.1 首轮实测反馈的三个修复（长空 2026-10-04）
+
+1. **普通测试不显示逐协议结果**。原来只有「已配置复选」或点「更新支持协议」才走矩阵，未配置的存量
+   账号（公益站这类）直接走单协议测试，一个 `protocol_result` 事件都不发，测试弹窗里只有测试消息可改。
+   改为与 DeepSeek 分组账号同语义：普通测试无条件跑两协议矩阵，逐协议上报结论与正文，但**不回写配置**。
+2. **矩阵无条件回写**。`probeOpenAIAPIKeyProtocolsConnection` 收了 `syncProtocols` 参数却从未使用，
+   普通测试也会改账号配置。补回 `if syncProtocols && len(passed) > 0`，并在非同步路径把 `accountRepo`
+   换成 `protocolProbeAccountRepository`（no-op），避免探测过程把账号写成 error / ratelimited。
+3. **「更新支持协议」按钮对 openai 永远不可点**。前端完成条件写死 `protocolResults.length !== 3`，
+   openai 只有两个协议。新增 `expectedProtocolCount`（openai 2 / 其余 3）驱动该条件。
+
+**代价**：openai API Key 账号每次点「测试」会打两次上游（chat + responses 各一次），这是拿到逐协议结果
+的必然开销；未配置复选的存量账号生产转发行为不变。
+
+**本轮锚点（1 个新增）**
+
+| 文件 | 锚点 |
+|---|---|
+| `frontend/.../AccountTestModal.vue` | `test-modal-expected-protocol-count` |
+
+**本轮踩坑**：`expectedProtocolCount` 的 `disabled` 断言要能红才算数——临时把条件回退成写死的 `3`
+跑一次，确认这条前端用例失败（`attributes('disabled')` 返回 `''` 而非 `undefined`），再改回来。
 
 ## 3. 发版方式
 
