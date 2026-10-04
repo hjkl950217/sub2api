@@ -33,7 +33,8 @@ vi.mock('@/composables/useClipboard', () => ({
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   const messages: Record<string, string> = {
-    'admin.accounts.imagePromptDefault': 'Generate a cute orange cat astronaut sticker on a clean pastel background.'
+    'admin.accounts.imagePromptDefault': 'Generate a cute orange cat astronaut sticker on a clean pastel background.',
+    'admin.accounts.textPromptDefault': '我想使用你，你是什么模型呢？只回复我名字即可'
   }
   return {
     ...actual,
@@ -157,6 +158,35 @@ describe('AccountTestModal', () => {
     expect(preview.attributes('src')).toBe('data:image/png;base64,QUJD')
   })
 
+  // FORK-ANCHOR: test-modal-text-prompt-input (普通文本测试默认消息可编辑并随请求发送)
+  it('普通文本测试默认使用可编辑的中文消息，并提交自定义内容', async () => {
+    getAvailableModels.mockResolvedValue([
+      { id: 'gemini-2.5-flash', display_name: 'Gemini 2.5 Flash' }
+    ])
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse(['data: {"type":"test_complete","success":true}\n'])
+    ) as any
+
+    const wrapper = mountModal({
+      id: 51,
+      name: 'Gemini Text Test',
+      platform: 'gemini',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    const promptInput = wrapper.find('textarea.textarea-stub')
+    expect((promptInput.element as HTMLTextAreaElement).value).toBe('我想使用你，你是什么模型呢？只回复我名字即可')
+    await promptInput.setValue('请按自定义提示词回答')
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+
+    const [, request] = (global.fetch as any).mock.calls[0]
+    expect(JSON.parse(request.body).prompt).toBe('请按自定义提示词回答')
+  })
+
   it('grok 账号测试默认选择 Grok 模型', async () => {
     getAvailableModels.mockResolvedValue([
       { id: 'grok-4.3', display_name: 'Grok 4.3' },
@@ -191,7 +221,7 @@ describe('AccountTestModal', () => {
     const [, request] = (global.fetch as any).mock.calls[0]
     expect(JSON.parse(request.body)).toEqual({
       model_id: 'grok-4.3',
-      prompt: '',
+      prompt: '我想使用你，你是什么模型呢？只回复我名字即可',
       mode: 'text'
     })
   })

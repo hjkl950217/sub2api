@@ -44,11 +44,11 @@ git add -f CLAUDE.md
   ```
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **132 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **166 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   注意：上面那条 grep 命令**不覆盖 `.github/` 下的 15 个锚点**（`.github` 是隐藏目录，`grep -r .` 默认跳过），
   核对总数时要把它一起算上：`grep -rn "FORK-ANCHOR:" .github/`。
 
-当前锚点全量清单（**132 个** = 源码目录 117 个 + `.github/` 15 个，合并上游后逐个确认还在、且只出现一次）：
+当前锚点全量清单（**166 个** = 源码目录 151 个 + `.github/` 15 个，合并上游后逐个确认还在、且只出现一次）：
 
 | 锚点 | 文件 |
 |---|---|
@@ -74,8 +74,10 @@ git add -f CLAUDE.md
 | `test-create-opencode-untouched` / `test-create-cn-protocols-default` / `test-create-cn-protocol-toggle` / `test-create-cn-endpoint-block` | `frontend/src/components/account/__tests__/CreateAccountModal.spec.ts` |
 | `test-edit-cn-protocols-backfill` / `test-edit-cn-protocol-toggle` / `test-edit-cn-endpoint-block` | `frontend/src/components/account/__tests__/EditAccountModal.spec.ts` |
 | `i18n-cn-fallback-protocol-zh` / `i18n-cn-endpoint-hint-zh` / `i18n-cn-sync-protocols-zh` / `i18n-cn-fallback-protocol-en` / `i18n-cn-endpoint-hint-en` / `i18n-cn-sync-protocols-en` | `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` |
-| `test-modal-sync-protocols-button` / `test-modal-sync-protocols-state` / `test-modal-sync-no-model-required` / `test-modal-sync-protocols-start` / `test-modal-sync-protocols-flag` / `test-modal-sync-protocols-done` / `test-modal-protocol-events` / `test-modal-protocol-results` / `test-modal-protocol-results-reset` / `test-modal-protocols-updated-event` | `frontend/src/components/admin/account/AccountTestModal.vue` |
-| `test-test-modal-sync-protocols` | `frontend/src/components/admin/account/__tests__/AccountTestModal.spec.ts` |
+| `test-modal-sync-protocols-button` / `test-modal-sync-protocols-state` / `test-modal-sync-no-model-required` / `test-modal-sync-protocols-start` / `test-modal-sync-protocols-flag` / `test-modal-sync-protocols-done` / `test-modal-protocol-events` / `test-modal-protocol-results` / `test-modal-protocol-results-reset` / `test-modal-protocols-updated-event` / `test-modal-all-text-prompt-input` / `test-modal-prompt-label-summary` / `test-modal-dynamic-prompt-summary` / `test-modal-default-prompt-by-mode` / `test-modal-model-prompt-default` / `test-modal-initialize-prompt` / `test-modal-dynamic-message-log` | `frontend/src/components/admin/account/AccountTestModal.vue` |
+| `test-test-modal-sync-protocols` / `test-modal-text-prompt-input` | `frontend/src/components/admin/account/__tests__/AccountTestModal.spec.ts` |
+| `test-modal-text-prompt-zh` / `test-modal-prompt-default-zh` | `frontend/src/i18n/locales/zh/admin/accounts.ts` |
+| `test-modal-text-prompt-en` / `test-modal-prompt-default-en` | `frontend/src/i18n/locales/en/admin/accounts.ts` |
 | `test-modal-protocols-updated-refresh` / `test-modal-protocols-updated-handler` | `frontend/src/views/admin/AccountsView.vue` |
 | `fork-api-protocols-parse` / `fork-api-protocols-openai-base-url` / `fork-api-protocols-native-responses` / `fork-api-protocols-cn-base-url` / `fork-api-protocols-anthropic-base` / `fork-api-protocols-openai-format-base` | `backend/internal/service/account.go` |
 | `fork-api-protocols-responses-inbound` / `fork-api-protocols-raw-cc-gate` / `fork-api-protocols-responses-base-forward` | `backend/internal/service/openai_gateway_forward.go` |
@@ -84,8 +86,9 @@ git add -f CLAUDE.md
 | `fork-api-protocols-responses-base-passthrough` | `backend/internal/service/openai_gateway_passthrough.go` |
 | `fork-api-protocols-responses-base-ws` | `backend/internal/service/openai_ws_forwarder_payload.go` |
 | `fork-api-protocols-ollama-responses-base` | `backend/internal/service/openai_gateway_ollama_cloud_max_tokens.go` |
-| `fork-api-protocols-test-routing` / `fork-api-protocols-test-matrix-routing` / `fork-api-protocols-test-suppress-error` / `fork-api-protocols-test-event-protocol` / `fork-api-protocols-test-sync-option` / `cn-test-prompt-chat` | `backend/internal/service/account_test_service.go` |
-| `fork-api-protocols-test-selected` / `cn-test-prompt-anthropic` / `cn-test-prompt-responses` | `backend/internal/service/account_test_service_cn_adaptive.go` |
+| `fork-api-protocols-test-routing` / `fork-api-protocols-test-matrix-routing` / `fork-api-protocols-test-suppress-error` / `fork-api-protocols-test-event-protocol` / `fork-api-protocols-test-sync-option` / `account-test-default-prompt` / `account-test-prompt-default` / `account-test-anthropic-prompt-payload` / `account-test-prompt-routing` / `opencode-test-prompt-routing` / `opencode-responses-test-prompt` / `account-test-chat-prompt` / `account-test-claude-prompt` / `account-test-vertex-prompt` / `account-test-bedrock-prompt` / `account-test-openai-prompt` / `account-test-grok-prompt` / `grok-test-prompt-input` / `antigravity-test-custom-prompt` / `account-test-gemini-prompt` / `account-test-openai-responses-prompt-payload` / `account-test-chat-prompt-default` | `backend/internal/service/account_test_service.go` |
+| `fork-api-protocols-test-selected` / `cn-adaptive-prompt-routing` / `cn-adaptive-anthropic-prompt` / `cn-adaptive-responses-prompt` / `cn-anthropic-custom-prompt` | `backend/internal/service/account_test_service_cn_adaptive.go` |
+| `antigravity-test-prompt-input` / `antigravity-test-gemini-prompt` / `antigravity-test-claude-prompt` | `backend/internal/service/antigravity_gateway_service.go` |
 | `fork-api-protocols-billing-probe-base` | `backend/internal/service/upstream_billing_probe.go` |
 | `fork-api-protocols-test-sync-request` / `fork-api-protocols-test-sync-option-pass` / `account-probed-protocols-update` | `backend/internal/handler/admin/account_handler.go` |
 | `account-probed-protocols-route` | `backend/internal/server/routes/admin.go` |
@@ -384,7 +387,8 @@ chat_completions / anthropic / responses。OpenCode Go 平台**保持原单选 U
 
 - 「更新支持协议」只提交本轮连接测试收到的 `protocol_result`，不重新请求上游，成功后弹窗保持打开。
 - 保存走 `PUT /api/v1/admin/accounts/:id/protocols`，不走通用账号更新入口，避免触发额外的 Responses 能力探测；服务端只接受国产供应商与有效协议名，兜底按 chat_completions > anthropic > responses 选取。
-- 国产供应商三协议连接测试统一发送：`我想使用你，你是什么模型呢？只回复我名字即可`。
+- 所有渠道的普通文本连接测试都支持编辑发送消息，默认值为：`我想使用你，你是什么模型呢？只回复我名字即可`；国产供应商协议矩阵的每条探测也尊重弹窗输入。
+- 图像、视频、搜索、TTS 等专用测试继续使用各自的提示词；STT、Realtime 与 OpenAI Compact 不发送普通文本提示词。
 
 ### 2.15 本地验证与真实环境验证
 

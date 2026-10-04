@@ -20,6 +20,7 @@ const accountTestSuppressCompletionContextKey = "account_test_suppress_completio
 // testCNProviderAdaptiveConnection verifies every native endpoint used by an
 // adaptive CN-provider account. Zhipu uses Chat Completions plus Anthropic;
 // DeepSeek and Kimi additionally use their native Responses endpoints.
+// FORK-ANCHOR: cn-adaptive-prompt-routing (国产供应商自适应协议探测传递弹窗提示词)
 func (s *AccountTestService) testCNProviderAdaptiveConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
 	testModelID := strings.TrimSpace(modelID)
 	if testModelID == "" {
@@ -40,12 +41,12 @@ func (s *AccountTestService) testCNProviderAdaptiveConnection(c *gin.Context, ac
 		return err
 	}
 
-	if err := s.testCNProviderAdaptiveAnthropicConnection(c, account, testModelID, authToken); err != nil {
+	if err := s.testCNProviderAdaptiveAnthropicConnection(c, account, testModelID, authToken, prompt); err != nil {
 		return err
 	}
 
 	if account.SupportsNativeCNResponses() {
-		if err := s.testCNProviderAdaptiveResponsesConnection(c, account, testModelID, authToken); err != nil {
+		if err := s.testCNProviderAdaptiveResponsesConnection(c, account, testModelID, authToken, prompt); err != nil {
 			return err
 		}
 	}
@@ -58,6 +59,7 @@ func (s *AccountTestService) testCNProviderAdaptiveConnection(c *gin.Context, ac
 // FORK-ANCHOR: fork-api-protocols-test-selected (二开：协议复选账号按勾选集合逐个探测上游端点)
 // testCNProviderSelectedProtocolsConnection 验证协议复选账号勾选的每一个上游端点，
 // 与 adaptive 探针语义一致：中间端点全部通过前不发 test_complete。
+// FORK-ANCHOR: cn-selected-protocol-prompt-routing (国产协议复选测试传递弹窗提示词)
 func (s *AccountTestService) testCNProviderSelectedProtocolsConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
 	protocols := account.GetSelectedAPIProtocols()
 	if len(protocols) == 0 {
@@ -78,11 +80,11 @@ func (s *AccountTestService) testCNProviderSelectedProtocolsConnection(c *gin.Co
 	for _, protocol := range protocols {
 		switch protocol {
 		case APIProtocolAnthropic:
-			if err := s.testCNProviderAdaptiveAnthropicConnection(c, account, testModelID, authToken); err != nil {
+			if err := s.testCNProviderAdaptiveAnthropicConnection(c, account, testModelID, authToken, prompt); err != nil {
 				return err
 			}
 		case APIProtocolResponses:
-			if err := s.testCNProviderAdaptiveResponsesConnection(c, account, testModelID, authToken); err != nil {
+			if err := s.testCNProviderAdaptiveResponsesConnection(c, account, testModelID, authToken, prompt); err != nil {
 				return err
 			}
 		default:
@@ -96,7 +98,7 @@ func (s *AccountTestService) testCNProviderSelectedProtocolsConnection(c *gin.Co
 	return nil
 }
 
-func (s *AccountTestService) testCNProviderAdaptiveAnthropicConnection(c *gin.Context, account *Account, testModelID string, authToken string) error {
+func (s *AccountTestService) testCNProviderAdaptiveAnthropicConnection(c *gin.Context, account *Account, testModelID string, authToken string, prompt string) error {
 	ctx := c.Request.Context()
 	baseURL, err := s.validateUpstreamBaseURL(account.GetCNProtocolBaseURL(APIProtocolAnthropic))
 	if err != nil {
@@ -104,14 +106,11 @@ func (s *AccountTestService) testCNProviderAdaptiveAnthropicConnection(c *gin.Co
 	}
 	apiURL := strings.TrimRight(baseURL, "/") + "/v1/messages"
 
-	payload, err := createTestPayload(testModelID)
+	// FORK-ANCHOR: cn-adaptive-anthropic-prompt (国产供应商 Anthropic 探测使用弹窗提示词)
+	payload, err := createTestPayload(testModelID, prompt)
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create adaptive Anthropic test payload")
 	}
-	// FORK-ANCHOR: cn-test-prompt-anthropic (二开：原生 Anthropic 测试使用统一提示词)
-	messages := payload["messages"].([]map[string]any)
-	content := messages[0]["content"].([]map[string]any)
-	content[0]["text"] = cnProviderConnectionTestPrompt
 	payloadBytes, _ := json.Marshal(payload)
 
 	s.sendEvent(c, TestEvent{Type: "status", Text: "正在通过原生 /v1/messages 测试自适应 Anthropic 端点"})
@@ -199,7 +198,7 @@ func (s *AccountTestService) processCNProviderAdaptiveAnthropicStream(c *gin.Con
 	}
 }
 
-func (s *AccountTestService) testCNProviderAdaptiveResponsesConnection(c *gin.Context, account *Account, testModelID string, authToken string) error {
+func (s *AccountTestService) testCNProviderAdaptiveResponsesConnection(c *gin.Context, account *Account, testModelID string, authToken string, prompt string) error {
 	ctx := c.Request.Context()
 	baseURL, err := s.validateUpstreamBaseURL(account.GetCNProtocolBaseURL(APIProtocolResponses))
 	if err != nil {
@@ -207,11 +206,8 @@ func (s *AccountTestService) testCNProviderAdaptiveResponsesConnection(c *gin.Co
 	}
 	apiURL := buildOpenAIResponsesURLForPlatform(account.Platform, baseURL)
 
-	payload := createOpenAITestPayload(testModelID, false)
-	// FORK-ANCHOR: cn-test-prompt-responses (二开：原生 Responses 测试使用统一提示词)
-	payload["input"] = []map[string]any{
-		{"role": "user", "content": []map[string]any{{"type": "input_text", "text": cnProviderConnectionTestPrompt}}},
-	}
+	// FORK-ANCHOR: cn-adaptive-responses-prompt (国产供应商 Responses 探测使用弹窗提示词)
+	payload := createOpenAITestPayloadWithPrompt(testModelID, false, prompt)
 	// DeepSeek / Kimi native Responses endpoints are stateless and do not need
 	// the OpenAI probe's synthetic instructions.
 	delete(payload, "instructions")
@@ -268,7 +264,8 @@ func (s *AccountTestService) doCNProviderAdaptiveRequest(req *http.Request, acco
 // instead of the provider's own Anthropic-compatible endpoint. The probe uses
 // GetAnthropicProtocolBaseURL (same resolution as real /v1/messages forwarding,
 // including per-platform defaults) and the shared API-key auth header.
-func (s *AccountTestService) testCNProviderAnthropicConnection(c *gin.Context, account *Account, modelID string) error {
+// FORK-ANCHOR: cn-anthropic-custom-prompt (国产供应商 Anthropic 端点使用弹窗提示词)
+func (s *AccountTestService) testCNProviderAnthropicConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
 	ctx := c.Request.Context()
 
 	testModelID := strings.TrimSpace(modelID)
@@ -297,7 +294,7 @@ func (s *AccountTestService) testCNProviderAnthropicConnection(c *gin.Context, a
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
 	c.Writer.Flush()
 
-	payload, err := createTestPayload(testModelID)
+	payload, err := createTestPayload(testModelID, prompt)
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Anthropic test payload")
 	}

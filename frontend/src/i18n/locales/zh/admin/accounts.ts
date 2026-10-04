@@ -1656,7 +1656,8 @@ export default {
       testCompleted: '测试完成！',
       connectedToApi: '已连接到 API',
       usingModel: '使用模型：{model}',
-      sendingTestMessage: '发送测试消息："hi"',
+      // FORK-ANCHOR: test-modal-text-prompt-zh (中文测试消息显示实际提示词)
+      sendingTestMessage: '发送测试消息："{prompt}"',
       sendingImageRequest: '发送生图测试请求...',
       response: '响应：',
       startTest: '开始测试',
@@ -1667,7 +1668,11 @@ export default {
       testAccountTypeLabel: '账号类型：{type}',
       selectTestModel: '选择测试模型',
       testModel: '测试模型',
-      testPrompt: '提示词："hi"',
+      // FORK-ANCHOR: test-modal-prompt-default-zh (中文普通文本测试消息默认值)
+      testPrompt: '提示词："{prompt}"',
+      textPromptLabel: '测试消息',
+      textPromptPlaceholder: '输入要发送给模型的测试消息',
+      textPromptDefault: '我想使用你，你是什么模型呢？只回复我名字即可',
       imagePromptLabel: '生图提示词',
       imagePromptPlaceholder: '例如：生成一只戴宇航员头盔的橘猫，像素插画风格，纯色背景。',
       imagePromptDefault: 'Generate a cute orange cat astronaut sticker on a clean pastel background.',

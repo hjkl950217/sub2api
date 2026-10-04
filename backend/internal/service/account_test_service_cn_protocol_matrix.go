@@ -24,8 +24,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const cnProviderConnectionTestPrompt = "我想使用你，你是什么模型呢？只回复我名字即可"
-
 // accountTestSuppressErrorContextKey 抑制探测过程中的 error 事件。
 // 协议矩阵要把每个协议的失败当作"该协议不支持"的正常结论继续往下测，
 // 不能再把第一个失败当作整个测试的终止错误推给前端。
@@ -49,7 +47,6 @@ func (protocolProbeAccountRepository) SetRateLimited(context.Context, int64, tim
 
 // probeCNProviderProtocolsConnection 并发探测三个原生协议端点；仅显式同步时回写通过集合。
 func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, account *Account, modelID string, prompt string, syncProtocols bool) error {
-	prompt = cnProviderConnectionTestPrompt
 	if !isDeepseekDSGroupAccount(account) {
 		return s.probeCNProviderProtocolsConnectionSequential(c, account, modelID, prompt)
 	}
@@ -101,9 +98,9 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 			var err error
 			switch protocol {
 			case APIProtocolAnthropic:
-				err = probeService.testCNProviderAdaptiveAnthropicConnection(probeContext, &probeAccount, testModelID, authToken)
+				err = probeService.testCNProviderAdaptiveAnthropicConnection(probeContext, &probeAccount, testModelID, authToken, prompt)
 			case APIProtocolResponses:
-				err = probeService.testCNProviderAdaptiveResponsesConnection(probeContext, &probeAccount, testModelID, authToken)
+				err = probeService.testCNProviderAdaptiveResponsesConnection(probeContext, &probeAccount, testModelID, authToken, prompt)
 			default:
 				err = probeService.testCNProviderChatCompletionsConnection(probeContext, &probeAccount, modelID, prompt)
 			}
@@ -159,9 +156,9 @@ func (s *AccountTestService) probeCNProviderProtocolsConnectionSequential(c *gin
 		var err error
 		switch protocol {
 		case APIProtocolAnthropic:
-			err = s.testCNProviderAdaptiveAnthropicConnection(c, account, testModelID, authToken)
+			err = s.testCNProviderAdaptiveAnthropicConnection(c, account, testModelID, authToken, prompt)
 		case APIProtocolResponses:
-			err = s.testCNProviderAdaptiveResponsesConnection(c, account, testModelID, authToken)
+			err = s.testCNProviderAdaptiveResponsesConnection(c, account, testModelID, authToken, prompt)
 		default:
 			err = s.testCNProviderChatCompletionsConnection(c, account, modelID, prompt)
 		}

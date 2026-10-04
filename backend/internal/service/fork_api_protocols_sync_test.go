@@ -177,6 +177,9 @@ func TestForkProtocolSyncMatrixAppliesPassedProtocols(t *testing.T) {
 	require.True(t, paths["/v1/chat/completions"])
 	require.True(t, paths["/v1/messages"])
 	require.True(t, paths["/v1/responses"])
+	for _, request := range upstream.requests {
+		require.Contains(t, protocolMatrixRequestBody(t, request), "hello")
+	}
 
 	require.NotNil(t, repo.updated, "探测结果必须回写账号")
 	require.Equal(t, []string{APIProtocolChatCompletions, APIProtocolResponses}, repo.updated.Credentials["api_protocols"])
@@ -236,7 +239,7 @@ func TestForkDeepseekDSConnectionTestProbesAllProtocolsConcurrently(t *testing.T
 	require.Len(t, upstream.requests, 3)
 	require.Equal(t, 3, upstream.maxActive, "三个协议请求应同时进行")
 	for _, request := range upstream.requests {
-		require.Contains(t, protocolMatrixRequestBody(t, request), cnProviderConnectionTestPrompt)
+		require.Contains(t, protocolMatrixRequestBody(t, request), "hello")
 	}
 	require.Nil(t, repo.updated, "普通连接测试不得写回协议配置")
 	require.Zero(t, repo.setErrorCalls, "单协议认证失败不得把账号状态改成 error")
@@ -280,4 +283,34 @@ func TestForkProtocolSyncMatrixSkipsUnsupportedResponses(t *testing.T) {
 	body := recorder.Body.String()
 	require.Contains(t, body, `"protocol":"responses","protocol_ok":false`)
 	require.Contains(t, body, `"protocol_applied":true`)
+}
+
+func TestForkConnectionPromptPayloadsUseCustomAndDefault(t *testing.T) {
+	const customPrompt = "请按自定义提示词回答"
+
+	anthropicPayload, err := createTestPayload("claude-test", customPrompt)
+	require.NoError(t, err)
+	anthropicMessages := anthropicPayload["messages"].([]map[string]any)
+	anthropicContent := anthropicMessages[0]["content"].([]map[string]any)
+	require.Equal(t, customPrompt, anthropicContent[0]["text"])
+
+	responsesPayload := createOpenAITestPayloadWithPrompt("gpt-test", false, customPrompt)
+	responsesInput := responsesPayload["input"].([]map[string]any)
+	responsesContent := responsesInput[0]["content"].([]map[string]any)
+	require.Equal(t, customPrompt, responsesContent[0]["text"])
+
+	chatPayload := createOpenAIChatCompletionsTestPayload("gpt-test", customPrompt)
+	chatMessages := chatPayload["messages"].([]map[string]any)
+	require.Equal(t, customPrompt, chatMessages[0]["content"])
+
+	require.Contains(t, string(createGeminiTestPayload("gemini-test", customPrompt)), customPrompt)
+	require.Equal(t, defaultAccountTestPrompt, resolveAccountTestPrompt("  "))
+
+	antigravity := &AntigravityGatewayService{}
+	geminiBody, err := antigravity.buildGeminiTestRequest("project", "gemini-test", customPrompt)
+	require.NoError(t, err)
+	require.Contains(t, string(geminiBody), customPrompt)
+	claudeBody, err := antigravity.buildClaudeTestRequest("project", "claude-test", customPrompt)
+	require.NoError(t, err)
+	require.Contains(t, string(claudeBody), customPrompt)
 }

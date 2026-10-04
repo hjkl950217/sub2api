@@ -560,16 +560,12 @@ const modelOptionsForMode = computed(() => {
   return []
 })
 
+// FORK-ANCHOR: test-modal-all-text-prompt-input (所有普通文本测试显示可编辑消息)
 const supportsPromptInput = computed(() => {
-  if (!isGrokAccount.value) {
-    return supportsImageTest.value
+  if (isGrokAccount.value) {
+    return ['text', 'image', 'video', 'search', 'tts'].includes(grokTestMode.value)
   }
-  return (
-    grokTestMode.value === 'image' ||
-    grokTestMode.value === 'video' ||
-    grokTestMode.value === 'search' ||
-    grokTestMode.value === 'tts'
-  )
+  return testMode.value !== 'compact'
 })
 
 const supportsImageUpload = computed(
@@ -660,6 +656,7 @@ const clearMediaUploads = () => {
   if (audioFileInput.value) audioFileInput.value.value = ''
 }
 
+// FORK-ANCHOR: test-modal-prompt-label-summary (测试消息编辑框与摘要区分普通文本和媒体提示词)
 const promptInputLabel = computed(() => {
   if (supportsGrokVideoTest.value || grokTestMode.value === 'video') {
     return t('admin.accounts.videoPromptLabel')
@@ -673,7 +670,7 @@ const promptInputLabel = computed(() => {
   if (grokTestMode.value === 'tts') {
     return t('admin.accounts.grok.ttsTextLabel')
   }
-  return t('admin.accounts.imagePromptLabel')
+  return t('admin.accounts.textPromptLabel')
 })
 
 const promptInputPlaceholder = computed(() => {
@@ -689,7 +686,7 @@ const promptInputPlaceholder = computed(() => {
   if (grokTestMode.value === 'tts') {
     return t('admin.accounts.grok.ttsTextPlaceholder')
   }
-  return ''
+  return t('admin.accounts.textPromptPlaceholder')
 })
 
 const promptInputHint = computed(() => {
@@ -714,6 +711,7 @@ const promptInputHint = computed(() => {
   return ''
 })
 
+// FORK-ANCHOR: test-modal-dynamic-prompt-summary (显示当前实际测试消息)
 const testModeSummary = computed(() => {
   if (isGrokAccount.value) {
     switch (grokTestMode.value) {
@@ -730,11 +728,25 @@ const testModeSummary = computed(() => {
       case 'realtime':
         return t('admin.accounts.grok.realtimeTestMode')
       default:
-        return t('admin.accounts.grok.textTestMode')
+        return t('admin.accounts.testPrompt', { prompt: currentTestPrompt.value })
     }
   }
   if (supportsImageTest.value) return t('admin.accounts.imageTestMode')
-  return t('admin.accounts.testPrompt')
+  if (!supportsPromptInput.value) return t('admin.accounts.openai.testModeCompact')
+  return t('admin.accounts.testPrompt', { prompt: currentTestPrompt.value })
+})
+
+const currentTestPrompt = computed(() => {
+  const prompt = testPrompt.value.trim()
+  if (prompt) return prompt
+  if (isGrokAccount.value) {
+    if (grokTestMode.value === 'video') return t('admin.accounts.videoPromptDefault')
+    if (grokTestMode.value === 'image') return t('admin.accounts.imagePromptDefault')
+    if (grokTestMode.value === 'search') return t('admin.accounts.grok.searchQueryDefault')
+    if (grokTestMode.value === 'tts') return t('admin.accounts.grok.ttsTextDefault')
+  }
+  if (supportsImageTest.value) return t('admin.accounts.imagePromptDefault')
+  return t('admin.accounts.textPromptDefault')
 })
 
 const canStartTest = computed(() => {
@@ -767,6 +779,7 @@ const sortTestModels = (models: ClaudeModel[]) => {
 }
 
 // Load available models when modal opens
+// FORK-ANCHOR: test-modal-default-prompt-by-mode (普通文本使用默认消息，媒体模式沿用专用提示词)
 const applyDefaultPromptForMode = () => {
   if (!supportsPromptInput.value) return
   if (testPrompt.value.trim()) return
@@ -778,8 +791,24 @@ const applyDefaultPromptForMode = () => {
     testPrompt.value = t('admin.accounts.grok.searchQueryDefault')
   } else if (grokTestMode.value === 'tts') {
     testPrompt.value = t('admin.accounts.grok.ttsTextDefault')
+  } else {
+    testPrompt.value = t('admin.accounts.textPromptDefault')
   }
 }
+
+// FORK-ANCHOR: test-modal-model-prompt-default (切换模型时更新尚未编辑的默认提示词)
+watch(selectedModelId, () => {
+  const defaultPrompts = [
+    t('admin.accounts.textPromptDefault'),
+    t('admin.accounts.imagePromptDefault'),
+    t('admin.accounts.videoPromptDefault'),
+    t('admin.accounts.grok.searchQueryDefault'),
+    t('admin.accounts.grok.ttsTextDefault')
+  ]
+  if (!defaultPrompts.includes(testPrompt.value)) return
+  testPrompt.value = ''
+  applyDefaultPromptForMode()
+})
 
 const pickDefaultModelForMode = () => {
   const opts = modelOptionsForMode.value
@@ -799,6 +828,7 @@ const pickDefaultModelForMode = () => {
   selectedModelId.value = opts[0].id
 }
 
+// FORK-ANCHOR: test-modal-initialize-prompt (打开弹窗时填充所选测试模式的默认提示词)
 watch(
   () => props.show,
   async (newVal) => {
@@ -810,8 +840,8 @@ watch(
       await loadAvailableModels()
       if (isGrokAccount.value) {
         pickDefaultModelForMode()
-        applyDefaultPromptForMode()
       }
+      applyDefaultPromptForMode()
     } else {
       abortStream()
     }
@@ -1067,6 +1097,7 @@ const handleEvent = (event: {
       }
       break
 
+    // FORK-ANCHOR: test-modal-dynamic-message-log (测试日志显示实际发送的消息)
     case 'test_start':
       addLine(t('admin.accounts.connectedToApi'), 'text-green-400')
       if (event.model) {
@@ -1086,10 +1117,10 @@ const handleEvent = (event: {
                     ? t('admin.accounts.grok.sendingSTTRequest')
                     : grokTestMode.value === 'realtime'
                       ? t('admin.accounts.grok.sendingRealtimeRequest')
-                      : t('admin.accounts.sendingTestMessage')
+                      : t('admin.accounts.sendingTestMessage', { prompt: currentTestPrompt.value })
           : supportsImageTest.value
             ? t('admin.accounts.sendingImageRequest')
-            : t('admin.accounts.sendingTestMessage'),
+            : t('admin.accounts.sendingTestMessage', { prompt: currentTestPrompt.value }),
         'text-gray-400'
       )
       addLine('', 'text-gray-300')

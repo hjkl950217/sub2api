@@ -1568,7 +1568,8 @@ export default {
       testFailed: 'Test failed',
       connectedToApi: 'Connected to API',
       usingModel: 'Using model: {model}',
-      sendingTestMessage: 'Sending test message: "hi"',
+      // FORK-ANCHOR: test-modal-text-prompt-en (英文界面测试消息显示实际提示词)
+      sendingTestMessage: 'Sending test message: "{prompt}"',
       sendingImageRequest: 'Sending image generation test request...',
       response: 'Response:',
       startTest: 'Start Test',
@@ -1580,7 +1581,11 @@ export default {
       testAccountTypeLabel: 'Account type: {type}',
       selectTestModel: 'Select Test Model',
       testModel: 'Test model',
-      testPrompt: 'Prompt: "hi"',
+      // FORK-ANCHOR: test-modal-prompt-default-en (英文界面普通文本测试消息默认值)
+      testPrompt: 'Prompt: "{prompt}"',
+      textPromptLabel: 'Test message',
+      textPromptPlaceholder: 'Enter the test message to send to the model',
+      textPromptDefault: '我想使用你，你是什么模型呢？只回复我名字即可',
       imagePromptLabel: 'Image prompt',
       imagePromptPlaceholder: 'Example: Generate an orange cat astronaut sticker in pixel-art style on a solid background.',
       imagePromptDefault: 'Generate a cute orange cat astronaut sticker on a clean pastel background.',
