@@ -3302,6 +3302,27 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 }
 
 func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
+	// FORK-ANCHOR: fork-protocol-content-collect (二开：协议矩阵按协议收集正文并标注来源)
+	// 收集放在抑制判断之前：抑制只挡发往前端的事件，不影响协议矩阵取回正文。
+	if event.Protocol == "" {
+		if protocol, ok := c.Get(accountTestActiveProtocolContextKey); ok {
+			if name, ok := protocol.(string); ok {
+				event.Protocol = name
+			}
+		}
+	}
+	if event.Type == "content" && event.Text != "" {
+		if collector, ok := c.Get(accountTestContentContextKey); ok {
+			if builder, ok := collector.(*strings.Builder); ok {
+				builder.WriteString(event.Text)
+			}
+		}
+		if suppress, ok := c.Get(accountTestSuppressContentContextKey); ok {
+			if suppressContent, _ := suppress.(bool); suppressContent {
+				return
+			}
+		}
+	}
 	if event.Type == "test_complete" {
 		if suppress, ok := c.Get(accountTestSuppressCompletionContextKey); ok {
 			if suppressCompletion, _ := suppress.(bool); suppressCompletion {

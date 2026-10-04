@@ -250,9 +250,9 @@ describe('AccountTestModal', () => {
   it('点击「更新支持协议」只提交本轮通过结果，不重复测试且不关闭弹窗', async () => {
     global.fetch = vi.fn().mockResolvedValue(
       createStreamResponse([
-        'data: {"type":"protocol_result","protocol":"chat_completions","protocol_ok":true}\n',
-        'data: {"type":"protocol_result","protocol":"anthropic","protocol_ok":false}\n',
-        'data: {"type":"protocol_result","protocol":"responses","protocol_ok":true}\n',
+        'data: {"type":"protocol_result","protocol":"chat_completions","protocol_ok":true,"text":"chat-ok"}\n',
+        'data: {"type":"protocol_result","protocol":"anthropic","protocol_ok":false,"text":"anthropic-failed"}\n',
+        'data: {"type":"protocol_result","protocol":"responses","protocol_ok":true,"text":"responses-ok"}\n',
         'data: {"type":"test_complete","success":true}\n'
       ])
     ) as any
@@ -280,6 +280,10 @@ describe('AccountTestModal', () => {
     expect(wrapper.emitted('close')).toBeUndefined()
     expect(showSuccess).toHaveBeenCalledWith('admin.accounts.syncProtocolsSuccess')
     expect(wrapper.emitted('protocols-updated')).toHaveLength(1)
+    // FORK-ANCHOR: test-modal-protocol-content-assert (二开：各协议返回的正文按 [协议] 前缀分行显示)
+    expect(wrapper.text()).toContain('[chat]chat-ok')
+    expect(wrapper.text()).toContain('[anthropic]anthropic-failed')
+    expect(wrapper.text()).toContain('[responses]responses-ok')
   })
 
   it('三个协议都没通过时不更新账号，并提示配置未改动', async () => {

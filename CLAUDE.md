@@ -44,55 +44,11 @@ git add -f CLAUDE.md
   ```
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **166 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **170 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   注意：上面那条 grep 命令**不覆盖 `.github/` 下的 15 个锚点**（`.github` 是隐藏目录，`grep -r .` 默认跳过），
   核对总数时要把它一起算上：`grep -rn "FORK-ANCHOR:" .github/`。
 
-当前锚点全量清单（**166 个** = 源码目录 151 个 + `.github/` 15 个，合并上游后逐个确认还在、且只出现一次）：
-
-| 锚点 | 文件 |
-|---|---|
-| `override-first` / `override-index-loader` / `override-index-use` / `override-first-legacy` | `backend/internal/web/embed_on.go` |
-| `sidebar-removed-icons` / `sidebar-announcements-entry` / `sidebar-redeem-promo-entries` / `sidebar-group-model-accounts` | `frontend/src/components/layout/AppSidebar.vue` |
-| `route-group-model-accounts` | `frontend/src/router/index.ts` |
-| `ci-header` / `ci-version-file-input` / `ci-version-file-plan` / `ci-patch-frontend-dist` / `ci-embed-fork-tests` / `ci-ghcr-only-build-binaries` / `ci-ghcr-push-only` / `ci-ghcr-only-release-env` / `ci-ghcr-only-dry-run` / `ci-recreate-release-tag` / `ci-no-dockerhub-description` / `ci-notify-dockerhub-empty` / `ci-disable-sync-version-file` | `.github/workflows/release.yml` |
-| `release-matrix-version-file` | `.github/release-tools/release_matrix.py` |
-| `release-matrix-version-file-tests` | `.github/release-tools/test_release_matrix.py` |
-| `fork-embed-override-tests` | `backend/internal/web/embed_fork_test.go` |
-| `account-search-by-id` | `backend/internal/repository/account_repo.go` |
-| `account-search-by-id-local` / `account-search-debounce` / `account-search-debounce-handler` / `account-sort-default-id-desc` / `account-sort-default-id-desc-fallback` | `frontend/src/views/admin/AccountsView.vue` |
-| `search-placeholder-id-zh` / `search-placeholder-id-en` | `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` |
-| `account-search-single-trigger` | `frontend/src/components/admin/account/AccountTableFilters.vue` |
-| `version-fork-config` / `version-disable-update` / `version-fork-repo-link` | `frontend/src/components/common/VersionBadge.vue` |
-| `version-fork-i18n-zh` / `version-fork-i18n-en` | `frontend/src/i18n/locales/{zh,en}/misc.ts` |
-| `sidebar-compact-width` | `frontend/src/components/layout/AppSidebar.vue` |
-| `sidebar-compact-width-css` | `frontend/src/style.css` |
-| `layout-compact-offset` | `frontend/src/components/layout/AppLayout.vue` |
-| `cn-protocol-selection-helpers` | `frontend/src/components/account/credentialsBuilder.ts` |
-| `create-cn-protocol-multiselect` / `create-opencode-protocol-single` / `create-cn-base-url-single` / `create-cn-protocol-endpoints` / `create-cn-endpoint-presets` / `create-cn-endpoint-block` / `create-cn-protocol-state` / `create-cn-protocol-multiselect-computed` / `create-cn-protocol-endpoint-copy` / `create-cn-protocol-defaults-on-reset` / `create-cn-platform-default-protocols` / `create-cn-preset-sync-protocols` / `create-cn-preview-base-url` / `create-cn-platform-watch-reset` / `create-cn-protocol-reset-form` / `create-cn-protocol-credentials` | `frontend/src/components/account/CreateAccountModal.vue` |
-| `edit-cn-base-url-single` / `edit-cn-protocol-endpoints` / `edit-cn-endpoint-presets` / `edit-cn-endpoint-block` / `edit-cn-protocol-multiselect` / `edit-opencode-protocol-single` / `edit-cn-protocol-state` / `edit-cn-protocol-multiselect-computed` / `edit-cn-protocol-endpoint-copy` / `edit-cn-protocol-watch-skip` / `edit-cn-mode-watch-fallback-base` / `edit-cn-preset-sync-protocols` / `edit-cn-default-base-url-fallback` / `edit-cn-protocol-backfill` / `edit-cn-platform-default-url-fallback` / `edit-cn-backfill-base-url` / `edit-cn-protocol-credentials` | `frontend/src/components/account/EditAccountModal.vue` |
-| `test-create-opencode-untouched` / `test-create-cn-protocols-default` / `test-create-cn-protocol-toggle` / `test-create-cn-endpoint-block` | `frontend/src/components/account/__tests__/CreateAccountModal.spec.ts` |
-| `test-edit-cn-protocols-backfill` / `test-edit-cn-protocol-toggle` / `test-edit-cn-endpoint-block` | `frontend/src/components/account/__tests__/EditAccountModal.spec.ts` |
-| `i18n-cn-fallback-protocol-zh` / `i18n-cn-endpoint-hint-zh` / `i18n-cn-sync-protocols-zh` / `i18n-cn-fallback-protocol-en` / `i18n-cn-endpoint-hint-en` / `i18n-cn-sync-protocols-en` | `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` |
-| `test-modal-sync-protocols-button` / `test-modal-sync-protocols-state` / `test-modal-sync-no-model-required` / `test-modal-sync-protocols-start` / `test-modal-sync-protocols-flag` / `test-modal-sync-protocols-done` / `test-modal-protocol-events` / `test-modal-protocol-results` / `test-modal-protocol-results-reset` / `test-modal-protocols-updated-event` / `test-modal-all-text-prompt-input` / `test-modal-prompt-label-summary` / `test-modal-dynamic-prompt-summary` / `test-modal-default-prompt-by-mode` / `test-modal-model-prompt-default` / `test-modal-initialize-prompt` / `test-modal-dynamic-message-log` | `frontend/src/components/admin/account/AccountTestModal.vue` |
-| `test-test-modal-sync-protocols` / `test-modal-text-prompt-input` | `frontend/src/components/admin/account/__tests__/AccountTestModal.spec.ts` |
-| `test-modal-text-prompt-zh` / `test-modal-prompt-default-zh` | `frontend/src/i18n/locales/zh/admin/accounts.ts` |
-| `test-modal-text-prompt-en` / `test-modal-prompt-default-en` | `frontend/src/i18n/locales/en/admin/accounts.ts` |
-| `test-modal-protocols-updated-refresh` / `test-modal-protocols-updated-handler` | `frontend/src/views/admin/AccountsView.vue` |
-| `fork-api-protocols-parse` / `fork-api-protocols-openai-base-url` / `fork-api-protocols-native-responses` / `fork-api-protocols-cn-base-url` / `fork-api-protocols-anthropic-base` / `fork-api-protocols-openai-format-base` | `backend/internal/service/account.go` |
-| `fork-api-protocols-responses-inbound` / `fork-api-protocols-raw-cc-gate` / `fork-api-protocols-responses-base-forward` | `backend/internal/service/openai_gateway_forward.go` |
-| `fork-api-protocols-chat-inbound` | `backend/internal/service/openai_gateway_chat_completions.go` |
-| `fork-api-protocols-messages-inbound` | `backend/internal/service/openai_gateway_messages.go` |
-| `fork-api-protocols-responses-base-passthrough` | `backend/internal/service/openai_gateway_passthrough.go` |
-| `fork-api-protocols-responses-base-ws` | `backend/internal/service/openai_ws_forwarder_payload.go` |
-| `fork-api-protocols-ollama-responses-base` | `backend/internal/service/openai_gateway_ollama_cloud_max_tokens.go` |
-| `fork-api-protocols-test-routing` / `fork-api-protocols-test-matrix-routing` / `fork-api-protocols-test-suppress-error` / `fork-api-protocols-test-event-protocol` / `fork-api-protocols-test-sync-option` / `account-test-default-prompt` / `account-test-prompt-default` / `account-test-anthropic-prompt-payload` / `account-test-prompt-routing` / `opencode-test-prompt-routing` / `opencode-responses-test-prompt` / `account-test-chat-prompt` / `account-test-claude-prompt` / `account-test-vertex-prompt` / `account-test-bedrock-prompt` / `account-test-openai-prompt` / `account-test-grok-prompt` / `grok-test-prompt-input` / `antigravity-test-custom-prompt` / `account-test-gemini-prompt` / `account-test-openai-responses-prompt-payload` / `account-test-chat-prompt-default` | `backend/internal/service/account_test_service.go` |
-| `fork-api-protocols-test-selected` / `cn-adaptive-prompt-routing` / `cn-adaptive-anthropic-prompt` / `cn-adaptive-responses-prompt` / `cn-anthropic-custom-prompt` | `backend/internal/service/account_test_service_cn_adaptive.go` |
-| `antigravity-test-prompt-input` / `antigravity-test-gemini-prompt` / `antigravity-test-claude-prompt` | `backend/internal/service/antigravity_gateway_service.go` |
-| `fork-api-protocols-billing-probe-base` | `backend/internal/service/upstream_billing_probe.go` |
-| `fork-api-protocols-test-sync-request` / `fork-api-protocols-test-sync-option-pass` / `account-probed-protocols-update` | `backend/internal/handler/admin/account_handler.go` |
-| `account-probed-protocols-route` | `backend/internal/server/routes/admin.go` |
-| `account-probed-protocols-api` / `account-probed-protocols-api-export` | `frontend/src/api/admin/accounts.ts` |
+全量清单见 **`锚点清单.md`**：按文件分组列出每个锚点的名字，合并上游后照它逐条核对。
 
 ### 2.1 `.github/workflows/release.yml`
 
@@ -110,7 +66,7 @@ git add -f CLAUDE.md
 | 10 | `release` 作业 | 新增 `Reset release tag and release` 步骤（非 dry-run）：`git tag -f` + `git push --force` + `gh release delete` | 同名 tag / Release 一律重建，保证 tag 指向本次发版的提交 |
 | 11 | `build-frontend` 作业 | 新增 `Fork embed override tests`：`go test -tags=embed -run TestFork ./internal/web/`，并校验恰好 2 个用例通过 | 上游 CI 只跑 `-tags=unit`，不编译 embed 代码，二开的覆盖改动不会被它覆盖，必须在这里把关；`-run` 匹配不到用例时 `go test` 也返回 0，必须核对数量 |
 
-上表 11 条对应的锚点在 `.github/workflows/release.yml` 里共 13 处（第 6、7 条各涉及多处 env），锚点全量清单见第 2.0 节。
+上表 11 条对应的锚点在 `.github/workflows/release.yml` 里共 13 处（第 6、7 条各涉及多处 env），锚点全量清单见 `锚点清单.md`。
 
 ### 2.2 `.github/release-tools/release_matrix.py`
 

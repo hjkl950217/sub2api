@@ -29,6 +29,19 @@ import (
 // 不能再把第一个失败当作整个测试的终止错误推给前端。
 const accountTestSuppressErrorContextKey = "account_test_suppress_error"
 
+// accountTestActiveProtocolContextKey 标记当前上下文正在探测哪个协议。
+// 三个协议并发探测时 content 事件本身不带协议名，sendEvent 靠这个键补上来源，
+// 前端才能把各协议返回的正文分开显示。只影响事件标注，不参与解析与通过判定。
+const accountTestActiveProtocolContextKey = "account_test_active_protocol"
+
+// accountTestContentContextKey 挂一个 *strings.Builder，sendEvent 把 content 事件的
+// 正文累积进去；协议跑完后由协议矩阵取出，随 protocol_result 一次性带给前端。
+const accountTestContentContextKey = "account_test_content"
+
+// accountTestSuppressContentContextKey 抑制发往前端的 content 事件。
+// 协议矩阵下三个协议的正文要按协议分开显示，不能各自流式灌进同一个输出框。
+const accountTestSuppressContentContextKey = "account_test_suppress_content"
+
 // cnProtocolProbeOrder 探测顺序，与前端协议卡片顺序、兜底优先级一致。
 var cnProtocolProbeOrder = []string{APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses}
 
@@ -63,6 +76,7 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 	type result struct {
 		protocol string
 		err      error
+		text     string
 	}
 	results := make(chan result, len(cnProtocolProbeOrder))
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
@@ -77,6 +91,10 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 			probeContext.Request = c.Request.Clone(c.Request.Context())
 			probeContext.Set(accountTestSuppressErrorContextKey, true)
 			probeContext.Set(accountTestSuppressCompletionContextKey, true)
+			probeContext.Set(accountTestActiveProtocolContextKey, protocol)
+			probeContext.Set(accountTestSuppressContentContextKey, true)
+			contentBuilder := &strings.Builder{}
+			probeContext.Set(accountTestContentContextKey, contentBuilder)
 			probeAccount := *account
 			probeAccount.modelMappingCache = nil
 			probeAccount.modelMappingCacheReady = false
@@ -104,7 +122,7 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 			default:
 				err = probeService.testCNProviderChatCompletionsConnection(probeContext, &probeAccount, modelID, prompt)
 			}
-			results <- result{protocol: protocol, err: err}
+			results <- result{protocol: protocol, err: err, text: contentBuilder.String()}
 		}(protocol)
 	}
 
@@ -115,7 +133,7 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 		if ok {
 			passed = append(passed, result.protocol)
 		}
-		event := TestEvent{Type: "protocol_result", Protocol: result.protocol, ProtocolOK: forkBoolPtr(ok)}
+		event := TestEvent{Type: "protocol_result", Protocol: result.protocol, ProtocolOK: forkBoolPtr(ok), Text: result.text}
 		if result.err != nil {
 			event.Error = result.err.Error()
 		}
@@ -152,6 +170,10 @@ func (s *AccountTestService) probeCNProviderProtocolsConnectionSequential(c *gin
 			s.sendEvent(c, TestEvent{Type: "protocol_result", Protocol: protocol, ProtocolOK: forkBoolPtr(false), Error: "provider has no native Responses endpoint"})
 			continue
 		}
+		c.Set(accountTestActiveProtocolContextKey, protocol)
+		c.Set(accountTestSuppressContentContextKey, true)
+		contentBuilder := &strings.Builder{}
+		c.Set(accountTestContentContextKey, contentBuilder)
 		s.sendEvent(c, TestEvent{Type: "protocol_probe", Protocol: protocol})
 		var err error
 		switch protocol {
@@ -165,7 +187,7 @@ func (s *AccountTestService) probeCNProviderProtocolsConnectionSequential(c *gin
 		if err == nil {
 			passed = append(passed, protocol)
 		}
-		s.sendEvent(c, TestEvent{Type: "protocol_result", Protocol: protocol, ProtocolOK: forkBoolPtr(err == nil)})
+		s.sendEvent(c, TestEvent{Type: "protocol_result", Protocol: protocol, ProtocolOK: forkBoolPtr(err == nil), Text: contentBuilder.String()})
 	}
 	applied := len(passed) > 0 && s.applyProbedCNProtocols(c, account, passed)
 	c.Set(accountTestSuppressErrorContextKey, false)

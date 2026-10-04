@@ -463,6 +463,13 @@ const protocolLabelKey = (protocol: string): string => {
   return 'chatCompletions'
 }
 
+// FORK-ANCHOR: test-modal-protocol-short-label (二开：正文前缀用的协议短名，如 [chat])
+const protocolShortLabel = (protocol: string): string => {
+  if (protocol === 'anthropic') return 'anthropic'
+  if (protocol === 'responses') return 'responses'
+  return 'chat'
+}
+
 const terminalRef = ref<HTMLElement | null>(null)
 const status = ref<'idle' | 'connecting' | 'success' | 'error'>('idle')
 const outputLines = ref<OutputLine[]>([])
@@ -1094,6 +1101,11 @@ const handleEvent = (event: {
       if (event.protocol) {
         // 后端用 protocol_ok 上报结论（success 字段带 omitempty，false 会被省略）
         protocolResults.value.push({ protocol: event.protocol, success: event.protocol_ok === true })
+        // FORK-ANCHOR: test-modal-protocol-content (二开：按协议分行显示各协议返回的正文)
+        // 正文只作展示，通过与否仍由后端的格式解析决定（见 protocol_ok）。
+        if (event.text) {
+          addLine(`[${protocolShortLabel(event.protocol)}]${event.text}`, 'text-green-300')
+        }
       }
       break
 
