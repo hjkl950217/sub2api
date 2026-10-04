@@ -1483,6 +1483,9 @@ func (a *Account) SupportsNativeCNResponses() bool {
 	switch a.Platform {
 	case PlatformDeepseek, PlatformKimi, PlatformMiniMax, PlatformOpenCodeGo:
 		return true
+	// FORK-ANCHOR: fork-api-protocols-openai-native-responses (二开：openai API Key 上游按需提供原生 /v1/responses)
+	case PlatformOpenAI:
+		return a.Type == AccountTypeAPIKey
 	default:
 		return false
 	}
@@ -1561,6 +1564,10 @@ func (a *Account) GetSelectedAPIProtocols() []string {
 			continue
 		}
 		if candidate == APIProtocolResponses && !a.SupportsNativeCNResponses() {
+			continue
+		}
+		// FORK-ANCHOR: fork-api-protocols-openai-allowlist (二开：openai 复选只提供 chat_completions 与 responses)
+		if candidate == APIProtocolAnthropic && a.Platform == PlatformOpenAI {
 			continue
 		}
 		out = append(out, candidate)
@@ -1719,6 +1726,12 @@ func (a *Account) defaultCNProtocolBaseURL(protocol string) string {
 			return DefaultMiniMaxBaseURL
 		case PlatformOpenCodeGo:
 			return a.openCodeDefaultChatBaseURL()
+		// FORK-ANCHOR: fork-api-protocols-openai-base-url-default (二开：openai 复选账号的默认端点取账号自己的 base_url)
+		case PlatformOpenAI:
+			if baseURL := strings.TrimSpace(a.GetCredential("base_url")); baseURL != "" {
+				return baseURL
+			}
+			return "https://api.openai.com"
 		}
 	}
 	return ""
@@ -1818,7 +1831,8 @@ func (a *Account) GetOpenAIFormatBaseURL() string {
 // GetCNAPIKey 返回国产 OpenAI 兼容供应商账号的 api_key 凭据（kimi/zhipu/deepseek）。
 // 与 openai 的 GetOpenAIApiKey 区分：后者仅对 openai 平台返回。
 func (a *Account) GetCNAPIKey() string {
-	if a == nil || !a.IsMultiProtocolAPIKey() {
+	// FORK-ANCHOR: fork-api-protocols-cn-apikey-gate (二开：保持 CN/OpenCode 语义，openai 复选账号不参与 CN 余额与额度探测)
+	if a == nil || (!a.IsCNProvider() && !a.IsOpenCodeGo()) {
 		return ""
 	}
 	return a.GetCredential("api_key")

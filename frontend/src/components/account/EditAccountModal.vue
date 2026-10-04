@@ -153,10 +153,10 @@
           </div>
           <p class="input-hint">{{ t(`admin.accounts.cnProviders.accountMode.${editAccountMode}Desc`) }}</p>
         </div>
-        <!-- API Protocol Selection (CN providers / OpenCode) -->
-        <div v-if="isCNApiKeyAccount">
-          <!-- FORK-ANCHOR: edit-cn-protocol-multiselect (CN 平台协议改为多选卡片 + 兜底转发协议下拉) -->
-          <template v-if="isEditCNPlatform">
+        <!-- API Protocol Selection (CN providers / OpenCode / OpenAI APIKey) -->
+        <div v-if="isCNApiKeyAccount || isEditOpenAIProtocolSelectPlatform">
+          <!-- FORK-ANCHOR: edit-cn-protocol-multiselect (CN 平台协议改为多选卡片 + 兜底转发协议下拉；openai API Key 复用同一多选) -->
+          <template v-if="isEditCNPlatform || isEditOpenAIProtocolSelectPlatform">
             <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.title') }}</label>
             <div class="mt-2 flex flex-wrap gap-2">
               <button
@@ -192,7 +192,8 @@
               <p class="input-hint">{{ t('admin.accounts.cnProviders.apiProtocol.fallbackHint') }}</p>
             </div>
             <!-- FORK-ANCHOR: edit-cn-endpoint-block (端点配置区移到「兜底转发协议」下方，只渲染已勾选协议) -->
-            <div class="mt-3">
+            <!-- FORK-ANCHOR: edit-openai-endpoint-block-skip (二开：openai 的 chat 与 responses 同域不同路径，不渲染分协议端点输入框) -->
+            <div v-if="isEditCNPlatform" class="mt-3">
               <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.endpoints') }}</label>
               <p class="input-hint">{{ t('admin.accounts.cnProviders.apiProtocol.endpointsHint') }}</p>
               <div class="mt-2 space-y-3">
@@ -1960,7 +1961,8 @@
         v-if="account?.platform === 'openai' && account?.type === 'apikey'"
         class="space-y-4 border-t border-gray-200 pt-4 dark:border-dark-600"
       >
-        <div class="flex items-center justify-between gap-4">
+        <!-- FORK-ANCHOR: edit-openai-responses-mode-hidden (二开：openai API Key 改用协议复选卡片，隐藏旧的模式下拉) -->
+        <div v-if="!isEditOpenAIProtocolSelectPlatform" class="flex items-center justify-between gap-4">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.openai.responsesMode') }}</label>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -3242,6 +3244,7 @@ import {
   isCnNativeProtocol,
   legacyProtocolFromSelection,
   normalizeCnProtocols,
+  openAIProtocolsFromResponsesMode,
   HEADER_OVERRIDE_ENABLED_CREDENTIAL_KEY,
   HEADER_OVERRIDES_CREDENTIAL_KEY,
   type CnAccountMode,
@@ -3460,6 +3463,10 @@ const editApiProtocols = ref<CnNativeApiProtocol[]>([])
 const editFallbackProtocol = ref<CnNativeApiProtocol | ''>('')
 const isEditCNPlatform = computed(() => isCNProviderPlatform(props.account?.platform ?? ''))
 const isOpenCodeGoPlatform = computed(() => props.account?.platform === 'opencode_go')
+// FORK-ANCHOR: edit-openai-protocol-select-platform (二开：openai API Key 账号启用协议复选卡片)
+const isEditOpenAIProtocolSelectPlatform = computed(
+  () => props.account?.platform === 'openai' && props.account?.type === 'apikey'
+)
 const editOpenCodeGoProtocolRules = ref<OpenCodeGoProtocolRule[]>(cloneOpenCodeGoProtocolRules())
 const editAccountMode = ref<CnAccountMode>('payg')
 const editOpenCodeAccountMode = ref<OpenCodeAccountMode>('go')
@@ -3503,6 +3510,13 @@ const cnProtocolOptions = computed<Array<{ value: CnApiProtocol; labelKey: strin
   return opts
 })
 const editAdaptiveProtocolOptions = computed<Array<{ value: CnNativeApiProtocol; labelKey: string }>>(() => {
+  // FORK-ANCHOR: edit-openai-protocol-options (二开：openai API Key 只有 chat_completions 与 responses 两档)
+  if (isEditOpenAIProtocolSelectPlatform.value) {
+    return [
+      { value: 'chat_completions', labelKey: 'chatCompletions' },
+      { value: 'responses', labelKey: 'responses' }
+    ]
+  }
   const opts: Array<{ value: CnNativeApiProtocol; labelKey: string }> = [
     { value: 'chat_completions', labelKey: 'chatCompletions' },
     { value: 'anthropic', labelKey: 'anthropic' }
@@ -3536,6 +3550,8 @@ function ensureEditFallbackProtocol(): void {
 //   2. 上一个已勾选协议的地址是用户自定义的 → 复制过来；
 //   3. 否则仅在目标端点为空时用上一个地址补空（官方平台各自有正确默认值，不覆盖）。
 function copyEditEndpointFromPreviousProtocol(protocol: CnNativeApiProtocol, previous: CnNativeApiProtocol[]): void {
+  // FORK-ANCHOR: edit-openai-protocol-endpoint-skip (二开：openai 的 chat/responses 同域不同路径，不使用分协议端点)
+  if (isEditOpenAIProtocolSelectPlatform.value) return
   const defaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, currentOpenCodeOrCNMode())
   const targetDefault = (defaults[protocol] || '').trim()
   const current = (editAdaptiveBaseUrls.value[protocol] || '').trim()
@@ -4605,6 +4621,18 @@ const syncFormFromAccount = (newAccount: Account | null) => {
           cloneOpenCodeGoProtocolRules(defaultOpenCodeProtocolRules(editOpenCodeAccountMode.value))
       }
     }
+    // FORK-ANCHOR: edit-openai-protocol-backfill (二开：openai API Key 回填协议复选；无 api_protocols 时从 extra.openai_responses_mode 反推)
+    if (newAccount.platform === 'openai') {
+      const storedProtocols = normalizeCnProtocols(credentials.api_protocols, newAccount.platform)
+      const storedExtra = (newAccount.extra ?? undefined) as Record<string, unknown> | undefined
+      editApiProtocols.value = storedProtocols.length > 0
+        ? storedProtocols
+        : openAIProtocolsFromResponsesMode(storedExtra?.openai_responses_mode)
+      const storedFallback = credentials.fallback_protocol
+      editFallbackProtocol.value = editApiProtocols.value.includes(storedFallback as CnNativeApiProtocol)
+        ? (storedFallback as CnNativeApiProtocol)
+        : defaultFallbackProtocol(editApiProtocols.value)
+    }
     const platformDefaultUrl =
       newAccount.platform === 'openai'
         ? 'https://api.openai.com'
@@ -5360,6 +5388,17 @@ const handleSubmit = async () => {
         base_url: newBaseUrl
       }
 
+      // FORK-ANCHOR: edit-openai-protocol-credentials (二开：openai API Key 协议复选按 CN 字段契约写入，不写分协议端点)
+      if (isEditOpenAIProtocolSelectPlatform.value) {
+        const selectedProtocols = normalizeCnProtocols(editApiProtocols.value, props.account.platform)
+        const selectedFallback = (selectedProtocols.includes(editFallbackProtocol.value as CnNativeApiProtocol)
+          ? editFallbackProtocol.value
+          : defaultFallbackProtocol(selectedProtocols)) as CnNativeApiProtocol | ''
+        newCredentials.api_protocols = selectedProtocols
+        newCredentials.fallback_protocol = selectedFallback
+        newCredentials.api_protocol = legacyProtocolFromSelection(selectedProtocols, selectedFallback)
+      }
+
       // 国产供应商：模式与协议写入凭据（决定额度/余额探测与转发端点/格式）。
       if (isCNApiKeyAccount.value) {
         newCredentials.account_mode = currentOpenCodeOrCNMode()
@@ -5903,7 +5942,12 @@ const handleSubmit = async () => {
         newExtra.openai_compact_mode = openAICompactMode.value
       }
 		if (props.account.type === 'apikey') {
-        if (!openAITextGenerationCapabilityEnabled.value || openAIResponsesMode.value === 'auto') {
+        // FORK-ANCHOR: edit-openai-protocol-extra-sync (二开：openai 复选保存时同步写 extra.openai_responses_mode)
+        if (isEditOpenAIProtocolSelectPlatform.value) {
+          newExtra.openai_responses_mode = editApiProtocols.value.includes('responses')
+            ? 'force_responses'
+            : 'force_chat_completions'
+        } else if (!openAITextGenerationCapabilityEnabled.value || openAIResponsesMode.value === 'auto') {
           delete newExtra.openai_responses_mode
         } else {
           newExtra.openai_responses_mode = openAIResponsesMode.value

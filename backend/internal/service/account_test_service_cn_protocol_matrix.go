@@ -233,8 +233,12 @@ func (s *AccountTestService) UpdateProbedCNProtocols(ctx context.Context, accoun
 	if err != nil {
 		return err
 	}
-	if !account.IsCNProvider() {
-		return infraerrors.BadRequest("INVALID_ACCOUNT_PLATFORM", "protocol sync is only supported for CN providers")
+	// FORK-ANCHOR: fork-api-protocols-openai-sync-platform-gate (二开：openai API Key 复选账号同样支持协议回写)
+	if !account.IsCNProvider() && !account.IsOpenAIApiKey() {
+		return infraerrors.BadRequest("INVALID_ACCOUNT_PLATFORM", "protocol sync is only supported for CN providers and OpenAI API-key accounts")
+	}
+	if account.IsOpenAIApiKey() {
+		return s.updateProbedOpenAIAPIKeyProtocols(ctx, account, passed)
 	}
 	if !setProbedCNProtocols(account, passed) {
 		return infraerrors.BadRequest("NO_PROBED_PROTOCOLS", "at least one passed protocol is required")

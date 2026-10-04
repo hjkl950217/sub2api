@@ -227,7 +227,7 @@ describe('AccountTestModal', () => {
   })
 
   // FORK-ANCHOR: test-test-modal-sync-protocols (二开：测试弹窗「更新支持协议」按钮)
-  it('国产供应商显示「更新支持协议」按钮，且非 CN 平台不显示', async () => {
+  it('国产供应商与 openai API Key 显示「更新支持协议」按钮，其他平台不显示', async () => {
     const cnWrapper = mountModal({
       id: 7,
       name: 'DeepSeek',
@@ -244,7 +244,16 @@ describe('AccountTestModal', () => {
       type: 'apikey',
       status: 'active'
     })
-    expect(openaiWrapper.find('[data-testid="sync-protocols-button"]').exists()).toBe(false)
+    expect(openaiWrapper.find('[data-testid="sync-protocols-button"]').exists()).toBe(true)
+
+    const grokWrapper = mountModal({
+      id: 9,
+      name: 'Grok',
+      platform: 'grok',
+      type: 'oauth',
+      status: 'active'
+    })
+    expect(grokWrapper.find('[data-testid="sync-protocols-button"]').exists()).toBe(false)
   })
 
   it('点击「更新支持协议」只提交本轮通过结果，不重复测试且不关闭弹窗', async () => {

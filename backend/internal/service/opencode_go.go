@@ -286,8 +286,32 @@ func (a *Account) openCodeDefaultAnthropicBaseURL() string {
 	return DefaultOpenCodeGoAnthropicBaseURL
 }
 
+// FORK-ANCHOR: fork-api-protocols-openai-multiprotocol (二开：openai API Key 写入协议复选后纳入多协议路径)
+// IsMultiProtocolAPIKey 报告账号是否使用二开的协议复选配置。
+// 国产供应商与 OpenCode Go 恒定启用；openai 平台的 API Key 账号在显式写入
+// api_protocols / fallback_protocol 后启用，未配置的存量账号继续走
+// extra.openai_responses_mode 旧逻辑，行为零变化。
 func (a *Account) IsMultiProtocolAPIKey() bool {
-	return a != nil && IsMultiProtocolAPIKeyProvider(a.Platform)
+	if a == nil {
+		return false
+	}
+	if IsMultiProtocolAPIKeyProvider(a.Platform) {
+		return true
+	}
+	if a.Platform != PlatformOpenAI || a.Type != AccountTypeAPIKey {
+		return false
+	}
+	return a.hasProtocolSelectionCredential()
+}
+
+// hasProtocolSelectionCredential 报告账号是否已写入协议复选凭据（任一非空即可）。
+func (a *Account) hasProtocolSelectionCredential() bool {
+	for _, key := range []string{apiProtocolsCredentialKey, fallbackProtocolCredentialKey} {
+		if len(protocolStringsFromAny(a.Credentials[key])) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // openCodeGoNativeProtocol 返回 OpenCode Go 实际上游协议。

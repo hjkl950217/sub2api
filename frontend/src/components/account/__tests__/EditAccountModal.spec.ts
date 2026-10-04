@@ -1168,7 +1168,7 @@ describe('EditAccountModal', () => {
     })
   })
 
-  it('submits OpenAI APIKey Responses support override mode', async () => {
+  it('submits OpenAI APIKey protocol selection with the CN credential contract', async () => {
     const account = buildAccount()
     account.extra = {
       openai_responses_mode: 'force_chat_completions',
@@ -1181,12 +1181,25 @@ describe('EditAccountModal', () => {
 
     const wrapper = mountModal(account)
 
-    await wrapper.get('[data-testid="openai-responses-mode-select"]').setValue('force_responses')
+    // 回填：force_chat_completions → 只勾 chat_completions
+    expect(
+      wrapper.get('[data-testid="cn-api-protocol-chat_completions"]').attributes('aria-pressed')
+    ).toBe('true')
+    expect(wrapper.get('[data-testid="cn-api-protocol-responses"]').attributes('aria-pressed')).toBe(
+      'false'
+    )
+
+    // 勾上 responses 后再提交，两个协议都写入
+    await wrapper.get('[data-testid="cn-api-protocol-responses"]').trigger('click')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
-    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_responses_mode).toBe('force_responses')
-    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_responses_supported).toBe(false)
+    const payload = updateAccountMock.mock.calls[0]?.[1]
+    expect(payload?.credentials?.api_protocols).toEqual(['chat_completions', 'responses'])
+    expect(payload?.credentials?.fallback_protocol).toBe('chat_completions')
+    expect(payload?.credentials?.api_protocol).toBe('adaptive')
+    expect(payload?.extra?.openai_responses_mode).toBe('force_responses')
+    expect(payload?.extra?.openai_responses_supported).toBe(false)
   })
 
   it('submits the account upstream billing auto-probe setting', async () => {
@@ -1317,10 +1330,10 @@ describe('EditAccountModal', () => {
     expect(payload?.rate_multiplier).toBe(1)
   })
 
-  it('clears OpenAI APIKey Responses override when set back to auto', async () => {
+  it('writes force_chat_completions when only chat is selected', async () => {
     const account = buildAccount()
     account.extra = {
-      openai_responses_mode: 'force_chat_completions',
+      openai_responses_mode: 'force_responses',
       openai_responses_supported: true
     }
     updateAccountMock.mockReset()
@@ -1330,12 +1343,22 @@ describe('EditAccountModal', () => {
 
     const wrapper = mountModal(account)
 
-    await wrapper.get('[data-testid="openai-responses-mode-select"]').setValue('auto')
+    // 回填：force_responses → 只勾 responses
+    expect(wrapper.get('[data-testid="cn-api-protocol-responses"]').attributes('aria-pressed')).toBe(
+      'true'
+    )
+
+    // 先勾上 chat，再取消 responses → 只剩 chat
+    await wrapper.get('[data-testid="cn-api-protocol-chat_completions"]').trigger('click')
+    await wrapper.get('[data-testid="cn-api-protocol-responses"]').trigger('click')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
-    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('openai_responses_mode')
-    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_responses_supported).toBe(true)
+    const payload = updateAccountMock.mock.calls[0]?.[1]
+    expect(payload?.credentials?.api_protocols).toEqual(['chat_completions'])
+    expect(payload?.credentials?.fallback_protocol).toBe('chat_completions')
+    expect(payload?.extra?.openai_responses_mode).toBe('force_chat_completions')
+    expect(payload?.extra?.openai_responses_supported).toBe(true)
   })
 
   it('submits OpenAI APIKey endpoint capabilities from credentials', async () => {
@@ -1451,7 +1474,7 @@ describe('EditAccountModal', () => {
     ])
   })
 
-  it('disables text generation protocol when only embeddings requests are accepted', async () => {
+  it('hides the legacy responses mode select but keeps the not-applicable hint without text generation', async () => {
     const account = buildAccount()
     account.credentials.openai_capabilities = ['embeddings']
     account.extra = {
@@ -1465,12 +1488,13 @@ describe('EditAccountModal', () => {
 
     const wrapper = mountModal(account)
 
-    const responsesModeSelect = wrapper.get<HTMLSelectElement>(
-      '[data-testid="openai-responses-mode-select"]'
-    )
-
-    expect(responsesModeSelect.element.disabled).toBe(true)
+    // 旧的模式下拉已被协议复选卡片取代，未启用文本生成能力时只保留提示
+    expect(wrapper.find('[data-testid="openai-responses-mode-select"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="openai-responses-mode-not-applicable"]').exists()).toBe(true)
+    // 协议复选回填自 extra.openai_responses_mode = force_responses
+    expect(wrapper.get('[data-testid="cn-api-protocol-responses"]').attributes('aria-pressed')).toBe(
+      'true'
+    )
 
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
@@ -1478,7 +1502,7 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.openai_capabilities).toEqual([
       'embeddings'
     ])
-    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('openai_responses_mode')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_responses_mode).toBe('force_responses')
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_responses_supported).toBe(true)
   })
 

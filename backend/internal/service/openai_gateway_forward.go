@@ -1362,7 +1362,8 @@ func shouldForwardOpenAIResponsesViaRawChatCompletions(account *Account) bool {
 		// Grok/GPT/Muse into Chat Completions.
 		return false
 	}
-	if account.IsCNProvider() {
+	// FORK-ANCHOR: fork-api-protocols-openai-raw-cc-gate (二开：openai 复选账号与 CN 同语义，responses 未勾选即转 Chat Completions)
+	if account.IsCNProvider() || account.IsMultiProtocolAPIKey() {
 		// FORK-ANCHOR: fork-api-protocols-raw-cc-gate (二开：复选模式下 responses 未勾选即转 Chat Completions 转发)
 		if account.HasExplicitAPIProtocols() {
 			return !account.SupportsAPIProtocol(APIProtocolResponses)

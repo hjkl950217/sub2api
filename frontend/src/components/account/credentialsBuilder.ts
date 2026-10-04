@@ -270,9 +270,23 @@ export function isCNProviderPlatform(platform: string): platform is CnProviderPl
   return platform === 'kimi' || platform === 'zhipu' || platform === 'deepseek' || platform === 'minimax'
 }
 
-/** DeepSeek、Kimi 与 MiniMax 提供原生 Responses 端点。 */
+// FORK-ANCHOR: openai-protocol-selection-platform (二开：openai 平台的 API Key 账号同样支持协议复选)
+/** 支持 chat_completions / responses 协议复选的平台（国产供应商 + openai）。 */
+export function supportsProtocolSelection(platform: string): boolean {
+  return isCNProviderPlatform(platform) || platform === 'openai'
+}
+
+/** DeepSeek、Kimi、MiniMax 与 openai 提供原生 Responses 端点。 */
 export function cnSupportsNativeResponses(platform: string): boolean {
-  return platform === 'deepseek' || platform === 'kimi' || platform === 'minimax' || platform === 'opencode_go'
+  return platform === 'deepseek' || platform === 'kimi' || platform === 'minimax' || platform === 'opencode_go' || platform === 'openai'
+}
+
+// FORK-ANCHOR: openai-protocols-from-responses-mode (二开：从旧 responses_mode 反推 openai 协议勾选)
+/** 由 extra.openai_responses_mode 反推 openai 复选勾选集，兼容未配置 api_protocols 的存量账号。 */
+export function openAIProtocolsFromResponsesMode(mode: unknown): CnNativeApiProtocol[] {
+  if (mode === 'force_chat_completions') return ['chat_completions']
+  if (mode === 'force_responses') return ['responses']
+  return ['chat_completions', 'responses']
 }
 
 export const OPENCODE_GO_BASE_URL = 'https://opencode.ai/zen/go/v1'

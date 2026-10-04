@@ -1,14 +1,27 @@
 import { describe, expect, it } from 'vitest'
 
-import { cnSupportsNativeResponses, defaultCNAdaptiveBaseUrls } from '../credentialsBuilder'
+import { cnSupportsNativeResponses, defaultCNAdaptiveBaseUrls, supportsProtocolSelection } from '../credentialsBuilder'
 
 describe('cnSupportsNativeResponses', () => {
-  it('is true for DeepSeek, Kimi, and MiniMax', () => {
+  it('is true for DeepSeek, Kimi, MiniMax and openai', () => {
     expect(cnSupportsNativeResponses('deepseek')).toBe(true)
     expect(cnSupportsNativeResponses('kimi')).toBe(true)
     expect(cnSupportsNativeResponses('minimax')).toBe(true)
+    expect(cnSupportsNativeResponses('openai')).toBe(true)
     expect(cnSupportsNativeResponses('zhipu')).toBe(false)
-    expect(cnSupportsNativeResponses('openai')).toBe(false)
+  })
+})
+
+// FORK-ANCHOR: test-openai-protocol-selection-platform (二开：openai 与国产供应商同享协议复选)
+describe('supportsProtocolSelection', () => {
+  it('covers CN providers and openai', () => {
+    expect(supportsProtocolSelection('deepseek')).toBe(true)
+    expect(supportsProtocolSelection('kimi')).toBe(true)
+    expect(supportsProtocolSelection('zhipu')).toBe(true)
+    expect(supportsProtocolSelection('minimax')).toBe(true)
+    expect(supportsProtocolSelection('openai')).toBe(true)
+    expect(supportsProtocolSelection('grok')).toBe(false)
+    expect(supportsProtocolSelection('anthropic')).toBe(false)
   })
 })
 

@@ -430,6 +430,16 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 		}
 	}
 
+	// FORK-ANCHOR: fork-api-protocols-openai-test-routing (二开：openai API Key 复选账号走两协议探测矩阵；普通测试只验已勾选协议)
+	if account.IsOpenAIApiKey() {
+		if testOpts.SyncProtocols {
+			return s.probeOpenAIAPIKeyProtocolsConnection(c, account, modelID, prompt, openaiAPIKeyProtocolProbeOrder, true)
+		}
+		if selected := account.GetSelectedAPIProtocols(); len(selected) > 0 {
+			return s.probeOpenAIAPIKeyProtocolsConnection(c, account, modelID, prompt, selected, false)
+		}
+	}
+
 	if account.IsOpenAI() {
 		return s.testOpenAIAccountConnection(c, account, modelID, prompt, normalizeAccountTestMode(mode))
 	}

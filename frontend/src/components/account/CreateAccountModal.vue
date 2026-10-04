@@ -606,9 +606,9 @@
       </div>
 
       <!-- API Protocol Selection (Kimi / Zhipu / DeepSeek / OpenCode) -->
-      <div v-if="isMultiProtocolPlatform" class="mt-4">
-        <!-- FORK-ANCHOR: create-cn-protocol-multiselect (国产供应商协议改为多选卡片，opencode_go 保持原单选 UI) -->
-        <template v-if="isCNPlatform">
+      <div v-if="isMultiProtocolPlatform || isOpenAIProtocolSelectPlatform" class="mt-4">
+        <!-- FORK-ANCHOR: create-cn-protocol-multiselect (国产供应商协议改为多选卡片，opencode_go 保持原单选 UI；openai API Key 复用同一多选) -->
+        <template v-if="isProtocolMultiselectPlatform">
           <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.title') }}</label>
           <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <button
@@ -657,7 +657,8 @@
             <p class="input-hint">{{ t('admin.accounts.cnProviders.apiProtocol.fallbackHint') }}</p>
           </div>
           <!-- FORK-ANCHOR: create-cn-endpoint-block (端点配置区移到「兜底转发协议」下方，只渲染已勾选协议) -->
-          <div class="mt-3">
+          <!-- FORK-ANCHOR: create-openai-endpoint-block-skip (二开：openai 的 chat 与 responses 同域不同路径，不渲染分协议端点输入框) -->
+          <div v-if="isCNPlatform" class="mt-3">
             <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.endpoints') }}</label>
             <p class="input-hint">{{ t('admin.accounts.cnProviders.apiProtocol.endpointsHint') }}</p>
             <div class="mt-2 space-y-3">
@@ -3458,7 +3459,8 @@
         v-if="form.platform === 'openai' && accountCategory === 'apikey'"
         class="space-y-4 border-t border-gray-200 pt-4 dark:border-dark-600"
       >
-        <div class="flex items-center justify-between gap-4">
+        <!-- FORK-ANCHOR: create-openai-responses-mode-hidden (二开：openai API Key 改用协议复选卡片，隐藏旧的模式下拉) -->
+        <div v-if="!isOpenAIProtocolSelectPlatform" class="flex items-center justify-between gap-4">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.openai.responsesMode') }}</label>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -4285,6 +4287,15 @@ const adaptiveBaseUrls = ref<Record<CnNativeApiProtocol, string>>({
 const isCNPlatform = computed(() => isCNProviderPlatform(form.platform))
 const isOpenCodeGoPlatform = computed(() => form.platform === 'opencode_go')
 const isMultiProtocolPlatform = computed(() => isCNPlatform.value || isOpenCodeGoPlatform.value)
+// FORK-ANCHOR: create-openai-protocol-select-platform (二开：openai API Key 账号启用协议复选卡片)
+// openai 平台的 API Key 账号（中转站）可能只支持 chat 或只支持 responses，用与国产
+// 供应商相同的复选 + 兜底交互声明支持集合；OAuth 账号不适用。
+const isOpenAIProtocolSelectPlatform = computed(
+  () => form.platform === 'openai' && accountCategory.value === 'apikey'
+)
+const isProtocolMultiselectPlatform = computed(
+  () => isCNPlatform.value || isOpenAIProtocolSelectPlatform.value
+)
 function currentOpenCodeOrCNMode(): CnAccountMode | OpenCodeAccountMode {
   return isOpenCodeGoPlatform.value ? openCodeAccountMode.value : accountMode.value
 }
@@ -4313,6 +4324,13 @@ const cnProtocolOptions = computed<Array<{ value: CnApiProtocol; labelKey: strin
   return opts
 })
 const cnAdaptiveProtocolOptions = computed<Array<{ value: CnNativeApiProtocol; labelKey: string }>>(() => {
+  // FORK-ANCHOR: create-openai-protocol-options (二开：openai API Key 只有 chat_completions 与 responses 两档)
+  if (isOpenAIProtocolSelectPlatform.value) {
+    return [
+      { value: 'chat_completions', labelKey: 'chatCompletions' },
+      { value: 'responses', labelKey: 'responses' }
+    ]
+  }
   const opts: Array<{ value: CnNativeApiProtocol; labelKey: string }> = [
     { value: 'chat_completions', labelKey: 'chatCompletions' },
     { value: 'anthropic', labelKey: 'anthropic' }
@@ -4353,6 +4371,8 @@ function ensureFallbackProtocol(): void {
 //   2. 上一个已勾选协议的地址是用户自定义的 → 复制过来（自建站点的常见形态）；
 //   3. 否则仅在目标端点为空时用上一个地址补空（官方平台各自有正确默认值，不覆盖）。
 function copyEndpointFromPreviousProtocol(protocol: CnNativeApiProtocol, previous: CnNativeApiProtocol[]): void {
+  // FORK-ANCHOR: create-openai-protocol-endpoint-skip (二开：openai 的 chat/responses 同域不同路径，不使用分协议端点)
+  if (isOpenAIProtocolSelectPlatform.value) return
   const defaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, currentOpenCodeOrCNMode())
   const targetDefault = (defaults[protocol] || '').trim()
   const current = (adaptiveBaseUrls.value[protocol] || '').trim()
@@ -4381,6 +4401,12 @@ function toggleCnProtocol(protocol: CnNativeApiProtocol): void {
 // 新选 CN 平台/模式：默认勾选该平台支持的全部协议，兜底取优先顺序第一个。
 function applyDefaultCnProtocolSelection(platform: CnProviderPlatform): void {
   apiProtocols.value = normalizeCnProtocols(CN_API_PROTOCOLS, platform)
+  fallbackProtocol.value = defaultFallbackProtocol(apiProtocols.value)
+}
+
+// FORK-ANCHOR: create-openai-protocol-defaults (二开：切到 openai API Key 时默认勾选 chat_completions 与 responses)
+function applyDefaultOpenAIProtocolSelection(): void {
+  apiProtocols.value = normalizeCnProtocols(CN_API_PROTOCOLS, 'openai')
   fallbackProtocol.value = defaultFallbackProtocol(apiProtocols.value)
 }
 
@@ -5027,6 +5053,12 @@ watch(
   },
   { immediate: true }
 )
+
+// FORK-ANCHOR: create-openai-protocol-defaults-watch (二开：切到 openai API Key 时默认勾选 chat_completions 与 responses)
+// 必须放在 form 定义之后：watch 建立依赖时会同步求值一次 source。
+watch(isOpenAIProtocolSelectPlatform, (enabled) => {
+  if (enabled && apiProtocols.value.length === 0) applyDefaultOpenAIProtocolSelection()
+})
 
 // Reset platform-specific settings when platform changes
 watch(
@@ -5689,7 +5721,12 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     delete extra.openai_compact_mode
   }
 
-  if (
+  // FORK-ANCHOR: create-openai-protocol-extra-sync (二开：openai 复选保存时同步写 extra.openai_responses_mode)
+  if (isOpenAIProtocolSelectPlatform.value) {
+    extra.openai_responses_mode = apiProtocols.value.includes('responses')
+      ? 'force_responses'
+      : 'force_chat_completions'
+  } else if (
     accountCategory.value === 'apikey' &&
     openAITextGenerationCapabilityEnabled.value &&
     openAIResponsesMode.value !== 'auto'
@@ -6058,6 +6095,21 @@ const handleSubmit = async () => {
     if (form.platform === 'opencode_go') {
       applyOpenCodeGoProtocolRules(credentials, openCodeGoProtocolRules.value, 'create')
     }
+  }
+
+  // FORK-ANCHOR: create-openai-protocol-credentials (二开：openai API Key 协议复选按 CN 字段契约写入，不写分协议端点)
+  if (isOpenAIProtocolSelectPlatform.value) {
+    const normalized = normalizeCnProtocols(apiProtocols.value, form.platform)
+    // 兜底：勾选集合为空（理论上不会发生）时默认声明两个协议都支持。
+    const selectedProtocols = normalized.length > 0
+      ? normalized
+      : (['chat_completions', 'responses'] as CnNativeApiProtocol[])
+    const selectedFallback = (selectedProtocols.includes(fallbackProtocol.value as CnNativeApiProtocol)
+      ? fallbackProtocol.value
+      : defaultFallbackProtocol(selectedProtocols)) as CnNativeApiProtocol | ''
+    credentials.api_protocols = selectedProtocols
+    credentials.fallback_protocol = selectedFallback
+    credentials.api_protocol = legacyProtocolFromSelection(selectedProtocols, selectedFallback)
   }
 
   // Add model mapping if configured（OpenAI 开启自动透传时不应用）
