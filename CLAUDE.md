@@ -44,7 +44,7 @@ git add -f CLAUDE.md
   ```
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **197 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **203 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   注意：上面那条 grep 命令**不覆盖 `.github/` 下的 15 个锚点**（`.github` 是隐藏目录，`grep -r .` 默认跳过），
   核对总数时要把它一起算上：`grep -rn "FORK-ANCHOR:" .github/`。
 
@@ -492,6 +492,46 @@ openai 平台的 API Key 账号，新增、编辑、测试三页 UI 与国产供
 | 测试正文要手动点开 | `expanded` 初始值与每轮测试开始时都置 `true` |
 
 协议标签三态配色：未测灰（`bg-gray-100`）、通过绿（`bg-green-100`）、失败红（`bg-red-100`）。
+
+**2026-10-05 第四轮调整**（长空要求精简批量操作栏，新增 1 个锚点）
+
+`AccountBulkActionsBar.vue` 里选中账号时不再渲染「批量启用调度 / 批量停止调度 / 探测上游倍率 /
+批量刷新令牌」四个按钮，保留删除、重置状态、编辑、批量测试；锚点 `hide-legacy-bulk-actions` 标在
+删除位置上。`defineEmits` 声明与 `AccountsView.vue` 侧的处理逻辑原样保留（只是没有按钮再触发），
+`@probe-upstream-billing` 这些模板绑定的类型检查因此不受影响；恢复只需把按钮加回去。
+
+### 2.18 使用记录页：时间列可配置 + 贴底横向滚动条（改上游文件，新增 5 个锚点）
+
+**背景**（长空 2026-10-05 提出）：管理端 `/admin/usage` 的表格列多，横向滚动条压在表格最底部，
+要先滚到页面底部才够得着；同页的时间列原先也没法在「列设置」里开关。
+
+**时间列交给列设置**
+
+用户端 `/usage` 与管理端 `/admin/usage` 的用量明细、错误请求四张表，`created_at` 原先写死在
+`ALWAYS_VISIBLE` 里强制显示，列设置下拉里根本没有这一项。四处都把它移出必显名单：默认仍然显示
+（`DEFAULT_HIDDEN_COLUMNS` 不含它），列设置里多出「时间」可以自行关掉。管理端的「用户」列、
+错误请求的「状态码」「操作」列仍保持必显。
+
+| 文件 | 锚点 |
+|---|---|
+| `frontend/src/views/user/UsageView.vue` | `usage-time-column-toggle-user` / `usage-time-column-toggle-user-errors` |
+| `frontend/src/views/admin/UsageView.vue` | `usage-time-column-toggle-admin` / `usage-time-column-toggle-admin-errors` |
+
+**贴底横向滚动条**
+
+新增 `frontend/src/components/common/FloatingHorizontalScrollbar.vue`：横向滚动的真身是 DataTable
+内部的 `.table-wrapper`，组件接收外层容器、在里面找它，在页面末尾放一条 `sticky bottom-0` 的假滚动
+条，宽度取真容器的 `scrollWidth`，两个方向双向同步（用相等判断断开回环），内容没溢出时 `v-show`
+收掉，`ResizeObserver` 盯容器和 table 的宽度变化。
+
+接入点在 `views/admin/UsageView.vue`（锚点 `floating-h-scrollbar`）：两个 tab 容器各加 ref，
+`activeTableContainer` 跟着 `activeTab` 走。浮动条必须放在两个 tab 容器的**外面**——那两个容器带
+`overflow-hidden`，在里面 `sticky` 会失效。
+
+**只做了管理端**：用户端 `/usage` 结构相同，长空只点名 `/admin/usage`，没有一起改。
+
+**测试**：`FloatingHorizontalScrollbar.spec.ts`（2 用例：溢出时显示并同步 `scrollLeft`、不溢出时隐藏）
++ `admin/UsageView.spec.ts` 新增 2 用例（时间列默认进表头、且出现在列设置下拉里）。
 
 ## 3. 发版方式
 
