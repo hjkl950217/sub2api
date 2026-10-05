@@ -46,8 +46,7 @@
       <template v-if="selectedIds.length > 0">
         <button @click="$emit('delete')" class="btn btn-danger btn-sm">{{ t('admin.accounts.bulkActions.delete') }}</button>
         <button @click="$emit('reset-status')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.resetStatus') }}</button>
-        <button @click="$emit('refresh-token')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.refreshToken') }}</button>
-        <button @click="$emit('probe-upstream-billing')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.probeUpstreamBilling') }}</button>
+        <!-- FORK-ANCHOR: hide-legacy-bulk-actions (二开：批量启用调度 / 批量停止调度 / 探测上游倍率 / 批量刷新令牌四个按钮不使用，已移除；恢复见 git 历史) -->
         <!-- FORK-ANCHOR: batch-test-button (二开：批量测试入口，仅当选中里有支持协议探测的平台时出现) -->
         <button
           v-if="canBatchTest"
@@ -55,8 +54,6 @@
           @click="$emit('batch-test')"
           class="btn btn-primary btn-sm"
         >{{ t('admin.accounts.batchTest.button') }}</button>
-        <button @click="$emit('toggle-schedulable', true)" class="btn btn-success btn-sm">{{ t('admin.accounts.bulkActions.enableScheduling') }}</button>
-        <button @click="$emit('toggle-schedulable', false)" class="btn btn-warning btn-sm">{{ t('admin.accounts.bulkActions.disableScheduling') }}</button>
         <button @click="$emit('edit-selected')" class="btn btn-primary btn-sm">{{ t('admin.accounts.bulkActions.edit') }}</button>
       </template>
       <button @click="$emit('edit-filtered')" class="btn btn-primary btn-sm">
