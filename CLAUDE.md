@@ -199,6 +199,8 @@ git add -f CLAUDE.md
 | 3 | `VersionBadge.vue` | 新增「查看 fork 仓库」链接。2026-10-05 挪到**全部状态分支之外**——原先只加在「有更新」（`hasUpdate && isReleaseBuild`）分支里，一旦上游没有新版本、界面落到最后的 `v-else` 分支，链接就不显示了 | `version-fork-repo-link` |
 | 4 | `{zh,en}/misc.ts` | `version` 段新增 `viewForkRepo`、`updateDisabledByFork` | `version-fork-i18n-zh` / `version-fork-i18n-en` |
 
+回归测试：`frontend/src/components/common/__tests__/VersionBadge.spec.ts`（二开新增文件）锁定「无更新」与「有更新」两种状态下「查看 fork 仓库」链接都在。
+
 只禁用了 UI 按钮，**后端接口未动**——直接调 `POST /admin/system/update` 仍会执行上游覆盖。要彻底封死得改 `update_service.go`，目前按「不扩大改动面」保留。
 
 ### 2.11 侧栏收窄（改上游文件，三处）
