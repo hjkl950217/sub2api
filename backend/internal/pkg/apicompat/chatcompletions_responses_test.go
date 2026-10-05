@@ -875,6 +875,44 @@ func TestChatCompletionsToResponses_AssistantReasoningBecomesReasoningItem(t *te
 	assert.Equal(t, "final answer", parts[0].Text)
 }
 
+// 二开：Chat→Responses 产出的 reasoning 输入项，必须能被 Responses→Chat 的读取侧
+// 原样还原成 assistant 工具调用消息上的 reasoning_content（两个方向的转换往返对称）。
+// 这是「reasoning 改走标准 reasoning 输入项」的前提：读取侧本来就从 summary 取值。
+func TestChatCompletionsToResponses_ReasoningItemRoundTripsThroughBridge(t *testing.T) {
+	req := &ChatCompletionsRequest{
+		Model: "deepseek-v4.1-flash",
+		Messages: []ChatMessage{
+			{Role: "user", Content: json.RawMessage(`"check the directory"`)},
+			{
+				Role:             "assistant",
+				ReasoningContent: "need to inspect",
+				ToolCalls: []ChatToolCall{{
+					ID:       "call_1",
+					Type:     "function",
+					Function: ChatFunctionCall{Name: "bash", Arguments: `{"cmd":"pwd"}`},
+				}},
+			},
+			{Role: "tool", ToolCallID: "call_1", Content: json.RawMessage(`"/tmp"`)},
+		},
+	}
+
+	resp, err := ChatCompletionsToResponses(req)
+	require.NoError(t, err)
+
+	msgs, err := responsesInputToChatMessages("You are helpful.", resp.Input)
+	require.NoError(t, err)
+
+	var asst *ChatMessage
+	for i := range msgs {
+		if len(msgs[i].ToolCalls) > 0 {
+			asst = &msgs[i]
+		}
+	}
+	require.NotNil(t, asst)
+	assert.Equal(t, "need to inspect", asst.ReasoningContent)
+	assert.Equal(t, "call_1", asst.ToolCalls[0].ID)
+}
+
 // ---------------------------------------------------------------------------
 // ResponsesToChatCompletions tests
 // ---------------------------------------------------------------------------
