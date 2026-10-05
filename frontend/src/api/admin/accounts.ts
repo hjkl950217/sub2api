@@ -613,6 +613,39 @@ export async function getAvailableModels(id: number): Promise<ClaudeModel[]> {
   return data
 }
 
+// FORK-ANCHOR: batch-test-api (二开：批量测试候选查询接口)
+export interface BatchTestAccountInfo {
+  id: number
+  name: string
+  models: string[]
+  eligible: boolean
+  reason?: string
+}
+
+export interface BatchTestAccountGroup {
+  platform: string
+  account_ids: number[]
+  common_models: string[]
+  accounts: BatchTestAccountInfo[]
+}
+
+export interface BatchTestPlan {
+  groups: BatchTestAccountGroup[]
+  skipped_count: number
+}
+
+/**
+ * Get batch-test candidates grouped by platform, each group carrying the models
+ * shared by all of its eligible accounts.
+ * @param accountIds - Selected account IDs
+ */
+export async function getBatchTestPlan(accountIds: number[]): Promise<BatchTestPlan> {
+  const { data } = await apiClient.post<BatchTestPlan>('/admin/accounts/batch-test-models', {
+    account_ids: accountIds
+  })
+  return data
+}
+
 export interface SyncUpstreamModelsResult {
   models: string[]
   metadata?: Record<string, UpstreamModelMetadata>
@@ -1168,6 +1201,7 @@ export const accountsAPI = {
   resetTempUnschedulable,
   setSchedulable,
   getAvailableModels,
+  getBatchTestPlan,
   syncUpstreamModels,
   syncUpstreamModelsPreview,
   generateAuthUrl,

@@ -1349,6 +1349,63 @@ func (h *AccountHandler) Test(c *gin.Context) {
 	}
 }
 
+// FORK-ANCHOR: fork-batch-test-models-request (二开：批量测试候选查询请求体)
+type BatchTestModelsRequest struct {
+	AccountIDs []int64 `json:"account_ids"`
+}
+
+// FORK-ANCHOR: fork-batch-test-request (二开：批量测试请求体)
+type BatchTestRequest struct {
+	Targets []service.BatchTestTarget `json:"targets"`
+}
+
+// BatchTestModels returns batch-test candidates grouped by platform; each group
+// carries the models shared by all of its eligible accounts.
+// FORK-ANCHOR: fork-batch-test-models-handler (二开：批量测试候选与共有模型查询)
+// POST /api/v1/admin/accounts/batch-test-models
+func (h *AccountHandler) BatchTestModels(c *gin.Context) {
+	var req BatchTestModelsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request body")
+		return
+	}
+	if h.accountTestService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Account test service unavailable")
+		return
+	}
+
+	plan, err := h.accountTestService.BuildBatchTestPlan(c.Request.Context(), req.AccountIDs)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, plan)
+}
+
+// BatchTest runs connectivity tests for several accounts concurrently and
+// streams every account's events over SSE, tagged with account_id.
+// FORK-ANCHOR: fork-batch-test-handler (二开：批量账号测试 SSE)
+// POST /api/v1/admin/accounts/batch-test
+func (h *AccountHandler) BatchTest(c *gin.Context) {
+	var req BatchTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request body")
+		return
+	}
+	if len(req.Targets) == 0 {
+		response.BadRequest(c, "No test targets")
+		return
+	}
+	if h.accountTestService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Account test service unavailable")
+		return
+	}
+
+	// Per-account failures are reported over the stream, so only a transport-level
+	// error is worth surfacing here.
+	_ = h.accountTestService.RunAccountBatchTest(c, service.BatchTestRunOptions{Targets: req.Targets})
+}
+
 // RecoverState handles unified recovery of recoverable account runtime state.
 // POST /api/v1/admin/accounts/:id/recover-state
 func (h *AccountHandler) RecoverState(c *gin.Context) {

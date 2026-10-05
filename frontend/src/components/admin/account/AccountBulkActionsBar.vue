@@ -48,6 +48,13 @@
         <button @click="$emit('reset-status')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.resetStatus') }}</button>
         <button @click="$emit('refresh-token')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.refreshToken') }}</button>
         <button @click="$emit('probe-upstream-billing')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.probeUpstreamBilling') }}</button>
+        <!-- FORK-ANCHOR: batch-test-button (二开：批量测试入口，仅当选中里有支持协议探测的平台时出现) -->
+        <button
+          v-if="canBatchTest"
+          data-testid="batch-test-button"
+          @click="$emit('batch-test')"
+          class="btn btn-primary btn-sm"
+        >{{ t('admin.accounts.batchTest.button') }}</button>
         <button @click="$emit('toggle-schedulable', true)" class="btn btn-success btn-sm">{{ t('admin.accounts.bulkActions.enableScheduling') }}</button>
         <button @click="$emit('toggle-schedulable', false)" class="btn btn-warning btn-sm">{{ t('admin.accounts.bulkActions.disableScheduling') }}</button>
         <button @click="$emit('edit-selected')" class="btn btn-primary btn-sm">{{ t('admin.accounts.bulkActions.edit') }}</button>
@@ -67,6 +74,7 @@ defineProps<{
   totalResults: number
   selectingAll: boolean
   allResultsSelected: boolean
+  canBatchTest: boolean
 }>()
 
 defineEmits([
@@ -79,7 +87,8 @@ defineEmits([
   'toggle-schedulable',
   'reset-status',
   'refresh-token',
-  'probe-upstream-billing'
+  'probe-upstream-billing',
+  'batch-test'
 ])
 
 const { t } = useI18n()

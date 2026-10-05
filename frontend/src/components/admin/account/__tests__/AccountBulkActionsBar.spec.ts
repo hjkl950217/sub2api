@@ -47,4 +47,25 @@ describe('AccountBulkActionsBar', () => {
     await button!.trigger('click')
     expect(wrapper.emitted('probe-upstream-billing')).toHaveLength(1)
   })
+
+  // FORK: 批量测试按钮只在选中里有支持协议探测的平台时出现
+  it('shows the batch test action only when the selection supports it', async () => {
+    const mountWith = (canBatchTest: boolean) =>
+      mount(AccountBulkActionsBar, {
+        props: {
+          selectedIds: [1],
+          totalResults: 45,
+          selectingAll: false,
+          allResultsSelected: false,
+          canBatchTest
+        }
+      })
+
+    expect(mountWith(false).find('[data-testid="batch-test-button"]').exists()).toBe(false)
+
+    const wrapper = mountWith(true)
+    const button = wrapper.get('[data-testid="batch-test-button"]')
+    await button.trigger('click')
+    expect(wrapper.emitted('batch-test')).toHaveLength(1)
+  })
 })

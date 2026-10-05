@@ -1674,6 +1674,28 @@ export default {
       outputCopied: '输出已复制',
       startingTestForAccount: '开始测试账号：{name}',
       testAccountTypeLabel: '账号类型：{type}',
+      // FORK-ANCHOR: i18n-batch-test-zh (二开：批量测试文案)
+      batchTest: {
+        button: '批量测试',
+        title: '批量测试',
+        selectedSummary: '已选 {count} 个账号，其中 {eligible} 个可测试',
+        accountCount: '{count} 个账号',
+        commonModels: '共有模型 {count} 个',
+        noCommonModel: '该组没有共有模型，无法测试',
+        noEligible: '选中的账号里没有可批量测试的账号',
+        promptLabel: '测试消息',
+        start: '开始测试',
+        testing: '测试中',
+        pending: '待测试',
+        passed: '通过',
+        failed: '失败',
+        expand: '展开',
+        collapse: '收起',
+        updateProtocols: '更新支持协议',
+        updateProtocolsNone: '没有账号有测通的协议',
+        updateProtocolsDone: '已更新 {count} 个账号的支持协议',
+        updateProtocolsPartial: '更新完成：成功 {success} 个，失败 {failed} 个'
+      },
       selectTestModel: '选择测试模型',
       testModel: '测试模型',
       // FORK-ANCHOR: test-modal-prompt-default-zh (中文普通文本测试消息默认值)

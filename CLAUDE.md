@@ -44,7 +44,7 @@ git add -f CLAUDE.md
   ```
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **184 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **197 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   注意：上面那条 grep 命令**不覆盖 `.github/` 下的 15 个锚点**（`.github` 是隐藏目录，`grep -r .` 默认跳过），
   核对总数时要把它一起算上：`grep -rn "FORK-ANCHOR:" .github/`。
 
@@ -406,6 +406,70 @@ openai 平台的 API Key 账号，新增、编辑、测试三页 UI 与国产供
 
 **本轮踩坑**：`expectedProtocolCount` 的 `disabled` 断言要能红才算数——临时把条件回退成写死的 `3`
 跑一次，确认这条前端用例失败（`attributes('disabled')` 返回 `''` 而非 `undefined`），再改回来。
+
+### 2.17 账号列表「批量测试」（改上游文件，新增 12 个锚点）
+
+**背景**（长空 2026-10-05 提出）：账号列表批量选中后只能逐个点「测试」，账号多时要开很多次弹窗。
+目标是在批量操作栏加「批量测试」，一次跑完选中账号，页面按行显示各自的状态与逐协议结果。
+
+**已定语义**（长空 2026-10-05 批准）
+
+| 项 | 决定 |
+|---|---|
+| 支持范围 | 国产四家（kimi/zhipu/deepseek/minimax）+ openai API Key，与测试弹窗「更新支持协议」的判定一致 |
+| 平台分组 | 按 `platform` 分组，各组各自取共有模型交集 |
+| 模型来源 | 账号凭据里的 `credentials.model_mapping` 键，不请求上游 |
+| 无 model_mapping | 排除出交集并给出原因，不回落去问上游 |
+| 并发 | 3，不暴露成可调项 |
+| 写回 | 测试只探测不写账号；另设「更新支持协议」按钮按账号逐个写回 |
+
+支持范围以外的平台仍会出现在弹窗里，但标成不可测并给出原因（跨页全选时前端拿不到全部平台，
+资格判定以后端返回为准）。
+
+**后端**（新增文件 `account_batch_test_service.go`，新文件不带锚点）
+
+- `BuildBatchTestPlan(ctx, accountIDs)`：按 platform 分组，逐账号判定资格（`IsCNProvider()` /
+  `IsOpenAIApiKey()` 且 `model_mapping` 非空），组内取模型键交集。
+- `RunAccountBatchTest(c, opts)`：带缓冲 channel 做并发闸门（默认 3），每账号一个
+  `context.WithTimeout`（默认 90s）；用自定义 `http.ResponseWriter` 接住内层
+  `TestAccountConnection` 的 SSE 输出，按事件边界切分后加上 `account_id` 转发出去，每个账号以
+  `batch_test_complete` 收尾，前端据此定行状态。
+- 执行形态复用 `RunTestBackground`（`account_test_service.go:3367`）那套
+  `gin.CreateTestContext` + 自定义 writer，区别是要实时转发而不是跑完再解析。
+- 探测期间不写库：openai / CN 矩阵路径在 `!syncProtocols` 时本就套了
+  `protocolProbeAccountRepository`；批量测试也不调 `RecoverAccountAfterSuccessfulTest`。
+
+**接口**
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/v1/admin/accounts/batch-test-models` | 只读聚合：分组 + 共有模型 + 资格原因 |
+| POST | `/api/v1/admin/accounts/batch-test` | SSE：每账号一组 `{account_id, model_id, prompt}` |
+
+**前端**
+
+新增 `AccountBatchTestModal.vue`（真组件，随镜像发布）：分组展示、每组一个模型下拉、逐行状态与
+协议结果、点开看正文；「更新支持协议」按账号调已有的 `PUT /accounts/:id/probed-protocols` 写回，
+不需要新的写回接口。`AccountBulkActionsBar.vue` 加按钮，`AccountsView.vue` 用 `selPlatforms`
+判定显隐。
+
+**本轮锚点（12 个新增）**
+
+| 文件 | 锚点 |
+|---|---|
+| `backend/internal/handler/admin/account_handler.go` | `fork-batch-test-models-request` / `fork-batch-test-request` / `fork-batch-test-models-handler` / `fork-batch-test-handler` |
+| `backend/internal/server/routes/admin.go` | `fork-batch-test-routes` |
+| `frontend/src/api/admin/accounts.ts` | `batch-test-api` |
+| `frontend/src/components/admin/account/AccountBulkActionsBar.vue` | `batch-test-button` |
+| `frontend/src/views/admin/AccountsView.vue` | `batch-test-modal-state` / `batch-test-platform-gate` / `batch-test-open` |
+| `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` | `i18n-batch-test-zh` / `i18n-batch-test-en` |
+
+**测试**：`fork_batch_test_service_test.go`（6 单元）+ 前端 `AccountBatchTestModal.spec.ts`（3 用例）
++ `AccountBulkActionsBar.spec.ts` 加 1 用例。
+
+**本轮踩坑**：测试里 stub upstream 要覆盖 `DoWithTLS` 而不是 `Do`——service 内部走的是前者。
+只覆盖 `Do` 的话注入的延时不会生效，并发上限用例看着过、其实没有区分度（用例耗时显示 `0.00s`
+就是信号）。
 
 ## 3. 发版方式
 

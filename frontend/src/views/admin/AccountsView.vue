@@ -181,10 +181,12 @@
           :total-results="pagination.total"
           :selecting-all="selectingAllResults"
           :all-results-selected="allResultsSelected"
+          :can-batch-test="canBatchTestSelected"
           @delete="handleBulkDelete"
           @reset-status="handleBulkResetStatus"
           @refresh-token="handleBulkRefreshToken"
           @probe-upstream-billing="handleBulkProbeUpstreamBilling"
+          @batch-test="openBatchTest"
           @edit-selected="openBulkEditSelected"
           @edit-filtered="openBulkEditFiltered"
           @clear="clearSelection"
@@ -460,6 +462,12 @@
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <!-- FORK-ANCHOR: test-modal-protocols-updated-refresh (二开：协议探测回写后刷新账号详情与列表) -->
+    <AccountBatchTestModal
+      :show="showBatchTest"
+      :account-ids="batchTestIds"
+      @close="showBatchTest = false"
+      @updated="handleBatchTestUpdated"
+    />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" @protocols-updated="handleProtocolsUpdated" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
@@ -514,6 +522,7 @@ import { CreateAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrs
 import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
 import AccountTableFilters from '@/components/admin/account/AccountTableFilters.vue'
 import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
+import AccountBatchTestModal from '@/components/admin/account/AccountBatchTestModal.vue'
 import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
 import ImportDataModal from '@/components/admin/account/ImportDataModal.vue'
 import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
@@ -603,6 +612,9 @@ const showExportDataDialog = ref(false)
 const includeProxyOnExport = ref(true)
 const showBulkEdit = ref(false)
 const bulkEditTarget = ref<AccountBulkEditTarget | null>(null)
+// FORK-ANCHOR: batch-test-modal-state (二开：批量测试弹窗状态；账号 ID 取打开时的快照)
+const showBatchTest = ref(false)
+const batchTestIds = ref<number[]>([])
 const showTempUnsched = ref(false)
 const showDeleteDialog = ref(false)
 const showCreateShadowDialog = ref(false)
@@ -1137,6 +1149,15 @@ const allResultsSelected = computed(() => {
   return Array.from(snapshot).every(id => selectedSet.value.has(id))
 })
 
+// FORK-ANCHOR: batch-test-platform-gate (二开：批量测试只对支持协议探测的平台开放，判定与测试弹窗一致)。
+// 跨页全选时当前页拿不到全部平台，直接放行交给弹窗按后端结果判定。
+const BATCH_TEST_PLATFORMS: readonly string[] = ['openai', 'deepseek', 'kimi', 'zhipu', 'minimax']
+const canBatchTestSelected = computed(
+  () =>
+    allResultsSelected.value ||
+    selPlatforms.value.some(platform => BATCH_TEST_PLATFORMS.includes(platform))
+)
+
 const clearSelection = () => {
   selectionRequestVersion.value++
   selectingAllResults.value = false
@@ -1393,6 +1414,7 @@ const isAnyModalOpen = computed(() => {
     showImportData.value ||
     showExportDataDialog.value ||
     showBulkEdit.value ||
+    showBatchTest.value ||
     showTempUnsched.value ||
     showDeleteDialog.value ||
     showReAuth.value ||
@@ -2150,6 +2172,14 @@ const handleBulkUpdated = () => {
   showBulkEdit.value = false
   bulkEditTarget.value = null
   clearSelection()
+  reload()
+}
+// FORK-ANCHOR: batch-test-open (二开：批量测试——打开时快照选中 ID，关掉弹窗不动选择)
+const openBatchTest = () => {
+  batchTestIds.value = [...selIds.value]
+  showBatchTest.value = true
+}
+const handleBatchTestUpdated = () => {
   reload()
 }
 const handleDataImported = () => { showImportData.value = false; reload() }

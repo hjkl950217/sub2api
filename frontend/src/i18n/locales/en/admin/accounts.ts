@@ -1586,6 +1586,28 @@ export default {
       outputCopied: 'Output copied',
       startingTestForAccount: 'Starting test for account: {name}',
       testAccountTypeLabel: 'Account type: {type}',
+      // FORK-ANCHOR: i18n-batch-test-en (fork: batch test strings)
+      batchTest: {
+        button: 'Batch Test',
+        title: 'Batch Test',
+        selectedSummary: '{count} accounts selected, {eligible} testable',
+        accountCount: '{count} accounts',
+        commonModels: '{count} shared models',
+        noCommonModel: 'No model is shared by this group; cannot test',
+        noEligible: 'None of the selected accounts can be batch tested',
+        promptLabel: 'Test message',
+        start: 'Start Test',
+        testing: 'Testing',
+        pending: 'Pending',
+        passed: 'Passed',
+        failed: 'Failed',
+        expand: 'Expand',
+        collapse: 'Collapse',
+        updateProtocols: 'Update Supported Protocols',
+        updateProtocolsNone: 'No account has a passing protocol',
+        updateProtocolsDone: 'Updated supported protocols for {count} accounts',
+        updateProtocolsPartial: 'Update finished: {success} succeeded, {failed} failed'
+      },
       selectTestModel: 'Select Test Model',
       testModel: 'Test model',
       // FORK-ANCHOR: test-modal-prompt-default-en (英文界面普通文本测试消息默认值)
