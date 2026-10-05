@@ -449,7 +449,8 @@ openai 平台的 API Key 账号，新增、编辑、测试三页 UI 与国产供
 **前端**
 
 新增 `AccountBatchTestModal.vue`（真组件，随镜像发布）：分组展示、每组一个模型下拉、逐行状态与
-协议结果、点开看正文；「更新支持协议」按账号调已有的 `PUT /accounts/:id/probed-protocols` 写回，
+逐协议标签（未测灰 / 通过绿 / 失败红，打开弹窗就铺好占位）、测试正文默认展开；「更新支持协议」
+按钮常显、无可写回行时置灰，按账号调已有的 `PUT /accounts/:id/probed-protocols` 写回，
 不需要新的写回接口。`AccountBulkActionsBar.vue` 加按钮，`AccountsView.vue` 用 `selPlatforms`
 判定显隐。
 
@@ -464,7 +465,7 @@ openai 平台的 API Key 账号，新增、编辑、测试三页 UI 与国产供
 | `frontend/src/views/admin/AccountsView.vue` | `batch-test-modal-state` / `batch-test-platform-gate` / `batch-test-open` |
 | `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` | `i18n-batch-test-zh` / `i18n-batch-test-en` |
 
-**测试**：`fork_batch_test_service_test.go`（8 单元）+ 前端 `AccountBatchTestModal.spec.ts`（5 用例）
+**测试**：`fork_batch_test_service_test.go`（8 单元）+ 前端 `AccountBatchTestModal.spec.ts`（7 用例）
 + `AccountBulkActionsBar.spec.ts` 加 1 用例。
 
 **本轮踩坑**：测试里 stub upstream 要覆盖 `DoWithTLS` 而不是 `Do`——service 内部走的是前者。
@@ -481,6 +482,16 @@ openai 平台的 API Key 账号，新增、编辑、测试三页 UI 与国产供
 
 判成败的语义：**至少一个协议通过 = 通过**，与单账号弹窗「更新支持协议」一致；哪个协议没过由逐行
 红色标记给出，收尾事件不再重复带错误文本。失败行仍可参与「更新支持协议」——只写它测通的那几个。
+
+**2026-10-05 第三轮修正**（长空看线上弹窗提的三条，未新增锚点）
+
+| 问题 | 处理 |
+|---|---|
+| 不到测完不知道要测几个协议 | 候选接口的 `BatchTestAccountInfo` 增加 `protocols`（`batchTestProtocols` 按平台给清单：国产 3 个、openai 2 个，与协议矩阵同序）。前端 `ProtocolResult.success` 放宽成 `boolean \| null`（`null` = 未测），打开弹窗就铺灰色占位标签，收到 `protocol_result` 按协议名找标签改色，清单外的协议才追加；新一轮测试把颜色退回灰、标签保留 |
+| 「更新支持协议」测之前看不见 | 按钮去掉 `v-if` 常显，`:disabled="savingProtocols \|\| probedRows.length === 0"`，无可写回行时灰底，有结果后亮起 |
+| 测试正文要手动点开 | `expanded` 初始值与每轮测试开始时都置 `true` |
+
+协议标签三态配色：未测灰（`bg-gray-100`）、通过绿（`bg-green-100`）、失败红（`bg-red-100`）。
 
 ## 3. 发版方式
 
