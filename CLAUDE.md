@@ -196,7 +196,7 @@ git add -f CLAUDE.md
 |---|---|---|---|
 | 1 | `VersionBadge.vue` | 新增常量 `forkUpdateDisabled = true` 与 `FORK_REPO_URL` | `version-fork-config` |
 | 2 | `VersionBadge.vue` | 「立即更新」按钮 `:disabled` 加 `|| forkUpdateDisabled`，并加 `title` 说明原因 | `version-disable-update` |
-| 3 | `VersionBadge.vue` | 「查看更新日志」下方新增「查看 fork 仓库」链接 | `version-fork-repo-link` |
+| 3 | `VersionBadge.vue` | 新增「查看 fork 仓库」链接。2026-10-05 挪到**全部状态分支之外**——原先只加在「有更新」（`hasUpdate && isReleaseBuild`）分支里，一旦上游没有新版本、界面落到最后的 `v-else` 分支，链接就不显示了 | `version-fork-repo-link` |
 | 4 | `{zh,en}/misc.ts` | `version` 段新增 `viewForkRepo`、`updateDisabledByFork` | `version-fork-i18n-zh` / `version-fork-i18n-en` |
 
 只禁用了 UI 按钮，**后端接口未动**——直接调 `POST /admin/system/update` 仍会执行上游覆盖。要彻底封死得改 `update_service.go`，目前按「不扩大改动面」保留。

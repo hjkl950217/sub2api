@@ -355,17 +355,6 @@
                   {{ t('version.viewChangelog') }}
                   <Icon name="externalLink" size="xs" :stroke-width="2" />
                 </a>
-
-                <!-- FORK-ANCHOR: version-fork-repo-link（指向本 fork 仓库，便于查看二开改动） -->
-                <a
-                  :href="FORK_REPO_URL"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="flex items-center justify-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200"
-                >
-                  {{ t('version.viewForkRepo') }}
-                  <Icon name="externalLink" size="xs" :stroke-width="2" />
-                </a>
               </div>
 
               <!-- Priority 5: Up to date - GitHub link + version rollback -->
@@ -637,6 +626,19 @@
                   </transition>
                 </div>
               </div>
+
+              <!-- FORK-ANCHOR: version-fork-repo-link（指向本 fork 仓库，便于查看二开改动） -->
+              <!-- FORK: 放在全部状态分支之外——原先只加在「有更新」分支里，
+                   切到「已是最新」分支（v-else）时链接会消失 -->
+              <a
+                :href="FORK_REPO_URL"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="flex items-center justify-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200"
+              >
+                {{ t('version.viewForkRepo') }}
+                <Icon name="externalLink" size="xs" :stroke-width="2" />
+              </a>
             </template>
           </div>
         </div>
