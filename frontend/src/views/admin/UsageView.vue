@@ -122,7 +122,7 @@
           </template>
         </UsageFilters>
 
-        <div v-show="activeTab === 'usage'" class="overflow-hidden rounded-b-2xl">
+        <div v-show="activeTab === 'usage'" ref="usageTableContainerRef" class="overflow-hidden rounded-b-2xl">
           <UsageTable
             flat
             :data="usageLogs"
@@ -137,7 +137,7 @@
           />
           <Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" />
         </div>
-        <div v-show="activeTab === 'errors'" class="overflow-hidden rounded-b-2xl">
+        <div v-show="activeTab === 'errors'" ref="errTableContainerRef" class="overflow-hidden rounded-b-2xl">
           <OpsErrorLogTable
             flat
             :rows="errRows" :total="errTotal" :loading="errLoading"
@@ -164,6 +164,8 @@
         </div>
       </div>
       <OpsErrorDetailModal v-model:show="showErrorModal" :error-id="selectedErrorId" :error-type="'request'" />
+      <!-- FORK-ANCHOR: floating-h-scrollbar (二开：宽表贴底的横向滚动条，两个 tab 各跟自己的表格) -->
+      <FloatingHorizontalScrollbar :container="activeTableContainer" />
     </div>
   </AppLayout>
   <UsageExportProgress :show="exportProgress.show" :progress="exportProgress.progress" :current="exportProgress.current" :total="exportProgress.total" :estimated-time="exportProgress.estimatedTime" @cancel="cancelExport" />
@@ -205,6 +207,7 @@ import type { OpsErrorLog } from '@/api/admin/ops'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'; import GroupDistributionChart from '@/components/charts/GroupDistributionChart.vue'; import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
 import Icon from '@/components/icons/Icon.vue'
+import FloatingHorizontalScrollbar from '@/components/common/FloatingHorizontalScrollbar.vue'
 import type { AdminUsageLog, TrendDataPoint, ModelStat, GroupStat, EndpointStat, AdminUser } from '@/types'; import type { AdminUsageStatsResponse, AdminUsageQueryParams } from '@/api/admin/usage'
 
 const { t } = useI18n()
@@ -795,6 +798,13 @@ const detailTabs = computed(() => [
 const usageFiltersRef = ref<InstanceType<typeof UsageFilters> | null>(null)
 const rankingMounted = ref(false)
 const rankingRef = ref<InstanceType<typeof UserTokenRanking> | null>(null)
+
+// FORK: 贴底横向滚动条跟着当前 tab 的表格走
+const usageTableContainerRef = ref<HTMLElement | null>(null)
+const errTableContainerRef = ref<HTMLElement | null>(null)
+const activeTableContainer = computed(() =>
+  activeTab.value === 'errors' ? errTableContainerRef.value : usageTableContainerRef.value
+)
 
 const switchTab = (tab: DetailTab) => {
   activeTab.value = tab
