@@ -169,28 +169,37 @@ func chatUserToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
 // empty/nil and there are tool_calls, only function_call items are emitted.
 func chatAssistantToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
 	var items []ResponsesInputItem
-	content := ""
 
-	if m.ReasoningContent != "" {
-		content = "<thinking>" + m.ReasoningContent + "</thinking>"
-	}
-
-	// Emit assistant message with output_text if content is non-empty.
+	var text, reasoning string
 	if len(m.Content) > 0 {
-		s, err := parseAssistantContent(m.Content)
+		var err error
+		text, reasoning, err = parseAssistantContent(m.Content)
 		if err != nil {
 			return nil, err
 		}
-		if s != "" {
-			if content != "" {
-				content += "\n"
-			}
-			content += s
+	}
+	if m.ReasoningContent != "" {
+		if reasoning != "" {
+			reasoning = m.ReasoningContent + "\n" + reasoning
+		} else {
+			reasoning = m.ReasoningContent
 		}
 	}
 
-	if content != "" {
-		parts := []ResponsesContentPart{{Type: "output_text", Text: content}}
+	// FORK-ANCHOR: reasoning-input-item (二开：reasoning 改走标准 reasoning 输入项，不再内联 <thinking> 文本)
+	// 旧做法把 reasoning 包成 <thinking>…</thinking> 拼进 output_text，上游模型会模仿该格式
+	// 并把它回显到正文。改成 {"type":"reasoning","summary":[...]}，与 responsesInputToChatMessages
+	// 的读取侧往返对称；上游要求 reasoning 项带 summary 字段，缺失会报 400。
+	if reasoning != "" {
+		items = append(items, ResponsesInputItem{
+			Type:    "reasoning",
+			Summary: []ResponsesSummary{{Type: "summary_text", Text: reasoning}},
+		})
+	}
+
+	// Emit assistant message with output_text if content is non-empty.
+	if text != "" {
+		parts := []ResponsesContentPart{{Type: "output_text", Text: text}}
 		partsJSON, err := json.Marshal(parts)
 		if err != nil {
 			return nil, err
@@ -215,74 +224,65 @@ func chatAssistantToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
 	return items, nil
 }
 
-// parseAssistantContent returns assistant content as plain text.
+// parseAssistantContent splits assistant content into visible text and reasoning.
 //
 // Supported formats:
-// - JSON string
-// - JSON array of typed parts (e.g. [{"type":"text","text":"..."}])
-//
-// For structured thinking/reasoning parts, it preserves semantics by wrapping
-// the text in explicit tags so downstream can still distinguish it from normal text.
-func parseAssistantContent(raw json.RawMessage) (string, error) {
+//   - JSON string → text
+//   - JSON array of typed parts → "text" parts become text; "thinking"/"reasoning"
+//     parts become reasoning, which the caller replays as a standard reasoning item.
+func parseAssistantContent(raw json.RawMessage) (string, string, error) {
+	// FORK-ANCHOR: assistant-content-split (二开：assistant 内容拆成正文与推理两路)
 	if len(raw) == 0 {
-		return "", nil
+		return "", "", nil
 	}
 
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
-		return s, nil
+		return s, "", nil
 	}
 
 	var parts []map[string]any
 	if err := json.Unmarshal(raw, &parts); err != nil {
 		// Keep compatibility with prior behavior: unsupported assistant content
 		// formats are ignored instead of failing the whole request conversion.
-		return "", nil
+		return "", "", nil
 	}
 
-	var b strings.Builder
-	write := func(v string) error {
+	var textBuilder, reasoningBuilder strings.Builder
+	write := func(b *strings.Builder, v string, separate bool) error {
+		if v == "" {
+			return nil
+		}
+		if separate && b.Len() > 0 {
+			if _, err := b.WriteString("\n"); err != nil {
+				return err
+			}
+		}
 		_, err := b.WriteString(v)
 		return err
 	}
 	for _, p := range parts {
 		typ, _ := p["type"].(string)
-		text, _ := p["text"].(string)
+		partText, _ := p["text"].(string)
 		thinking, _ := p["thinking"].(string)
 
 		switch typ {
 		case "thinking", "reasoning":
-			if thinking != "" {
-				if err := write("<thinking>"); err != nil {
-					return "", err
-				}
-				if err := write(thinking); err != nil {
-					return "", err
-				}
-				if err := write("</thinking>"); err != nil {
-					return "", err
-				}
-			} else if text != "" {
-				if err := write("<thinking>"); err != nil {
-					return "", err
-				}
-				if err := write(text); err != nil {
-					return "", err
-				}
-				if err := write("</thinking>"); err != nil {
-					return "", err
-				}
+			v := thinking
+			if v == "" {
+				v = partText
+			}
+			if err := write(&reasoningBuilder, v, true); err != nil {
+				return "", "", err
 			}
 		default:
-			if text != "" {
-				if err := write(text); err != nil {
-					return "", err
-				}
+			if err := write(&textBuilder, partText, false); err != nil {
+				return "", "", err
 			}
 		}
 	}
 
-	return b.String(), nil
+	return textBuilder.String(), reasoningBuilder.String(), nil
 }
 
 // chatToolToResponses converts a tool result message (role=tool) into a
