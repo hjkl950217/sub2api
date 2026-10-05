@@ -44,7 +44,7 @@ git add -f CLAUDE.md
   ```
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **206 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **209 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   注意：上面那条 grep 命令**不覆盖 `.github/` 下的 15 个锚点**（`.github` 是隐藏目录，`grep -r .` 默认跳过），
   核对总数时要把它一起算上：`grep -rn "FORK-ANCHOR:" .github/`。
 
@@ -547,6 +547,43 @@ openai 平台的 API Key 账号，新增、编辑、测试三页 UI 与国产供
 
 **测试**：`FloatingHorizontalScrollbar.spec.ts`（2 用例：溢出时显示并同步 `scrollLeft`、不溢出时隐藏）
 + `admin/UsageView.spec.ts` 新增 2 用例（时间列默认进表头、且出现在列设置下拉里）。
+
+### 2.19 reasoning 改走标准 Responses reasoning 输入项（改上游文件，新增 3 个锚点）
+
+**背景**：站点侧思考块泄露——见 `文档/过程记录/报告_20261005_思考块泄露与同分组调度调研.md` 的链 A。
+`chatcompletions_to_responses.go` 的 `chatAssistantToResponses` 把 assistant 历史的
+`reasoning_content` 包成 `<thinking>…</thinking>` 拼进发往上游的 `output_text`，上游模型会模仿
+这个格式并把它回显到正文。2026-09-28 的实测：有包装 12/30 泄露，无包装 0/30。
+
+**改法**：产出标准的 reasoning 输入项
+
+```json
+{"type":"reasoning","summary":[{"type":"summary_text","text":"…"}]}
+```
+
+与读取侧往返对称——`chatcompletions_responses_bridge.go` 的 `buildChatMessagesFromItems` 本来就是
+从 `summary` 里取回 `reasoning_content`，写入侧产出同形状，格式闭环。
+`chatcompletions_responses_request_invariants_test.go:47-52` 的 golden 样本正是这个形态
+（reasoning item 后面直接跟 function_call），新代码产出的形状与它一致。
+
+**不能直接删**：`chatcompletions_responses_bridge.go:404-417` 与 `:636-642` 的注释写明 DeepSeek
+thinking mode 要求 assistant 消息回传 `reasoning_content`，丢了会报 400。所以是**换承载形式**，不是去掉。
+另：上游要求 reasoning 项必须带 `summary`，缺失报 400 `Missing required parameter 'input[N].summary'`
+（`openai_codex_transform.go:1622-1626`）；该层逐字段保留 `summary`，只在缺失时补空数组。
+
+| 文件 | 锚点 |
+|---|---|
+| `backend/internal/pkg/apicompat/types.go` | `reasoning-input-summary` |
+| `backend/internal/pkg/apicompat/chatcompletions_to_responses.go` | `reasoning-input-item` / `assistant-content-split` |
+
+**副作用**：assistant 消息只有 reasoning、没有正文时，不再产出一条承载 `<thinking>` 的空 assistant
+message item，输入项序列因此变长。`parseAssistantContent` 的返回值从 `(string, error)` 改成
+`(text, reasoning string, err error)`。
+
+**测试**：`chatcompletions_responses_test.go` 3 个用例改写（2 个改名成
+`..._AssistantThinkingBecomesReasoningItem` 与 `..._AssistantReasoningBecomesReasoningItem`）；
+`openai_gateway_grok_chat_bridge_test.go:484` 的断言改为验证 `input.1.type=reasoning` 与
+`input.1.summary.0.text`。
 
 ## 3. 发版方式
 
