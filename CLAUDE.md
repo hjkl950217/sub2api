@@ -44,7 +44,7 @@ git add -f CLAUDE.md
   ```
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **204 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **206 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   注意：上面那条 grep 命令**不覆盖 `.github/` 下的 15 个锚点**（`.github` 是隐藏目录，`grep -r .` 默认跳过），
   核对总数时要把它一起算上：`grep -rn "FORK-ANCHOR:" .github/`。
 
@@ -500,7 +500,7 @@ openai 平台的 API Key 账号，新增、编辑、测试三页 UI 与国产供
 删除位置上。`defineEmits` 声明与 `AccountsView.vue` 侧的处理逻辑原样保留（只是没有按钮再触发），
 `@probe-upstream-billing` 这些模板绑定的类型检查因此不受影响；恢复只需把按钮加回去。
 
-### 2.18 使用记录页：时间列可配置 + 贴底横向滚动条（改上游文件，新增 6 个锚点）
+### 2.18 使用记录页：时间列可配置 + 贴底横向滚动条（改上游文件，新增 8 个锚点）
 
 **背景**（长空 2026-10-05 提出）：管理端 `/admin/usage` 的表格列多，横向滚动条压在表格最底部，
 要先滚到页面底部才够得着；同页的时间列原先也没法在「列设置」里开关。
@@ -534,8 +534,16 @@ openai 平台的 API Key 账号，新增、编辑、测试三页 UI 与国产供
 `activeTableContainer` 跟着 `activeTab` 走。浮动条必须放在两个 tab 容器的**外面**——那两个容器带
 `overflow-hidden`，在里面 `sticky` 会失效。
 
-**两个页面都接了**：管理端 `/admin/usage` 的两个 tab 用 `v-show`，容器 ref 跟着 `activeTab` 走；
-用户端 `/usage` 的两个 tab 用 `v-if`，把原来的 `<template>` 拆成带 ref 的 `<div>` 才挂得上。
+**两个页面都接了**：管理端 `/admin/usage` 的两个 tab 用 `v-show`；用户端 `/usage` 的两个 tab 用
+`v-if`，把原来的 `<template>` 拆成带 ref 的 `<div>` 才挂得上。
+
+**位置与形态**（长空第二轮反馈后定）
+
+条放在两个 tab 容器**内部、分页之前**，容器原来的 `overflow-hidden` 要去掉——留着的话 `sticky`
+在里面失效，滚到底不会停在分页上方。滚动过程中它粘在视口底部（浮动），滚到页面底部时停在自然
+位置，也就是分页上方。错误请求 tab 的分页在 `OpsErrorLogTable` / `UserErrorRequestsTable` 内部，
+条只能跟在这两个组件后面。track 24px 高，滑块 12px、hover 到 16px；没有可滑内容时滑块铺满整条、
+整条降到 `opacity-70`、光标不是抓手。
 
 **测试**：`FloatingHorizontalScrollbar.spec.ts`（2 用例：溢出时显示并同步 `scrollLeft`、不溢出时隐藏）
 + `admin/UsageView.spec.ts` 新增 2 用例（时间列默认进表头、且出现在列设置下拉里）。
