@@ -49,11 +49,11 @@ describe('FloatingHorizontalScrollbar', () => {
     const { container, scroller } = buildContainer(1200, 400)
     const wrapper = await mountWithTrackWidth(container, 400)
 
-    expect(wrapper.get('[data-testid="floating-h-scrollbar"]').isVisible()).toBe(true)
-
     const thumb = wrapper.get('[data-testid="floating-h-scrollbar-thumb"]')
-    // track 可用宽 392，可视比例 1/3 → 滑块 131
+    // track 可用宽 392，可视比例 1/3 → 滑块 131，且是「可拖」的样子
     expect(thumb.attributes('style')).toContain('width: 131px')
+    expect(thumb.classes()).toContain('cursor-grab')
+    expect(wrapper.get('[data-testid="floating-h-scrollbar"]').classes()).not.toContain('opacity-50')
 
     scroller.scrollLeft = 800
     scroller.dispatchEvent(new Event('scroll'))
@@ -80,11 +80,14 @@ describe('FloatingHorizontalScrollbar', () => {
     window.dispatchEvent(new Event('pointerup'))
   })
 
-  it('内容没溢出时整条不显示', async () => {
+  it('内容没溢出时滑块铺满整条并淡显，不给可拖的样子', async () => {
     const { container } = buildContainer(400, 400)
-    const wrapper = mount(FloatingHorizontalScrollbar, { props: { container } })
-    await nextTick()
+    const wrapper = await mountWithTrackWidth(container, 400)
 
-    expect(wrapper.get('[data-testid="floating-h-scrollbar"]').isVisible()).toBe(false)
+    const thumb = wrapper.get('[data-testid="floating-h-scrollbar-thumb"]')
+    // 可视比 1 → 滑块铺满 track 可用宽
+    expect(thumb.attributes('style')).toContain('width: 392px')
+    expect(thumb.classes()).toContain('cursor-default')
+    expect(wrapper.get('[data-testid="floating-h-scrollbar"]').classes()).toContain('opacity-50')
   })
 })

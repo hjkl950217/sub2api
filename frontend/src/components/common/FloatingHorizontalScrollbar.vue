@@ -4,14 +4,17 @@
        滑块是自绘的：全局样式把滚动条定成 8px 高、thumb 默认透明（hover 才显形），
        而 Edge 的 overlay 滚动条又不吃 ::-webkit-scrollbar 的高度定制，原生的根本看不见。 -->
   <div
-    v-show="scrollable"
     ref="trackRef"
     data-testid="floating-h-scrollbar"
-    class="sticky bottom-0 z-30 flex h-4 items-center overflow-hidden border-t border-gray-200 bg-white/95 px-1 dark:border-dark-700 dark:bg-dark-900/95"
+    class="sticky bottom-0 z-30 flex h-4 items-center overflow-hidden border-t border-gray-200 bg-white/95 px-1 transition-opacity dark:border-dark-700 dark:bg-dark-900/95"
+    :class="scrollable ? '' : 'opacity-50'"
   >
     <div
       data-testid="floating-h-scrollbar-thumb"
-      class="h-2 cursor-grab rounded-full bg-gray-400 transition-colors hover:bg-gray-500 active:cursor-grabbing dark:bg-dark-500 dark:hover:bg-dark-400"
+      class="h-2 rounded-full bg-gray-400 transition-colors dark:bg-dark-500"
+      :class="scrollable
+        ? 'cursor-grab hover:bg-gray-500 active:cursor-grabbing dark:hover:bg-dark-400'
+        : 'cursor-default'"
       :style="{ width: `${thumbWidth}px`, transform: `translateX(${thumbLeft}px)` }"
       @pointerdown="onThumbPointerDown"
     />
