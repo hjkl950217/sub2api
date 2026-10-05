@@ -176,7 +176,7 @@
         </button>
       </div>
 
-      <template v-if="activeTab === 'usage'">
+      <div v-if="activeTab === 'usage'" ref="usageTableContainerRef">
         <UsageTable
           :data="usageLogs"
           :loading="loading"
@@ -198,10 +198,10 @@
           @update:page="handlePageChange"
           @update:pageSize="handlePageSizeChange"
         />
-      </template>
+      </div>
 
-      <UserErrorRequestsTable
-        v-else-if="errorViewEnabled"
+      <div v-else-if="errorViewEnabled" ref="errTableContainerRef">
+        <UserErrorRequestsTable
         :rows="errorRows"
         :total="errorTotal"
         :loading="errorLoading"
@@ -212,7 +212,10 @@
         @update:page="onErrorPage"
         @update:pageSize="onErrorPageSize"
         @ipGeoBatchFailed="handleIpGeoBatchFailed"
-      />
+        />
+      </div>
+      <!-- FORK-ANCHOR: floating-h-scrollbar-user (二开：宽表贴底的横向滚动条，跟当前 tab 的表格走) -->
+      <FloatingHorizontalScrollbar :container="activeTableContainer" />
     </div>
   </AppLayout>
 
@@ -236,6 +239,7 @@ import EndpointDistributionChart from '@/components/charts/EndpointDistributionC
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import Icon from '@/components/icons/Icon.vue'
 import UserErrorRequestsTable from '@/components/user/UserErrorRequestsTable.vue'
+import FloatingHorizontalScrollbar from '@/components/common/FloatingHorizontalScrollbar.vue'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { formatReasoningEffort } from '@/utils/format'
 import { getBillingModeLabel, getDisplayBillingMode as resolveDisplayBillingMode } from '@/utils/billingMode'
@@ -357,6 +361,13 @@ const endpointDistributionMetric = ref<DistributionMetric>('tokens')
 const endpointDistributionSource = ref<EndpointSource>('inbound')
 const activeTab = ref<'usage' | 'errors'>('usage')
 const errorViewEnabled = computed(() => appStore.cachedPublicSettings?.allow_user_view_error_requests ?? false)
+
+// FORK: 贴底横向滚动条跟着当前 tab 的表格走
+const usageTableContainerRef = ref<HTMLElement | null>(null)
+const errTableContainerRef = ref<HTMLElement | null>(null)
+const activeTableContainer = computed(() =>
+  activeTab.value === 'errors' ? errTableContainerRef.value : usageTableContainerRef.value
+)
 
 const filters = ref<UsageQueryParams>({
   start_date: startDate.value,
