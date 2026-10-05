@@ -17,32 +17,67 @@ function defineScrollLeft(el: HTMLElement, initial = 0) {
   })
 }
 
+function defineSize(el: HTMLElement, sizes: Record<string, number>) {
+  for (const [key, value] of Object.entries(sizes)) {
+    Object.defineProperty(el, key, { value, configurable: true })
+  }
+}
+
 function buildContainer(scrollWidth: number, clientWidth: number) {
   const container = document.createElement('div')
   const scroller = document.createElement('div')
   scroller.className = 'table-wrapper'
   container.appendChild(scroller)
-  Object.defineProperty(scroller, 'scrollWidth', { value: scrollWidth, configurable: true })
-  Object.defineProperty(scroller, 'clientWidth', { value: clientWidth, configurable: true })
+  defineSize(scroller, { scrollWidth, clientWidth })
   defineScrollLeft(scroller)
   return { container, scroller }
 }
 
+/** track 挂在组件内部，jsdom 下量不出宽度，挂载后补一个再让组件重量一次 */
+async function mountWithTrackWidth(container: HTMLElement, trackWidth: number) {
+  const wrapper = mount(FloatingHorizontalScrollbar, { props: { container } })
+  await nextTick()
+  const track = wrapper.get('[data-testid="floating-h-scrollbar"]').element as HTMLElement
+  defineSize(track, { clientWidth: trackWidth })
+  ;(wrapper.vm as unknown as { refresh: () => void }).refresh()
+  await nextTick()
+  return wrapper
+}
+
 describe('FloatingHorizontalScrollbar', () => {
-  it('内容比容器宽时贴底显示，并把表格的横向滚动同步过来', async () => {
+  it('内容溢出时显示滑块，表格滚动时滑块跟着走', async () => {
     const { container, scroller } = buildContainer(1200, 400)
-    const wrapper = mount(FloatingHorizontalScrollbar, { props: { container } })
-    await nextTick()
+    const wrapper = await mountWithTrackWidth(container, 400)
 
-    const bar = wrapper.get('[data-testid="floating-h-scrollbar"]')
-    expect(bar.isVisible()).toBe(true)
-    defineScrollLeft(bar.element as HTMLElement)
+    expect(wrapper.get('[data-testid="floating-h-scrollbar"]').isVisible()).toBe(true)
 
-    scroller.scrollLeft = 300
+    const thumb = wrapper.get('[data-testid="floating-h-scrollbar-thumb"]')
+    // track 可用宽 392，可视比例 1/3 → 滑块 131
+    expect(thumb.attributes('style')).toContain('width: 131px')
+
+    scroller.scrollLeft = 800
     scroller.dispatchEvent(new Event('scroll'))
     await nextTick()
 
-    expect((bar.element as HTMLElement).scrollLeft).toBe(300)
+    // 滚到底 → 滑块贴到右端（travel = 392 - 131 = 261）
+    expect(thumb.attributes('style')).toContain('translateX(261px)')
+  })
+
+  it('拖动滑块时表格跟着横向滚动', async () => {
+    const { container, scroller } = buildContainer(1200, 400)
+    const wrapper = await mountWithTrackWidth(container, 400)
+
+    const thumb = wrapper.get('[data-testid="floating-h-scrollbar-thumb"]')
+    await thumb.trigger('pointerdown', { clientX: 100 })
+
+    const move = new Event('pointermove')
+    Object.defineProperty(move, 'clientX', { value: 361 })
+    window.dispatchEvent(move)
+
+    // 拖满 travel（261）→ 表格滚到最右 800
+    expect(scroller.scrollLeft).toBe(800)
+
+    window.dispatchEvent(new Event('pointerup'))
   })
 
   it('内容没溢出时整条不显示', async () => {

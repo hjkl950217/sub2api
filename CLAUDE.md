@@ -520,9 +520,15 @@ openai 平台的 API Key 账号，新增、编辑、测试三页 UI 与国产供
 **贴底横向滚动条**
 
 新增 `frontend/src/components/common/FloatingHorizontalScrollbar.vue`：横向滚动的真身是 DataTable
-内部的 `.table-wrapper`，组件接收外层容器、在里面找它，在页面末尾放一条 `sticky bottom-0` 的假滚动
-条，宽度取真容器的 `scrollWidth`，两个方向双向同步（用相等判断断开回环），内容没溢出时 `v-show`
-收掉，`ResizeObserver` 盯容器和 table 的宽度变化。
+内部的 `.table-wrapper`，组件接收外层容器、在里面找它，在页面末尾放一条 `sticky bottom-0` 的横条。
+
+滑块是**自绘**的。起初直接让横条 `overflow-x: auto` 用原生滚动条，线上根本看不见：`style.css:42`
+全局把 `::-webkit-scrollbar` 定成 `h-2`（8px 高）、`::-webkit-scrollbar-thumb` 默认 `bg-transparent`
+（只有 `*:hover::-webkit-scrollbar-thumb` 才半透明显形），而 Edge 的 overlay 滚动条又不吃
+`::-webkit-scrollbar` 的高度定制——DataTable 第 1101 行那段 `scrollbar-width: auto !important`
+注释踩的是同一个坑。现在 track 里放一个宽度按 `clientWidth / scrollWidth` 比例算的圆角滑块
+（下限 48px，太短不好抓），拖它按比例改真容器的 `scrollLeft`，真容器滚动时滑块跟着走；内容没溢出
+时整条 `v-show` 收掉，`ResizeObserver` 盯容器、table 和 track 的宽度变化。
 
 接入点在 `views/admin/UsageView.vue`（锚点 `floating-h-scrollbar`）：两个 tab 容器各加 ref，
 `activeTableContainer` 跟着 `activeTab` 走。浮动条必须放在两个 tab 容器的**外面**——那两个容器带
