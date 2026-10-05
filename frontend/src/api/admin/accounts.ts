@@ -621,6 +621,8 @@ export interface BatchTestAccountInfo {
   eligible: boolean
   reason?: string
   schedulable: boolean
+  /** 该账号会被探测的协议清单，用来在弹窗里先铺灰色占位标签 */
+  protocols?: string[]
 }
 
 export interface BatchTestAccountGroup {

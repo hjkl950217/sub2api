@@ -109,6 +109,11 @@ func TestForkBatchTestPlanGroupsByPlatform(t *testing.T) {
 	require.Equal(t, []int64{1, 2}, plan.Groups[2].AccountIDs)
 	require.Equal(t, []string{"gpt-4o"}, plan.Groups[2].CommonModels, "只保留两个账号共有的模型")
 
+	// 前端靠协议占位清单先渲染灰色标签，不合格的账号不给清单。
+	require.Equal(t, cnProtocolProbeOrder, plan.Groups[0].Accounts[0].Protocols, "国产账号列三个协议")
+	require.Nil(t, plan.Groups[1].Accounts[0].Protocols, "不合格账号不给协议占位")
+	require.Equal(t, openaiAPIKeyProtocolProbeOrder, plan.Groups[2].Accounts[0].Protocols, "openai 账号列两个协议")
+
 	require.Equal(t, 1, plan.SkippedCount, "只统计不合格账号")
 }
 

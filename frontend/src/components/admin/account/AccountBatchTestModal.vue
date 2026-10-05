@@ -73,13 +73,13 @@
               <span class="truncate text-gray-800 dark:text-gray-200">{{ row.name }}</span>
 
               <template v-if="row.eligible">
+                <!-- FORK: 协议标签三态——未测灰、通过绿、失败红，打开弹窗就铺好占位 -->
                 <span
                   v-for="result in row.protocols"
                   :key="result.protocol"
+                  :data-testid="`batch-protocol-${row.id}-${result.protocol}`"
                   class="rounded px-1.5 py-0.5 text-[11px] font-medium"
-                  :class="result.success
-                    ? 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
-                    : 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'"
+                  :class="protocolClass(result.success)"
                 >
                   {{ shortProtocolLabel(result.protocol) }}
                 </span>
@@ -121,18 +121,19 @@
     <template #footer>
       <div class="flex justify-end gap-3">
         <!-- FORK: 批量把各账号测通的协议写回各自的 api_protocols。
-             测试进行中也能点：只写已经跑完的账号，先测完的先落，不用整批等完。 -->
+             按钮常显，没有可写回的行时置灰；测试进行中也能点，只写已经跑完的账号。 -->
         <button
-          v-if="probedRows.length > 0"
           type="button"
           data-testid="batch-update-protocols-button"
-          :disabled="savingProtocols"
+          :disabled="savingProtocols || probedRows.length === 0"
           :title="t('admin.accounts.syncProtocolsHint')"
           :class="[
             'mr-auto flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all',
             savingProtocols
               ? 'cursor-not-allowed bg-indigo-300 text-white'
-              : 'bg-indigo-500 text-white hover:bg-indigo-600'
+              : probedRows.length === 0
+                ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-dark-600 dark:text-gray-500'
+                : 'bg-indigo-500 text-white hover:bg-indigo-600'
           ]"
           @click="updateProtocols"
         >
@@ -183,7 +184,8 @@ const appStore = useAppStore()
 
 interface ProtocolResult {
   protocol: string
-  success: boolean
+  // null = 还没测到（灰色占位），true/false 才是探测结论
+  success: boolean | null
 }
 
 interface BatchRow {
@@ -251,6 +253,13 @@ const canStart = computed(
     groups.value.some((group) => group.common_models.length > 0)
 )
 
+// FORK: 协议标签三态配色：未测灰、通过绿、失败红。
+const protocolClass = (success: boolean | null) => {
+  if (success === true) return 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
+  if (success === false) return 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
+  return 'bg-gray-100 text-gray-400 dark:bg-dark-600 dark:text-gray-500'
+}
+
 const shortProtocolLabel = (protocol: string) => {
   if (protocol === 'anthropic') return 'anthropic'
   if (protocol === 'responses') return 'responses'
@@ -299,9 +308,11 @@ const loadPlan = async () => {
           reason: account.reason || '',
           status: 'idle',
           error: '',
-          protocols: [],
+          // 打开就按后端给的协议清单铺占位标签，测试推进时逐个变色
+          protocols: (account.protocols || []).map((protocol) => ({ protocol, success: null })),
           excerpt: '',
-          expanded: false,
+          // 默认展开，测试返回的正文不用再点一下才看得到
+          expanded: true,
           schedulable: account.schedulable
         })
       })
@@ -359,8 +370,12 @@ const startTest = async () => {
   rows.value.forEach((row) => {
     row.status = row.eligible ? 'running' : 'idle'
     row.error = ''
-    row.protocols = []
+    // 占位标签留着，只把颜色退回未测
+    row.protocols.forEach((result) => {
+      result.success = null
+    })
     row.excerpt = ''
+    row.expanded = true
   })
   running.value = true
   abortStream()
@@ -431,7 +446,13 @@ const handleEvent = (event: {
   switch (event.type) {
     case 'protocol_result':
       if (event.protocol) {
-        row.protocols.push({ protocol: event.protocol, success: event.protocol_ok === true })
+        // 占位标签在打开弹窗时就建好了，这里只改颜色；清单外的协议才追加（兜底）。
+        const probed = row.protocols.find((result) => result.protocol === event.protocol)
+        if (probed) {
+          probed.success = event.protocol_ok === true
+        } else {
+          row.protocols.push({ protocol: event.protocol, success: event.protocol_ok === true })
+        }
       }
       if (event.text) {
         row.excerpt += `[${shortProtocolLabel(event.protocol || '')}]${event.text}\n`

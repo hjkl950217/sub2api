@@ -53,6 +53,9 @@ type BatchTestAccountInfo struct {
 	Reason   string   `json:"reason,omitempty"`
 	// Schedulable 是账号当前的调度开关，弹窗里逐行改完后直接回写。
 	Schedulable bool `json:"schedulable"`
+	// Protocols 是账号会被探测的协议清单（与协议矩阵同序）。前端拿它先渲染
+	// 灰色占位标签，测试推进时逐个变色，不用等结果回来才知道要测几个协议。
+	Protocols []string `json:"protocols,omitempty"`
 }
 
 // BatchTestAccountGroup 是同一平台的一组账号，附带该组的共有模型。
@@ -91,6 +94,20 @@ func batchTestEligible(account *Account) (bool, string) {
 	return true, ""
 }
 
+// batchTestProtocols 报告账号会被探测哪些协议，顺序与协议矩阵的探测顺序一致。
+func batchTestProtocols(account *Account) []string {
+	if account == nil {
+		return nil
+	}
+	if account.IsCNProvider() {
+		return cnProtocolProbeOrder
+	}
+	if account.IsOpenAIApiKey() {
+		return openaiAPIKeyProtocolProbeOrder
+	}
+	return nil
+}
+
 // BuildBatchTestPlan 把选中账号按平台分组，并算出每组的共有模型。
 func (s *AccountTestService) BuildBatchTestPlan(ctx context.Context, accountIDs []int64) (*BatchTestPlan, error) {
 	plan := &BatchTestPlan{Groups: []BatchTestAccountGroup{}}
@@ -116,6 +133,7 @@ func (s *AccountTestService) BuildBatchTestPlan(ctx context.Context, accountIDs 
 		if eligible, reason := batchTestEligible(account); eligible {
 			info.Eligible = true
 			info.Models = sortedModelKeys(account.GetModelMapping())
+			info.Protocols = batchTestProtocols(account)
 		} else {
 			info.Reason = reason
 			plan.SkippedCount++

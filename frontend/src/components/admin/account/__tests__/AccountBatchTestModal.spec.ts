@@ -84,8 +84,22 @@ function planFixture() {
         account_ids: [1, 2],
         common_models: ['gpt-4o'],
         accounts: [
-          { id: 1, name: 'Lanln公益站', models: ['gpt-4o', 'gpt-4.1'], eligible: true, schedulable: true },
-          { id: 2, name: 'oai2api公益站', models: ['gpt-4o'], eligible: true, schedulable: false }
+          {
+            id: 1,
+            name: 'Lanln公益站',
+            models: ['gpt-4o', 'gpt-4.1'],
+            eligible: true,
+            schedulable: true,
+            protocols: ['chat_completions', 'responses']
+          },
+          {
+            id: 2,
+            name: 'oai2api公益站',
+            models: ['gpt-4o'],
+            eligible: true,
+            schedulable: false,
+            protocols: ['chat_completions', 'responses']
+          }
         ]
       },
       {
@@ -202,7 +216,8 @@ describe('AccountBatchTestModal', () => {
     await wrapper.setProps({ show: true })
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="batch-update-protocols-button"]').exists()).toBe(false)
+    // 按钮常显，没有可写回的行时禁用
+    expect(wrapper.get('[data-testid="batch-update-protocols-button"]').attributes('disabled')).toBeDefined()
 
     await wrapper.get('[data-testid="batch-test-start-button"]').trigger('click')
     await flushPromises()
@@ -243,6 +258,51 @@ describe('AccountBatchTestModal', () => {
 
     expect(updateProbedProtocols).toHaveBeenCalledTimes(1)
     expect(updateProbedProtocols).toHaveBeenCalledWith(1, ['chat_completions'])
+  })
+
+  it('打开弹窗就按平台铺好协议占位标签（灰色），测试推进时逐个变色', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_result","account_id":1,"protocol":"chat_completions","protocol_ok":true}\n',
+        'data: {"type":"protocol_result","account_id":1,"protocol":"responses","protocol_ok":false}\n',
+        'data: {"type":"batch_test_complete","account_id":1,"success":true}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({ show: false, accountIds: [1, 2, 3] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    // 还没测：两个协议标签已经在，都是灰的
+    expect(wrapper.get('[data-testid="batch-protocol-1-chat_completions"]').classes()).toContain('bg-gray-100')
+    expect(wrapper.get('[data-testid="batch-protocol-1-responses"]').classes()).toContain('bg-gray-100')
+
+    await wrapper.get('[data-testid="batch-test-start-button"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    // 出结论：通过变绿、失败变红，标签数量不变
+    expect(wrapper.get('[data-testid="batch-protocol-1-chat_completions"]').classes()).toContain('bg-green-100')
+    expect(wrapper.get('[data-testid="batch-protocol-1-responses"]').classes()).toContain('bg-red-100')
+  })
+
+  it('测试返回的正文默认展开，不用再点一下', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_result","account_id":1,"protocol":"chat_completions","protocol_ok":true,"text":"hello-body"}\n',
+        'data: {"type":"batch_test_complete","account_id":1,"success":true}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({ show: false, accountIds: [1, 2, 3] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="batch-test-start-button"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="batch-row-1"]').text()).toContain('hello-body')
   })
 
   it('每行调度开关直接调调度接口，成功后通知外层刷新', async () => {
