@@ -6,14 +6,14 @@
   <div
     ref="trackRef"
     data-testid="floating-h-scrollbar"
-    class="sticky bottom-0 z-30 flex h-4 items-center overflow-hidden border-t border-gray-200 bg-white/95 px-1 transition-opacity dark:border-dark-700 dark:bg-dark-900/95"
-    :class="scrollable ? '' : 'opacity-50'"
+    class="sticky bottom-0 z-30 flex h-6 items-center overflow-hidden border-t border-gray-200 bg-white/95 px-1 transition-opacity dark:border-dark-700 dark:bg-dark-900/95"
+    :class="scrollable ? '' : 'opacity-70'"
   >
     <div
       data-testid="floating-h-scrollbar-thumb"
-      class="h-2 rounded-full bg-gray-400 transition-colors dark:bg-dark-500"
+      class="h-3 rounded-full bg-gray-500 transition-all hover:h-4 dark:bg-dark-400"
       :class="scrollable
-        ? 'cursor-grab hover:bg-gray-500 active:cursor-grabbing dark:hover:bg-dark-400'
+        ? 'cursor-grab hover:bg-gray-600 active:cursor-grabbing dark:hover:bg-dark-300'
         : 'cursor-default'"
       :style="{ width: `${thumbWidth}px`, transform: `translateX(${thumbLeft}px)` }"
       @pointerdown="onThumbPointerDown"

@@ -122,7 +122,7 @@
           </template>
         </UsageFilters>
 
-        <div v-show="activeTab === 'usage'" ref="usageTableContainerRef" class="overflow-hidden rounded-b-2xl">
+        <div v-show="activeTab === 'usage'" ref="usageTableContainerRef" class="rounded-b-2xl">
           <UsageTable
             flat
             :data="usageLogs"
@@ -135,9 +135,11 @@
             @userClick="handleUserClick"
             @ipGeoBatchFailed="handleIpGeoBatchFailed"
           />
+          <!-- FORK-ANCHOR: floating-h-scrollbar (二开：宽表贴底的横向滚动条，放在分页上方) -->
+          <FloatingHorizontalScrollbar :container="usageTableContainerRef" />
           <Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" />
         </div>
-        <div v-show="activeTab === 'errors'" ref="errTableContainerRef" class="overflow-hidden rounded-b-2xl">
+        <div v-show="activeTab === 'errors'" ref="errTableContainerRef" class="rounded-b-2xl">
           <OpsErrorLogTable
             flat
             :rows="errRows" :total="errTotal" :loading="errLoading"
@@ -150,6 +152,8 @@
             @update:page="onErrPage"
             @update:pageSize="onErrPageSize"
             @ipGeoBatchFailed="handleIpGeoBatchFailed" />
+          <!-- FORK-ANCHOR: floating-h-scrollbar-errors (二开：同上；错误请求的分页在组件内部，条只能跟在它后面) -->
+          <FloatingHorizontalScrollbar :container="errTableContainerRef" />
         </div>
         <!-- 懒挂载：首次切到该 tab 才请求排行数据，之后随筛选自动刷新 -->
         <div v-if="rankingMounted" v-show="activeTab === 'ranking'" class="overflow-hidden rounded-b-2xl">
@@ -164,8 +168,6 @@
         </div>
       </div>
       <OpsErrorDetailModal v-model:show="showErrorModal" :error-id="selectedErrorId" :error-type="'request'" />
-      <!-- FORK-ANCHOR: floating-h-scrollbar (二开：宽表贴底的横向滚动条，两个 tab 各跟自己的表格) -->
-      <FloatingHorizontalScrollbar :container="activeTableContainer" />
     </div>
   </AppLayout>
   <UsageExportProgress :show="exportProgress.show" :progress="exportProgress.progress" :current="exportProgress.current" :total="exportProgress.total" :estimated-time="exportProgress.estimatedTime" @cancel="cancelExport" />
@@ -799,12 +801,9 @@ const usageFiltersRef = ref<InstanceType<typeof UsageFilters> | null>(null)
 const rankingMounted = ref(false)
 const rankingRef = ref<InstanceType<typeof UserTokenRanking> | null>(null)
 
-// FORK: 贴底横向滚动条跟着当前 tab 的表格走
+// FORK: 贴底横向滚动条的两个容器 ref，组件就放在各自容器里（分页上方）
 const usageTableContainerRef = ref<HTMLElement | null>(null)
 const errTableContainerRef = ref<HTMLElement | null>(null)
-const activeTableContainer = computed(() =>
-  activeTab.value === 'errors' ? errTableContainerRef.value : usageTableContainerRef.value
-)
 
 const switchTab = (tab: DetailTab) => {
   activeTab.value = tab

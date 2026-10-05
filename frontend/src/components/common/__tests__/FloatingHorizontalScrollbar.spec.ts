@@ -53,7 +53,7 @@ describe('FloatingHorizontalScrollbar', () => {
     // track 可用宽 392，可视比例 1/3 → 滑块 131，且是「可拖」的样子
     expect(thumb.attributes('style')).toContain('width: 131px')
     expect(thumb.classes()).toContain('cursor-grab')
-    expect(wrapper.get('[data-testid="floating-h-scrollbar"]').classes()).not.toContain('opacity-50')
+    expect(wrapper.get('[data-testid="floating-h-scrollbar"]').classes()).not.toContain('opacity-70')
 
     scroller.scrollLeft = 800
     scroller.dispatchEvent(new Event('scroll'))
@@ -88,6 +88,6 @@ describe('FloatingHorizontalScrollbar', () => {
     // 可视比 1 → 滑块铺满 track 可用宽
     expect(thumb.attributes('style')).toContain('width: 392px')
     expect(thumb.classes()).toContain('cursor-default')
-    expect(wrapper.get('[data-testid="floating-h-scrollbar"]').classes()).toContain('opacity-50')
+    expect(wrapper.get('[data-testid="floating-h-scrollbar"]').classes()).toContain('opacity-70')
   })
 })

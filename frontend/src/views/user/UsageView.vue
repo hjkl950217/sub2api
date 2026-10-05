@@ -190,6 +190,8 @@
           @ipGeoBatchFailed="handleIpGeoBatchFailed"
         />
 
+        <!-- FORK-ANCHOR: floating-h-scrollbar-user (二开：宽表贴底的横向滚动条，放在分页上方) -->
+        <FloatingHorizontalScrollbar :container="usageTableContainerRef" />
         <Pagination
           v-if="pagination.total > 0"
           :page="pagination.page"
@@ -213,9 +215,9 @@
         @update:pageSize="onErrorPageSize"
         @ipGeoBatchFailed="handleIpGeoBatchFailed"
         />
+        <!-- FORK-ANCHOR: floating-h-scrollbar-user-errors (二开：同上；错误请求的分页在组件内部，条跟在它后面) -->
+        <FloatingHorizontalScrollbar :container="errTableContainerRef" />
       </div>
-      <!-- FORK-ANCHOR: floating-h-scrollbar-user (二开：宽表贴底的横向滚动条，跟当前 tab 的表格走) -->
-      <FloatingHorizontalScrollbar :container="activeTableContainer" />
     </div>
   </AppLayout>
 
@@ -362,12 +364,9 @@ const endpointDistributionSource = ref<EndpointSource>('inbound')
 const activeTab = ref<'usage' | 'errors'>('usage')
 const errorViewEnabled = computed(() => appStore.cachedPublicSettings?.allow_user_view_error_requests ?? false)
 
-// FORK: 贴底横向滚动条跟着当前 tab 的表格走
+// FORK: 贴底横向滚动条的两个容器 ref，组件就放在各自容器里（分页上方）
 const usageTableContainerRef = ref<HTMLElement | null>(null)
 const errTableContainerRef = ref<HTMLElement | null>(null)
-const activeTableContainer = computed(() =>
-  activeTab.value === 'errors' ? errTableContainerRef.value : usageTableContainerRef.value
-)
 
 const filters = ref<UsageQueryParams>({
   start_date: startDate.value,
