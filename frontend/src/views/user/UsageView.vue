@@ -710,7 +710,8 @@ const exportToCSV = async () => {
   }
 }
 
-const ALWAYS_VISIBLE = ['created_at']
+// FORK-ANCHOR: usage-time-column-toggle-user (二开：时间列不再锁死必显，交给「列设置」控制；默认仍显示)
+const ALWAYS_VISIBLE: string[] = []
 const DEFAULT_HIDDEN_COLUMNS = ['user_agent']
 const HIDDEN_COLUMNS_KEY = 'user-usage-hidden-columns'
 
@@ -752,7 +753,8 @@ const loadSavedColumns = () => {
 }
 
 // 错误请求 tab 独立列设置(机制同用量列设置,存储互不影响)
-const ERR_ALWAYS_VISIBLE = ['status', 'created_at']
+// FORK-ANCHOR: usage-time-column-toggle-user-errors (二开：错误请求的时间列同上，交给「列设置」控制)
+const ERR_ALWAYS_VISIBLE = ['status']
 const ERR_DEFAULT_HIDDEN_COLUMNS = ['user_agent']
 const ERR_HIDDEN_COLUMNS_KEY = 'user-usage-error-hidden-columns'
 

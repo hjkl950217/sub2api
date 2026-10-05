@@ -175,6 +175,81 @@ const mountRouteFilteredUsageView = () => mount(UsageView, {
   } },
 })
 
+// FORK: 时间列不再锁死必显——默认仍然显示，同时出现在「列设置」里可自行关闭
+describe('admin UsageView column settings', () => {
+  it('shows the time column by default and lists it in the column settings', async () => {
+    list.mockReset().mockResolvedValue({ items: [], total: 0, pages: 0 })
+    getStats.mockReset().mockResolvedValue({
+      total_requests: 0,
+      total_input_tokens: 0,
+      total_output_tokens: 0,
+      total_cache_tokens: 0,
+      total_tokens: 0,
+      total_cost: 0,
+      total_actual_cost: 0,
+      average_duration_ms: 0,
+    })
+    getSnapshotV2.mockReset().mockResolvedValue({ trend: [], models: [], groups: [] })
+    getModelStats.mockReset().mockResolvedValue({ models: [] })
+
+    const UsageTableCapture = defineComponent({
+      props: { columns: { type: Array, default: () => [] } },
+      template: '<div data-test="usage-columns">{{ columns.map((col) => col.key).join(",") }}</div>',
+    })
+
+    const wrapper = mount(UsageView, {
+      global: { stubs: {
+        AppLayout: AppLayoutStub, UsageStatsCards: true, UsageFilters: UsageFiltersStub,
+        UsageTable: UsageTableCapture, UsageExportProgress: true, UsageCleanupDialog: true,
+        UserBalanceHistoryModal: true, Pagination: true, Select: true,
+        DateRangePicker: true, Icon: true, TokenUsageTrend: true,
+        ModelDistributionChart: true, GroupDistributionChart: true,
+        EndpointDistributionChart: true, UserTokenRanking: true,
+      } },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="usage-columns"]').text()).toContain('created_at')
+
+    await wrapper.get('[data-testid="usage-column-settings"]').trigger('click')
+    expect(wrapper.find('[data-testid="usage-column-toggle-created_at"]').exists()).toBe(true)
+  })
+
+  it('gives the error tab time column to the column settings too', async () => {
+    list.mockReset().mockResolvedValue({ items: [], total: 0, pages: 0 })
+    getStats.mockReset().mockResolvedValue({})
+    getSnapshotV2.mockReset().mockResolvedValue({ trend: [], models: [], groups: [] })
+    getModelStats.mockReset().mockResolvedValue({ models: [] })
+    listErrorLogs.mockReset().mockResolvedValue({ items: [], total: 0, pages: 0 })
+
+    const OpsErrorLogTableStub = defineComponent({
+      props: { visibleColumnKeys: { type: Array, default: () => [] } },
+      template: '<div data-test="err-columns">{{ (visibleColumnKeys || []).join(",") }}</div>',
+    })
+
+    const wrapper = mount(UsageView, {
+      global: { stubs: {
+        AppLayout: AppLayoutStub, UsageStatsCards: true, UsageFilters: UsageFiltersStub,
+        UsageTable: true, UsageExportProgress: true, UsageCleanupDialog: true,
+        UserBalanceHistoryModal: true, Pagination: true, Select: true,
+        DateRangePicker: true, Icon: true, TokenUsageTrend: true,
+        ModelDistributionChart: true, GroupDistributionChart: true,
+        EndpointDistributionChart: true, UserTokenRanking: true,
+        OpsErrorLogTable: OpsErrorLogTableStub, OpsErrorDetailModal: true,
+      } },
+    })
+    await flushPromises()
+
+    await wrapper.findAll('[data-testid="usage-detail-tab"]')[1].trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="err-columns"]').text()).toContain('created_at')
+
+    await wrapper.get('[data-testid="usage-column-settings"]').trigger('click')
+    expect(wrapper.find('[data-testid="usage-column-toggle-created_at"]').exists()).toBe(true)
+  })
+})
+
 describe('admin UsageView route filters', () => {
   beforeEach(() => {
     vi.useFakeTimers()

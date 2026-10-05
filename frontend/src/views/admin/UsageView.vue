@@ -629,7 +629,8 @@ const exportToExcel = async () => {
 }
 
 // Column visibility
-const ALWAYS_VISIBLE = ['user', 'created_at']
+// FORK-ANCHOR: usage-time-column-toggle-admin (二开：时间列不再锁死必显，交给「列设置」控制；默认仍显示)
+const ALWAYS_VISIBLE = ['user']
 const DEFAULT_HIDDEN_COLUMNS = ['reasoning_effort', 'request_id', 'upstream_request_id', 'user_agent']
 const HIDDEN_COLUMNS_KEY = 'usage-hidden-columns'
 const HIDDEN_COLUMNS_VERSION_KEY = 'usage-hidden-columns-version'
@@ -686,7 +687,8 @@ const toggleColumn = (key: string) => {
 }
 
 // ---- 错误请求 tab 列设置(与用量明细同机制,独立存储) ----
-const ERR_ALWAYS_VISIBLE = ['user', 'status', 'created_at', 'actions']
+// FORK-ANCHOR: usage-time-column-toggle-admin-errors (二开：错误请求的时间列同上，交给「列设置」控制)
+const ERR_ALWAYS_VISIBLE = ['user', 'status', 'actions']
 const ERR_DEFAULT_HIDDEN_COLUMNS = ['user_agent']
 const ERR_HIDDEN_COLUMNS_KEY = 'usage-error-hidden-columns'
 
