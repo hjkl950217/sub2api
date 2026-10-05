@@ -94,8 +94,17 @@
               </template>
               <span v-else class="text-xs text-gray-400">{{ row.reason }}</span>
 
-              <span class="ml-auto shrink-0 text-xs font-medium" :class="statusClass(row)">
-                {{ statusLabel(row) }}
+              <span class="ml-auto flex shrink-0 items-center gap-2">
+                <!-- FORK: 逐行调度开关，不用回账号列表就能开关调度 -->
+                <Toggle
+                  :data-testid="`batch-schedulable-${row.id}`"
+                  :model-value="row.schedulable"
+                  :title="t('admin.accounts.schedulable')"
+                  @update:model-value="setSchedulable(row, $event)"
+                />
+                <span class="text-xs font-medium" :class="statusClass(row)">
+                  {{ statusLabel(row) }}
+                </span>
               </span>
             </div>
             <div
@@ -111,23 +120,24 @@
 
     <template #footer>
       <div class="flex justify-end gap-3">
-        <!-- FORK: 批量把各账号测通的协议写回各自的 api_protocols -->
+        <!-- FORK: 批量把各账号测通的协议写回各自的 api_protocols。
+             测试进行中也能点：只写已经跑完的账号，先测完的先落，不用整批等完。 -->
         <button
           v-if="probedRows.length > 0"
           type="button"
           data-testid="batch-update-protocols-button"
-          :disabled="running || savingProtocols"
+          :disabled="savingProtocols"
           :title="t('admin.accounts.syncProtocolsHint')"
           :class="[
             'mr-auto flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all',
-            running || savingProtocols
+            savingProtocols
               ? 'cursor-not-allowed bg-indigo-300 text-white'
               : 'bg-indigo-500 text-white hover:bg-indigo-600'
           ]"
           @click="updateProtocols"
         >
           <Icon name="refresh" size="sm" :stroke-width="2" :class="savingProtocols ? 'animate-spin' : ''" />
-          <span>{{ t('admin.accounts.batchTest.updateProtocols') }}</span>
+          <span>{{ t('admin.accounts.batchTest.updateProtocolsCount', { count: probedRows.length }) }}</span>
         </button>
         <button
           type="button"
@@ -160,6 +170,7 @@ import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
 import TextArea from '@/components/common/TextArea.vue'
+import Toggle from '@/components/common/Toggle.vue'
 import { Icon } from '@/components/icons'
 import { adminAPI } from '@/api/admin'
 import { buildApiUrl } from '@/api/client'
@@ -186,6 +197,7 @@ interface BatchRow {
   protocols: ProtocolResult[]
   excerpt: string
   expanded: boolean
+  schedulable: boolean
 }
 
 const props = defineProps<{
@@ -205,6 +217,7 @@ const testPrompt = ref('')
 const loadingPlan = ref(false)
 const running = ref(false)
 const savingProtocols = ref(false)
+const togglingSchedulable = ref<number | null>(null)
 let abortController: AbortController | null = null
 
 const rowsById = computed(() => {
@@ -225,8 +238,13 @@ const summaryText = computed(() =>
   })
 )
 
-// FORK: 有测通协议的行才允许写回
-const probedRows = computed(() => rows.value.filter((row) => row.protocols.some((r) => r.success)))
+// FORK: 可写回的行 = 已经跑完（通过/失败）且至少有一个协议测通。
+// 还在跑的行不能进：协议没探完，按当前结果写回会把后面才通的那几个协议漏掉。
+const probedRows = computed(() =>
+  rows.value.filter(
+    (row) => (row.status === 'success' || row.status === 'error') && row.protocols.some((r) => r.success)
+  )
+)
 
 const canStart = computed(
   () => !running.value && !loadingPlan.value && rows.value.some((row) => row.eligible) &&
@@ -283,7 +301,8 @@ const loadPlan = async () => {
           error: '',
           protocols: [],
           excerpt: '',
-          expanded: false
+          expanded: false,
+          schedulable: account.schedulable
         })
       })
     })
@@ -435,10 +454,34 @@ const handleEvent = (event: {
   }
 }
 
-// FORK: 批量更新支持协议——按账号把各自测通的协议写回，复用单账号的写回接口
+// FORK: 逐行开关调度，复用账号列表用的同一个接口
+const setSchedulable = async (row: BatchRow, next: boolean) => {
+  if (togglingSchedulable.value !== null) return
+  const previous = row.schedulable
+  row.schedulable = next
+  togglingSchedulable.value = row.id
+  try {
+    const updated = await adminAPI.accounts.setSchedulable(row.id, next)
+    row.schedulable = updated?.schedulable ?? next
+    emit('updated')
+  } catch (error) {
+    row.schedulable = previous
+    console.error('Failed to toggle schedulable:', error)
+    appStore.showError(t('admin.accounts.failedToToggleSchedulable'))
+  } finally {
+    togglingSchedulable.value = null
+  }
+}
+
+// FORK: 批量更新支持协议——按账号把各自测通的协议写回，复用单账号的写回接口。
+// 测试进行中也允许调用，只写已经跑完的行。
 const updateProtocols = async () => {
-  if (savingProtocols.value || running.value) return
-  const targets = probedRows.value
+  if (savingProtocols.value) return
+  // 先把要写的内容快照下来：运行中还有账号在收事件，边写边取会拿到半截结果。
+  const targets = probedRows.value.map((row) => ({
+    id: row.id,
+    passed: row.protocols.filter((result) => result.success).map((result) => result.protocol)
+  }))
   if (!targets.length) {
     appStore.showError(t('admin.accounts.batchTest.updateProtocolsNone'))
     return
@@ -446,10 +489,9 @@ const updateProtocols = async () => {
   savingProtocols.value = true
   let success = 0
   let failed = 0
-  for (const row of targets) {
-    const passed = row.protocols.filter((result) => result.success).map((result) => result.protocol)
+  for (const target of targets) {
     try {
-      await adminAPI.accounts.updateProbedProtocols(row.id, passed)
+      await adminAPI.accounts.updateProbedProtocols(target.id, target.passed)
       success++
     } catch (error) {
       console.error('Failed to update probed protocols:', error)

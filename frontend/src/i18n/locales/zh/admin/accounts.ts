@@ -1692,6 +1692,7 @@ export default {
         expand: '展开',
         collapse: '收起',
         updateProtocols: '更新支持协议',
+        updateProtocolsCount: '更新支持协议（{count}）',
         updateProtocolsNone: '没有账号有测通的协议',
         updateProtocolsDone: '已更新 {count} 个账号的支持协议',
         updateProtocolsPartial: '更新完成：成功 {success} 个，失败 {failed} 个'

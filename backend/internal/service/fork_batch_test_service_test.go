@@ -157,7 +157,7 @@ func TestForkBatchTestRunForwardsEventsWithAccountID(t *testing.T) {
 	require.NotEmpty(t, events)
 
 	results := map[int64]int{}
-	completed := map[int64]bool{}
+	completed := map[int64]map[string]any{}
 	for _, event := range events {
 		accountID, ok := event["account_id"].(float64)
 		require.True(t, ok, "每条事件都要带 account_id")
@@ -165,13 +165,15 @@ func TestForkBatchTestRunForwardsEventsWithAccountID(t *testing.T) {
 			results[int64(accountID)]++
 		}
 		if event["type"] == "batch_test_complete" {
-			completed[int64(accountID)] = true
+			completed[int64(accountID)] = event
 		}
 	}
 	require.Equal(t, 2, results[11], "账号 11 的 chat 与 responses 各一条结果")
 	require.Equal(t, 2, results[12])
-	require.True(t, completed[11], "账号 11 有收尾事件")
-	require.True(t, completed[12])
+	require.Contains(t, completed, int64(11), "账号 11 有收尾事件")
+	require.Contains(t, completed, int64(12))
+	require.Equal(t, true, completed[11]["success"], "全部协议通过时判通过")
+	require.Equal(t, true, completed[12]["success"])
 }
 
 // 账号测不通时同样要有收尾事件，前端才不会一直停在"测试中"。
@@ -191,12 +193,60 @@ func TestForkBatchTestRunCompletesFailedTarget(t *testing.T) {
 
 	events := forkBatchTestEvents(t, recorder.Body.String())
 	var completion map[string]any
+	probeResults := []map[string]any{}
 	for _, event := range events {
 		if event["type"] == "batch_test_complete" {
 			completion = event
 		}
+		if event["type"] == "protocol_result" {
+			probeResults = append(probeResults, event)
+		}
 	}
 	require.NotNil(t, completion, "失败账号也要有收尾事件")
+
+	// 回归：协议矩阵在两个协议都失败时仍返回 nil，早期实现只看返回值，
+	// 结果是「协议全红却标通过」。判定必须取 test_complete 的结论。
+	require.Len(t, probeResults, 2)
+	for _, result := range probeResults {
+		require.Equal(t, false, result["protocol_ok"], "两个协议都应探测失败")
+	}
+	require.NotEqual(t, true, completion["success"], "全部协议失败时不能判通过")
+	require.Nil(t, completion["error"], "具体失败原因由逐协议结果给出，收尾事件不重复带错误文本")
+}
+
+// 账号取不到（已删除）时判失败，不给没有结论的账号标「通过」。
+func TestForkBatchTestRunFailsWhenAccountMissing(t *testing.T) {
+	t.Parallel()
+
+	svc, _, _ := forkBatchTestService()
+	c, recorder := newTestContext()
+
+	err := svc.RunAccountBatchTest(c, BatchTestRunOptions{Targets: []BatchTestTarget{
+		{AccountID: 999, ModelID: "gpt-4o", Prompt: "hi"},
+	}})
+	require.NoError(t, err)
+
+	events := forkBatchTestEvents(t, recorder.Body.String())
+	require.NotEmpty(t, events, "取不到账号也要有收尾事件")
+	last := events[len(events)-1]
+	require.Equal(t, "batch_test_complete", last["type"])
+	require.NotEqual(t, true, last["success"], "取不到账号不能判通过")
+}
+
+// 候选查询带上账号当前的调度开关，弹窗逐行改完后回写。
+func TestForkBatchTestPlanCarriesSchedulable(t *testing.T) {
+	t.Parallel()
+
+	on := forkBatchTestAccount(6, PlatformOpenAI, "gpt-4o")
+	on.Schedulable = true
+	off := forkBatchTestAccount(7, PlatformOpenAI, "gpt-4o")
+	svc, _, _ := forkBatchTestService(on, off)
+
+	plan, err := svc.BuildBatchTestPlan(context.Background(), []int64{6, 7})
+	require.NoError(t, err)
+	require.Len(t, plan.Groups, 1)
+	require.True(t, plan.Groups[0].Accounts[0].Schedulable)
+	require.False(t, plan.Groups[0].Accounts[1].Schedulable)
 }
 
 // forkBatchSlowUpstream 在转发前等待一小段时间，让并发上限可被观察到。

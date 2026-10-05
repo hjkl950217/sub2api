@@ -32,6 +32,9 @@ const (
 
 	batchTestIneligiblePlatform = "该平台不支持协议探测"
 	batchTestNoModelMapping     = "账号未配置 model_mapping，无法确定测试模型"
+	// batchTestNoCompletion 表示测试正常返回却没有发出 test_complete，无法判定结果。
+	// 判失败而不是判通过：宁可多报一次错，也不要给一个没结论的账号标「通过」。
+	batchTestNoCompletion = "测试未返回完成事件，无法判定结果"
 )
 
 // BatchTestTarget 是批量测试里单个账号的测试参数。
@@ -48,6 +51,8 @@ type BatchTestAccountInfo struct {
 	Models   []string `json:"models"`
 	Eligible bool     `json:"eligible"`
 	Reason   string   `json:"reason,omitempty"`
+	// Schedulable 是账号当前的调度开关，弹窗里逐行改完后直接回写。
+	Schedulable bool `json:"schedulable"`
 }
 
 // BatchTestAccountGroup 是同一平台的一组账号，附带该组的共有模型。
@@ -107,7 +112,7 @@ func (s *AccountTestService) BuildBatchTestPlan(ctx context.Context, accountIDs 
 			byPlatform[account.Platform] = group
 			order = append(order, account.Platform)
 		}
-		info := BatchTestAccountInfo{ID: account.ID, Name: account.Name}
+		info := BatchTestAccountInfo{ID: account.ID, Name: account.Name, Schedulable: account.Schedulable}
 		if eligible, reason := batchTestEligible(account); eligible {
 			info.Eligible = true
 			info.Models = sortedModelKeys(account.GetModelMapping())
@@ -199,6 +204,10 @@ type batchTestWriter struct {
 	accountID int64
 	sink      *batchTestSink
 	buffer    []byte
+	// completion / completionOK 记录 test_complete 的结论。整体成败只能看它：
+	// 协议矩阵在「三个协议全失败」时仍然返回 nil，靠返回值判断会把失败标成通过。
+	completion   bool
+	completionOK bool
 }
 
 func (w *batchTestWriter) Header() http.Header    { return http.Header{} }
@@ -227,6 +236,10 @@ func (w *batchTestWriter) forwardChunk(chunk []byte) {
 	var event TestEvent
 	if err := json.Unmarshal(bytes.TrimSpace(line[len("data:"):]), &event); err != nil {
 		return
+	}
+	if event.Type == "test_complete" {
+		w.completion = true
+		w.completionOK = event.Success
 	}
 	w.sink.forwardEvent(w.accountID, event)
 }
@@ -282,11 +295,19 @@ func (s *AccountTestService) runSingleBatchTarget(ctx context.Context, sink *bat
 	ginCtx.Request = (&http.Request{}).WithContext(testCtx)
 
 	err := s.TestAccountConnection(ginCtx, target.AccountID, target.ModelID, target.Prompt, AccountTestModeDefault)
-	if err != nil {
+	// 收尾事件不能只看 TestAccountConnection 的返回值：协议矩阵路径在探测完全失败时
+	// 仍返回 nil，只把结论放在 test_complete 的 success 里。
+	switch {
+	case err != nil:
 		// 子测试自己的 error 事件已经转发过了。这里补一条收尾事件，避免前端
 		// 该账号一直停在「测试中」。
 		sink.forwardEvent(target.AccountID, TestEvent{Type: "batch_test_complete", Error: err.Error()})
-		return
+	case !writer.completion:
+		sink.forwardEvent(target.AccountID, TestEvent{Type: "batch_test_complete", Error: batchTestNoCompletion})
+	case !writer.completionOK:
+		// 具体哪几个协议没过已经在 protocol_result 里逐条给出，这里不重复带错误文本。
+		sink.forwardEvent(target.AccountID, TestEvent{Type: "batch_test_complete"})
+	default:
+		sink.forwardEvent(target.AccountID, TestEvent{Type: "batch_test_complete", Success: true})
 	}
-	sink.forwardEvent(target.AccountID, TestEvent{Type: "batch_test_complete", Success: true})
 }

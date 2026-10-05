@@ -620,6 +620,7 @@ export interface BatchTestAccountInfo {
   models: string[]
   eligible: boolean
   reason?: string
+  schedulable: boolean
 }
 
 export interface BatchTestAccountGroup {

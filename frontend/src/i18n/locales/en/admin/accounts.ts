@@ -1604,6 +1604,7 @@ export default {
         expand: 'Expand',
         collapse: 'Collapse',
         updateProtocols: 'Update Supported Protocols',
+        updateProtocolsCount: 'Update protocols ({count})',
         updateProtocolsNone: 'No account has a passing protocol',
         updateProtocolsDone: 'Updated supported protocols for {count} accounts',
         updateProtocolsPartial: 'Update finished: {success} succeeded, {failed} failed'

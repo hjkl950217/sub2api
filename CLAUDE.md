@@ -464,12 +464,23 @@ openai 平台的 API Key 账号，新增、编辑、测试三页 UI 与国产供
 | `frontend/src/views/admin/AccountsView.vue` | `batch-test-modal-state` / `batch-test-platform-gate` / `batch-test-open` |
 | `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` | `i18n-batch-test-zh` / `i18n-batch-test-en` |
 
-**测试**：`fork_batch_test_service_test.go`（6 单元）+ 前端 `AccountBatchTestModal.spec.ts`（3 用例）
+**测试**：`fork_batch_test_service_test.go`（8 单元）+ 前端 `AccountBatchTestModal.spec.ts`（5 用例）
 + `AccountBulkActionsBar.spec.ts` 加 1 用例。
 
 **本轮踩坑**：测试里 stub upstream 要覆盖 `DoWithTLS` 而不是 `Do`——service 内部走的是前者。
 只覆盖 `Do` 的话注入的延时不会生效，并发上限用例看着过、其实没有区分度（用例耗时显示 `0.00s`
 就是信号）。
+
+**2026-10-05 追加修正**（长空按线上截图提的三条，未新增锚点）
+
+| 问题 | 处理 |
+|---|---|
+| 三个协议全红却标「通过」 | 协议矩阵（国产 / openai API Key）探测全失败时 `TestAccountConnection` 仍 `return nil`，批量执行器原先只看这个返回值。改为取 `test_complete` 的 `success` 判成败（`batchTestWriter` 在切分事件时记下结论）；跑完却没有 `test_complete` 也判失败，不给没结论的账号标通过 |
+| 必须等整批跑完才能写回 | 「更新支持协议」测试进行中即可点击，只写「已跑完且已测通」的行（`probedRows` 从「有测通协议」收紧为「已收尾 + 有测通协议」）；写回前先把各行的通过协议快照下来，避免边跑边取拿到半截结果 |
+| 想边测边调调度 | 每行加调度开关，直接调已有的 `POST /accounts/:id/schedulable`；候选接口的 `BatchTestAccountInfo` 增加 `schedulable` 字段 |
+
+判成败的语义：**至少一个协议通过 = 通过**，与单账号弹窗「更新支持协议」一致；哪个协议没过由逐行
+红色标记给出，收尾事件不再重复带错误文本。失败行仍可参与「更新支持协议」——只写它测通的那几个。
 
 ## 3. 发版方式
 

@@ -2,9 +2,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountBatchTestModal from '../AccountBatchTestModal.vue'
 
-const { getBatchTestPlan, updateProbedProtocols, showSuccess, showError } = vi.hoisted(() => ({
+const { getBatchTestPlan, updateProbedProtocols, setSchedulable, showSuccess, showError } = vi.hoisted(() => ({
   getBatchTestPlan: vi.fn(),
   updateProbedProtocols: vi.fn(),
+  setSchedulable: vi.fn(),
   showSuccess: vi.fn(),
   showError: vi.fn()
 }))
@@ -17,7 +18,8 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
       getBatchTestPlan,
-      updateProbedProtocols
+      updateProbedProtocols,
+      setSchedulable
     }
   }
 }))
@@ -30,7 +32,8 @@ vi.mock('vue-i18n', async () => {
     'admin.accounts.batchTest.commonModels': 'common-{count}',
     'admin.accounts.batchTest.passed': 'passed',
     'admin.accounts.batchTest.failed': 'failed',
-    'admin.accounts.batchTest.pending': 'pending'
+    'admin.accounts.batchTest.pending': 'pending',
+    'admin.accounts.batchTest.testing': 'testing'
   }
   return {
     ...actual,
@@ -48,7 +51,8 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
-function createStreamResponse(lines: string[]) {
+// holdOpen=true 时流读完后不结束，用来模拟"还有账号在测"的状态。
+function createStreamResponse(lines: string[], holdOpen = false) {
   const encoder = new TextEncoder()
   const chunks = lines.map((line) => encoder.encode(line))
   let index = 0
@@ -60,6 +64,9 @@ function createStreamResponse(lines: string[]) {
         read: vi.fn().mockImplementation(async () => {
           if (index < chunks.length) {
             return { done: false, value: chunks[index++] }
+          }
+          if (holdOpen) {
+            return new Promise(() => {})
           }
           return { done: true, value: undefined }
         })
@@ -77,8 +84,8 @@ function planFixture() {
         account_ids: [1, 2],
         common_models: ['gpt-4o'],
         accounts: [
-          { id: 1, name: 'Lanln公益站', models: ['gpt-4o', 'gpt-4.1'], eligible: true },
-          { id: 2, name: 'oai2api公益站', models: ['gpt-4o'], eligible: true }
+          { id: 1, name: 'Lanln公益站', models: ['gpt-4o', 'gpt-4.1'], eligible: true, schedulable: true },
+          { id: 2, name: 'oai2api公益站', models: ['gpt-4o'], eligible: true, schedulable: false }
         ]
       },
       {
@@ -86,7 +93,14 @@ function planFixture() {
         account_ids: [3],
         common_models: [],
         accounts: [
-          { id: 3, name: 'Grok账号', models: ['grok-4'], eligible: false, reason: '该平台不支持协议探测' }
+          {
+            id: 3,
+            name: 'Grok账号',
+            models: ['grok-4'],
+            eligible: false,
+            reason: '该平台不支持协议探测',
+            schedulable: false
+          }
         ]
       }
     ],
@@ -116,6 +130,7 @@ describe('AccountBatchTestModal', () => {
   beforeEach(() => {
     getBatchTestPlan.mockResolvedValue(planFixture())
     updateProbedProtocols.mockResolvedValue(undefined)
+    setSchedulable.mockResolvedValue({ schedulable: false })
     Object.defineProperty(globalThis, 'localStorage', {
       value: {
         getItem: vi.fn((key: string) => (key === 'auth_token' ? 'test-token' : null)),
@@ -198,6 +213,47 @@ describe('AccountBatchTestModal', () => {
 
     expect(updateProbedProtocols).toHaveBeenCalledWith(1, ['chat_completions'])
     expect(updateProbedProtocols).toHaveBeenCalledWith(2, ['chat_completions', 'responses'])
+    expect(wrapper.emitted('updated')).toHaveLength(1)
+  })
+
+  it('测试进行中也能更新支持协议：只写已经跑完的行', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse(
+        [
+          'data: {"type":"protocol_result","account_id":1,"protocol":"chat_completions","protocol_ok":true}\n',
+          'data: {"type":"batch_test_complete","account_id":1,"success":true}\n',
+          'data: {"type":"protocol_result","account_id":2,"protocol":"chat_completions","protocol_ok":true}\n'
+        ],
+        true
+      )
+    ) as any
+
+    const wrapper = mountModal({ show: false, accountIds: [1, 2] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="batch-test-start-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="batch-row-1"]').text()).toContain('passed')
+    expect(wrapper.get('[data-testid="batch-row-2"]').text()).toContain('testing')
+
+    await wrapper.get('[data-testid="batch-update-protocols-button"]').trigger('click')
+    await flushPromises()
+
+    expect(updateProbedProtocols).toHaveBeenCalledTimes(1)
+    expect(updateProbedProtocols).toHaveBeenCalledWith(1, ['chat_completions'])
+  })
+
+  it('每行调度开关直接调调度接口，成功后通知外层刷新', async () => {
+    const wrapper = mountModal({ show: false, accountIds: [1, 2] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="batch-schedulable-1"]').trigger('click')
+    await flushPromises()
+
+    expect(setSchedulable).toHaveBeenCalledWith(1, false)
     expect(wrapper.emitted('updated')).toHaveLength(1)
   })
 })
