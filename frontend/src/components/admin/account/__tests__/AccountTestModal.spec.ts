@@ -397,6 +397,88 @@ describe('AccountTestModal', () => {
     expect(wrapper.text()).toContain('[anthropic] admin.accounts.protocolProbeErrorLabel401 invalid api key')
   })
 
+  // FORK-ANCHOR: test-modal-protocol-placeholder-spec (二开：打开弹窗就显示灰色协议占位)
+  it('打开弹窗就显示“协议测试结果”，三个协议都是灰色未测试，测完才变色', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_result","protocol":"chat_completions","protocol_ok":true,"text":"chat-ok"}\n',
+        'data: {"type":"protocol_result","protocol":"anthropic","protocol_ok":false,"error":"401 invalid api key"}\n',
+        'data: {"type":"protocol_result","protocol":"responses","protocol_ok":true,"text":"resp-ok"}\n',
+        'data: {"type":"test_complete","success":true}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({
+      id: 7,
+      name: 'DeepSeek',
+      platform: 'deepseek',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    // 还没点测试：面板已在，三个协议卡片都在，且都是灰色未测试
+    expect(wrapper.find('[data-testid="protocol-results"]').exists()).toBe(true)
+    for (const protocol of ['chat_completions', 'anthropic', 'responses']) {
+      const card = wrapper.get(`[data-testid="protocol-result-${protocol}"]`)
+      expect(card.classes()).toContain('bg-gray-50')
+      // 未测试时不显示失败报错块
+      expect(wrapper.find(`[data-testid="protocol-error-${protocol}"]`).exists()).toBe(false)
+    }
+
+    // 还没测完，同步按钮必须禁用（占位卡片不等于结果）
+    expect(
+      wrapper.get('[data-testid="sync-protocols-button"]').attributes('disabled')
+    ).toBeDefined()
+
+    ;(wrapper.vm as any).selectedModelId = 'deepseek-chat'
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+
+    // 测完：通过变绿、失败变红，且失败那张显示报错
+    expect(wrapper.get('[data-testid="protocol-result-chat_completions"]').classes()).toContain('bg-green-50')
+    expect(wrapper.get('[data-testid="protocol-result-responses"]').classes()).toContain('bg-green-50')
+    expect(wrapper.get('[data-testid="protocol-result-anthropic"]').classes()).toContain('bg-red-50')
+    expect(wrapper.get('[data-testid="protocol-error-anthropic"]').text()).toContain('401 invalid api key')
+
+    // 出齐结论后同步按钮才可用
+    expect(
+      wrapper.get('[data-testid="sync-protocols-button"]').attributes('disabled')
+    ).toBeUndefined()
+  })
+
+  it('openai API Key 只铺 chat 与 responses 两张灰色占位', async () => {
+    const wrapper = mountModal({
+      id: 8,
+      name: 'OpenAI',
+      platform: 'openai',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="protocol-result-chat_completions"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="protocol-result-responses"]').exists()).toBe(true)
+    // openai 没有 anthropic 协议，不该铺这张
+    expect(wrapper.find('[data-testid="protocol-result-anthropic"]').exists()).toBe(false)
+  })
+
+  it('不跑协议矩阵的平台不显示协议测试结果面板', async () => {
+    const wrapper = mountModal({
+      id: 9,
+      name: 'Grok',
+      platform: 'grok',
+      type: 'oauth',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="protocol-results"]').exists()).toBe(false)
+  })
+
   it('OpenAI Compact 探测会携带 compact 测试模式', async () => {
     getAvailableModels.mockResolvedValue([
       { id: 'gpt-5.4', display_name: 'GPT-5.4' }

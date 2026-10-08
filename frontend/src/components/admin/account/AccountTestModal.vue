@@ -171,7 +171,7 @@
       </div>
 
       <!-- FORK-ANCHOR: test-modal-protocol-results (二开：协议探测矩阵的逐协议结果) -->
-      <div v-if="protocolResults.length > 0" class="space-y-1.5" data-testid="protocol-results">
+      <div v-if="hasProtocolPanel" class="space-y-1.5" data-testid="protocol-results">
         <div class="text-xs font-medium text-gray-600 dark:text-gray-300">
           {{ t('admin.accounts.protocolProbeTitle') }}
         </div>
@@ -180,19 +180,17 @@
             v-for="item in protocolResults"
             :key="item.protocol"
             class="rounded-lg border px-2.5 py-1.5 text-xs"
-            :class="item.success
-              ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-400'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400'"
+            :class="protocolCardClass(item.success)"
             :data-testid="`protocol-result-${item.protocol}`"
           >
             <div class="flex items-center gap-2">
-              <Icon :name="item.success ? 'check' : 'x'" size="sm" :stroke-width="2" />
+              <Icon :name="protocolIcon(item.success)" size="sm" :stroke-width="2" />
               <span class="font-medium">{{ t(`admin.accounts.cnProviders.apiProtocol.${protocolLabelKey(item.protocol)}`) }}</span>
-              <span class="ml-auto">{{ item.success ? t('admin.accounts.protocolProbePassed') : t('admin.accounts.protocolProbeFailed') }}</span>
+              <span class="ml-auto">{{ protocolStatusLabel(item.success) }}</span>
             </div>
             <!-- FORK-ANCHOR: test-modal-protocol-error-view (二开：失败的协议把完整报错显示出来) -->
             <div
-              v-if="!item.success && item.error"
+              v-if="item.success === false && item.error"
               class="mt-1 whitespace-pre-wrap break-all border-t border-red-200/70 pt-1 font-mono text-[11px] leading-relaxed text-red-600 dark:border-red-500/30 dark:text-red-300"
               :data-testid="`protocol-error-${item.protocol}`"
             >
@@ -357,7 +355,7 @@
           v-if="supportsProtocolSync"
           type="button"
           data-testid="sync-protocols-button"
-          :disabled="status === 'connecting' || savingProtocols || protocolResults.length !== expectedProtocolCount"
+          :disabled="status === 'connecting' || savingProtocols || testedProtocolCount !== expectedProtocolCount"
           :title="t('admin.accounts.syncProtocolsHint')"
           @click="startProtocolSync"
           :class="[
@@ -465,19 +463,60 @@ const supportsProtocolSync = computed(
 )
 interface ProtocolProbeResult {
   protocol: string
-  success: boolean
+  // null = 还没测（灰色占位），true/false 才是探测结论
+  success: boolean | null
   // FORK-ANCHOR: test-modal-protocol-error-field (二开：协议失败时后端给回的完整报错)
   error: string
 }
 const protocolResults = ref<ProtocolProbeResult[]>([])
 // FORK-ANCHOR: test-modal-expected-protocol-count (二开：同步按钮的完成条件按平台协议数，openai 只有 chat 与 responses 两个)
 const expectedProtocolCount = computed(() => (props.account?.platform === 'openai' ? 2 : 3))
+// FORK-ANCHOR: test-modal-protocol-placeholders (二开：打开弹窗就按平台铺好灰色协议占位)
+// 协议清单与顺序对齐后端协议矩阵（cnProtocolProbeOrder / openaiAPIKeyProtocolProbeOrder）：
+// 国产三家是 chat_completions / anthropic / responses，openai API Key 是前两个。
+const CN_PROTOCOL_PROBE_ORDER = ['chat_completions', 'anthropic', 'responses']
+const OPENAI_PROTOCOL_PROBE_ORDER = ['chat_completions', 'responses']
+// 只有会跑协议矩阵的账号才铺占位，其他平台保持原样（面板不显示）。
+const protocolPlaceholderOrder = computed(() => {
+  if (!supportsProtocolSync.value) return []
+  return props.account?.platform === 'openai' ? OPENAI_PROTOCOL_PROBE_ORDER : CN_PROTOCOL_PROBE_ORDER
+})
+const buildProtocolPlaceholders = (): ProtocolProbeResult[] =>
+  protocolPlaceholderOrder.value.map((protocol) => ({ protocol, success: null, error: '' }))
+const hasProtocolPanel = computed(() => protocolPlaceholderOrder.value.length > 0)
+// FORK-ANCHOR: test-modal-tested-protocol-count (二开：已出结论的协议数)
+// 占位卡片开着弹窗就在了，所以「能不能同步」不能看 protocolResults.length（永远等于协议数），
+// 必须数 success !== null 的那些。
+const testedProtocolCount = computed(
+  () => protocolResults.value.filter((item) => item.success !== null).length
+)
 const syncingProtocols = ref(false)
 const savingProtocols = ref(false)
 const protocolLabelKey = (protocol: string): string => {
   if (protocol === 'anthropic') return 'anthropic'
   if (protocol === 'responses') return 'responses'
   return 'chatCompletions'
+}
+
+// FORK-ANCHOR: test-modal-protocol-three-state (二开：协议卡片三态——未测灰、通过绿、失败红)
+const protocolCardClass = (success: boolean | null) => {
+  if (success === true)
+    return 'border-green-200 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-400'
+  if (success === false)
+    return 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400'
+  return 'border-gray-200 bg-gray-50 text-gray-400 dark:border-dark-500 dark:bg-dark-700 dark:text-gray-500'
+}
+
+const protocolIcon = (success: boolean | null) => {
+  if (success === true) return 'check'
+  if (success === false) return 'x'
+  return 'clock'
+}
+
+const protocolStatusLabel = (success: boolean | null) => {
+  if (success === true) return t('admin.accounts.protocolProbePassed')
+  if (success === false) return t('admin.accounts.protocolProbeFailed')
+  return t('admin.accounts.protocolProbePending')
 }
 
 // FORK-ANCHOR: test-modal-protocol-short-label (二开：正文前缀用的协议短名，如 [chat])
@@ -860,6 +899,8 @@ watch(
       testPrompt.value = ''
       testMode.value = 'default'
       grokTestMode.value = 'text'
+      // FORK-ANCHOR: test-modal-protocol-seed-on-open (二开：打开弹窗就按平台铺好灰色协议占位)
+      protocolResults.value = buildProtocolPlaceholders()
       resetState()
       await loadAvailableModels()
       if (isGrokAccount.value) {
@@ -919,8 +960,9 @@ const resetState = () => {
   generatedAudios.value = []
   generatedVideos.value = []
   previewImageUrl.value = ''
-  // FORK-ANCHOR: test-modal-protocol-results-reset (二开：重跑测试时清空上一轮协议探测结果)
-  protocolResults.value = []
+  // FORK-ANCHOR: test-modal-protocol-results-reset (二开：重跑测试时把协议卡片退回未测的灰色占位)
+  // 不是清空数组：面板要一直在，颜色退回灰，这样重测过程中也能看到本平台会测哪几个协议。
+  protocolResults.value = buildProtocolPlaceholders()
 }
 
 const handleClose = () => {
@@ -1119,11 +1161,18 @@ const handleEvent = (event: {
       if (event.protocol) {
         // 后端用 protocol_ok 上报结论（success 字段带 omitempty，false 会被省略）
         // FORK-ANCHOR: test-modal-protocol-error-capture (二开：失败协议连同完整报错一起记下)
-        protocolResults.value.push({
-          protocol: event.protocol,
-          success: event.protocol_ok === true,
-          error: event.error || ''
-        })
+        // 占位卡片在打开弹窗时就铺好了，这里只把那一张改成结论色；清单外的协议才追加（兜底）。
+        const probed = protocolResults.value.find((item) => item.protocol === event.protocol)
+        if (probed) {
+          probed.success = event.protocol_ok === true
+          probed.error = event.error || ''
+        } else {
+          protocolResults.value.push({
+            protocol: event.protocol,
+            success: event.protocol_ok === true,
+            error: event.error || ''
+          })
+        }
         // FORK-ANCHOR: test-modal-protocol-content (二开：按协议分行显示各协议返回的正文)
         // 正文只作展示，通过与否仍由后端的格式解析决定（见 protocol_ok）。
         if (event.protocol_ok === true) {

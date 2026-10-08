@@ -129,6 +129,8 @@ export default {
       protocolProbeFailed: 'Unavailable',
       // FORK-ANCHOR: i18n-protocol-probe-error-en (fork: prefix for a failed protocol's full error)
       protocolProbeErrorLabel: 'Failure reason: ',
+      // FORK-ANCHOR: i18n-protocol-probe-pending-en (fork: placeholder state before a protocol is tested)
+      protocolProbePending: 'Not tested',
       cnProviders: {
         accountMode: {
           title: 'Account Type',

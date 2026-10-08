@@ -332,6 +332,8 @@ export default {
       protocolProbeFailed: '不可用',
       // FORK-ANCHOR: i18n-protocol-probe-error-zh (二开：失败协议的完整报错前缀)
       protocolProbeErrorLabel: '失败原因：',
+      // FORK-ANCHOR: i18n-protocol-probe-pending-zh (二开：协议尚未测试时的占位状态)
+      protocolProbePending: '未测试',
       cnProviders: {
         accountMode: {
           title: '账号类型',
