@@ -537,8 +537,8 @@ export interface PaginationConfig {
 }
 
 // ==================== API Key & Group Types ====================
-
-export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'minimax' | 'opencode_go' | 'typesafe' | 'composite'
+// FORK-ANCHOR: ag-hub-group-platform (二开：聚合中转平台类型定义)
+export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'minimax' | 'opencode_go' | 'typesafe' | 'ag_hub' | 'composite'
 
 export type VideoModelPrices = Record<string, Record<string, number>>
 
@@ -917,8 +917,8 @@ export interface UpdateGroupRequest {
 }
 
 // ==================== Account & Proxy Types ====================
-
-export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'minimax' | 'opencode_go' | 'typesafe'
+// FORK-ANCHOR: ag-hub-account-platform (二开：聚合中转平台类型定义)
+export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'minimax' | 'opencode_go' | 'typesafe' | 'ag_hub'
 export type AccountType = 'oauth' | 'setup-token' | 'apikey' | 'upstream' | 'bedrock' | 'service_account'
 export type OAuthAddMethod = 'oauth' | 'setup-token'
 export type ProxyProtocol = 'http' | 'https' | 'socks5' | 'socks5h'
