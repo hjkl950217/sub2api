@@ -218,8 +218,16 @@ func (s *AccountTestService) probeCNProviderProtocolsConnectionSequential(c *gin
 	return nil
 }
 
+// isDeepseekDSGroupAccount 报告账号是否走并发探测路径（deepseek DS 分组 + 聚合中转）。
+// FORK-ANCHOR: ag-hub-protocol-matrix-concurrent (二开：聚合中转与 DS 分组同样并发探测)
 func isDeepseekDSGroupAccount(account *Account) bool {
-	if account == nil || account.Platform != PlatformDeepseek {
+	if account == nil {
+		return false
+	}
+	if account.Platform == PlatformAggregateHub {
+		return true
+	}
+	if account.Platform != PlatformDeepseek {
 		return false
 	}
 	for _, group := range account.Groups {
@@ -255,9 +263,9 @@ func (s *AccountTestService) UpdateProbedCNProtocols(ctx context.Context, accoun
 	if err != nil {
 		return err
 	}
-	// FORK-ANCHOR: fork-api-protocols-openai-sync-platform-gate (二开：openai API Key 复选账号同样支持协议回写)
-	if !account.IsCNProvider() && !account.IsOpenAIApiKey() {
-		return infraerrors.BadRequest("INVALID_ACCOUNT_PLATFORM", "protocol sync is only supported for CN providers and OpenAI API-key accounts")
+	// FORK-ANCHOR: fork-api-protocols-openai-sync-platform-gate (二开：openai API Key / ag_hub 复选账号同样支持协议回写)
+	if !account.IsCNProvider() && !account.IsOpenAIApiKey() && account.Platform != PlatformAggregateHub {
+		return infraerrors.BadRequest("INVALID_ACCOUNT_PLATFORM", "protocol sync is only supported for CN providers, OpenAI API-key and aggregate-hub accounts")
 	}
 	if account.IsOpenAIApiKey() {
 		return s.updateProbedOpenAIAPIKeyProtocols(ctx, account, passed)

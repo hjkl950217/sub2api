@@ -452,9 +452,9 @@ const emit = defineEmits<{
 }>()
 
 // FORK-ANCHOR: test-modal-sync-protocols-state (二开：协议探测矩阵状态与平台判定)
-// 「更新支持协议」对国产供应商（kimi/zhipu/deepseek/minimax）与 openai API Key 账号生效：
-// 这两类才有多协议复选配置，opencode_go 的协议是按模型规则推导的，不适用。
-const CN_PROTOCOL_PLATFORMS = ['kimi', 'zhipu', 'deepseek', 'minimax']
+// 「更新支持协议」对国产供应商（kimi/zhipu/deepseek/minimax）、openai API Key 与聚合中转账号生效：
+// 这三类才有多协议复选配置，opencode_go 的协议是按模型规则推导的，不适用。
+const CN_PROTOCOL_PLATFORMS = ['kimi', 'zhipu', 'deepseek', 'minimax', 'ag_hub']
 const supportsProtocolSync = computed(
   () =>
     !!props.account &&

@@ -1151,7 +1151,7 @@ const allResultsSelected = computed(() => {
 
 // FORK-ANCHOR: batch-test-platform-gate (二开：批量测试只对支持协议探测的平台开放，判定与测试弹窗一致)。
 // 跨页全选时当前页拿不到全部平台，直接放行交给弹窗按后端结果判定。
-const BATCH_TEST_PLATFORMS: readonly string[] = ['openai', 'deepseek', 'kimi', 'zhipu', 'minimax']
+const BATCH_TEST_PLATFORMS: readonly string[] = ['openai', 'deepseek', 'kimi', 'zhipu', 'minimax', 'ag_hub']
 const canBatchTestSelected = computed(
   () =>
     allResultsSelected.value ||
