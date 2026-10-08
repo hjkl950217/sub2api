@@ -550,6 +550,29 @@ openai 平台的 API Key 账号，新增、编辑、测试三页 UI 与国产供
    变红（`3 failed | 7 passed`），证明用例真的在验行为、不是恒过。
 4. **CN 协议矩阵只在 `赛博羊毛-DS` 分组账号上并发探测**（`isDeepseekDSGroupAccount`）。写
    「三协议报错」的用例时账号必须挂该分组，否则退回单协议路径，只拿到一份结果。
+5. **改完必须跑真正的 vue-tsc**。第一版把 `BatchRow` 的 `failure` 改名 `rowFailure` 时，误把
+   `excerpt: string` 的声明整行替换掉了，模板与事件处理里仍有 5 处引用 `row.excerpt`，CI 的
+   `build-frontend` 直接失败（TS2339/TS2353）。原因是本机 `pnpm run typecheck` 会先去解析依赖并
+   报 `ERR_PNPM_IGNORED_BUILDS`，根本跑不到 tsc 就退出了，而我只跑了 vitest（vitest 不做全量类型
+   检查，这类错误它抓不到）。**正确做法**：直接用本地二进制
+   `node_modules/.bin/vue-tsc.cmd --noEmit -p tsconfig.json`，绕开 pnpm 的依赖解析。
+
+**2026-10-08 部署记录**：镜像 `ghcr.io/hjkl950217/sub2api:0.2.14`（manifest list digest
+`sha256:a968d3d980fe0a0b98f514dfd8ca431ae04867d4985a0d7e96f6f776fb54819f`），`v0.2.14` 已指向
+`848f9f38f`。NAS 运行 revision `848f9f38f06afafd1c069664479955a46f856417`，`healthy`，入口 chunk
+由 `index-D2EC3ehM.js` 变为 `index-CPNHPSPA.js`，测试弹窗所在 chunk
+`AccountsView-C8n5FA70.js` 回读含 `protocol-error-` / `protocolProbeErrorLabel` /
+`batch-protocol-line-` / `batch-failure-` 四个新标记。
+
+**NAS 拉取镜像踩坑（与本次代码无关，但会挡住后续所有部署）**：NAS 的 Docker 守护进程在
+`/etc/docker/daemon.json` 里配了 `proxies.https-proxy = localhost:21089`（→ `clash4docker` 容器的
+7890），而该 Clash 的机场节点已失效（日志 `dial tcp 18.140.71.40:443: i/o timeout`，经代理请求返回
+502 / `SSL_ERROR_SYSCALL`）。于是 daemon 拉任何镜像都报 `Get "https://ghcr.io/v2/": EOF`，而**直连
+ghcr.io 是通的**（token 端点 200、`/v2/` 401）。处理：把 `ghcr.io,*.githubusercontent.com` 追加到
+`proxies.no-proxy`（原文件已备份为 `/etc/docker/daemon.json.bak.20261008`），`systemctl reload docker`
+后 `docker pull` 正常。**注意 `ctr -n moby images pull` 虽然能绕过 daemon 代理拉到镜像，但 Docker 用的
+是自己的 overlay2 存储（`/var/lib/docker`），与 containerd 的存储不互通，`docker images` 里看不到，
+不能用来交付镜像。** GCHR 包对该仓库允许匿名拉取 token，不需要 `docker login`。
 
 ### 2.18 使用记录页：时间列可配置 + 贴底横向滚动条（改上游文件，新增 8 个锚点）
 
