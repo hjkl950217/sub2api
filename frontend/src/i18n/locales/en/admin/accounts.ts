@@ -926,7 +926,7 @@ export default {
         'Only applies in pool mode. Use 0 to disable in-place retry. Default {default}, maximum {max}.',
       poolModeRetryStatusCodes: 'Retry Status Codes',
       poolModeRetryStatusCodesHint:
-        'Comma-separated HTTP status codes (100-599) that trigger same-account retry in pool mode. Leave blank to use defaults ({default}).',
+        'Comma-separated HTTP status codes (100-599) that trigger same-account retry in pool mode. With 503 listed and no proxy on the account, connection failures (refused, unreachable, etc.) are also retried in place as 503 instead of temporarily unscheduling the account for 10 minutes. Leave blank to use defaults ({default}).',
       explicitCacheUpstream: 'Upstream Supports Explicit Caching',
       explicitCacheUpstreamHint: 'Enable only when the upstream is this system with explicit caching support',
       explicitCacheUpstreamInfo:

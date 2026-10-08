@@ -1028,7 +1028,7 @@ export default {
       poolModeRetryCount: '同账号重试次数',
       poolModeRetryCountHint: '仅在池模式下生效。0 表示不原地重试；默认 {default}，最大 {max}。',
       poolModeRetryStatusCodes: '同账号重试状态码',
-      poolModeRetryStatusCodesHint: '仅在池模式下生效。以英文逗号分隔的 HTTP 状态码（100-599），命中时触发同账号重试。留空使用默认值（{default}）。',
+      poolModeRetryStatusCodesHint: '仅在池模式下生效。以英文逗号分隔的 HTTP 状态码（100-599），命中时触发同账号重试。列入 503 且账号未配置代理时，连不上上游（拒绝连接、网络不可达等）也按 503 原地重试，不再临时停调度 10 分钟。留空使用默认值（{default}）。',
       explicitCacheUpstream: '上游支持显式缓存',
       explicitCacheUpstreamHint: '仅当上游是已支持显式缓存的本系统时开启',
       explicitCacheUpstreamInfo:
