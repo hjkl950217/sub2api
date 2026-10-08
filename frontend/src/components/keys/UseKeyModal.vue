@@ -1318,6 +1318,7 @@ function generateRoutedCodexFiles(
     zhipu: 'glm-4.7',
     deepseek: 'deepseek-v4-pro',
     minimax: 'MiniMax-M3',
+    ag_hub: 'glm-5.3', // FORK-ANCHOR: ag-hub-preferred-model (二开：聚合中转默认模型)
     opencode_go: 'glm-5.3',
     composite: 'gpt-5.5'
   }
@@ -1333,6 +1334,7 @@ function generateRoutedCodexFiles(
     zhipu: 'Zhipu',
     deepseek: 'DeepSeek',
     minimax: 'MiniMax',
+    ag_hub: '聚合中转', // FORK-ANCHOR: ag-hub-label (二开：聚合中转显示名)
     opencode_go: 'OpenCode',
     typesafe: 'TypeSafe / Jev',
     composite: 'Composite'

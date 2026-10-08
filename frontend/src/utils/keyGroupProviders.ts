@@ -12,6 +12,7 @@ const PROVIDER_BY_PLATFORM: Record<GroupPlatform, KeyGroupProvider> = {
   zhipu: 'domestic',
   deepseek: 'domestic',
   minimax: 'domestic',
+  ag_hub: 'domestic', // FORK-ANCHOR: ag-hub-group-provider (二开：聚合中转按国产供应商矩阵归类)
   gemini: 'other',
   grok: 'other',
   antigravity: 'other',
