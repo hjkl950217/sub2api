@@ -1384,7 +1384,8 @@ func (a *Account) IsOpenAIApiKey() bool {
 // 适用 openai、国产 OpenAI 兼容供应商（kimi/zhipu/deepseek）与 OpenCode Go；
 // grok 走 GetGrokBaseURL，此处对 grok 返回 "" 以保持原有行为。
 func (a *Account) GetOpenAIBaseURL() string {
-	if !a.IsOpenAI() && !a.IsCNProvider() && !a.IsOpenCodeGo() {
+	// FORK-ANCHOR: ag-hub-openai-base-url (二开：聚合中转的 chat/responses 端点取 base_url)
+	if !a.IsOpenAI() && !a.IsCNProvider() && !a.IsOpenCodeGo() && a.Platform != PlatformAggregateHub {
 		return ""
 	}
 	// FORK-ANCHOR: fork-api-protocols-openai-base-url (二开：复选模式取 chat_completions 端点，未勾选则取兜底协议端点)
@@ -1485,6 +1486,9 @@ func (a *Account) SupportsNativeCNResponses() bool {
 		return true
 	// FORK-ANCHOR: fork-api-protocols-openai-native-responses (二开：openai API Key 上游按需提供原生 /v1/responses)
 	case PlatformOpenAI:
+		return a.Type == AccountTypeAPIKey
+	// FORK-ANCHOR: ag-hub-native-responses (二开：聚合中转按需提供原生 /v1/responses，探测后确认)
+	case PlatformAggregateHub:
 		return a.Type == AccountTypeAPIKey
 	default:
 		return false
