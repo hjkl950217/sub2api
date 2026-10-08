@@ -117,6 +117,8 @@ export default {
         minimax: 'MiniMax',
         opencode_go: 'OpenCode',
         typesafe: 'TypeSafe / Jev',
+        // FORK-ANCHOR: i18n-ag-hub-platform-en (AG_Hub platform display name)
+        ag_hub: 'AG_Hub',
       },
       // FORK-ANCHOR: i18n-cn-sync-protocols-en ("Update supported protocols" copy; code references the admin.accounts top-level path)
       syncProtocols: 'Update supported protocols',

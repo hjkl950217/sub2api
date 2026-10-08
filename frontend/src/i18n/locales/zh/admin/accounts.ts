@@ -320,6 +320,8 @@ export default {
         minimax: 'MiniMax',
         opencode_go: 'OpenCode',
         typesafe: 'TypeSafe / Jev',
+        // FORK-ANCHOR: i18n-ag-hub-platform-zh (聚合中转平台显示名)
+        ag_hub: 'AG_Hub',
       },
       // FORK-ANCHOR: i18n-cn-sync-protocols-zh (测试弹窗「更新支持协议」文案；代码引用的是 admin.accounts 顶层路径)
       syncProtocols: '更新支持协议',
