@@ -9,6 +9,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
 
@@ -92,7 +93,7 @@ func (s *OpenAIGatewayService) forwardAnthropicCountTokensWithFallback(
 		logger.L().Info("ag_hub count_tokens: upstream not supported, falling back to local estimate",
 			zap.Int64("account_id", account.ID),
 			zap.Int("status_code", resp.StatusCode),
-			zap.String("response_preview", truncateString(string(respBody), 200)),
+			zap.String("response_preview", truncate(string(respBody), 200)),
 		)
 		estimated, err := estimateAnthropicCountTokensLocally(body)
 		if err != nil {
@@ -111,7 +112,7 @@ func (s *OpenAIGatewayService) forwardAnthropicCountTokensWithFallback(
 
 	// 其他非 2xx 错误不回落，透传给客户端
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		upstreamMsg, errMsg := extractOpenAIUpstreamErrorMessage(respBody)
+		upstreamMsg, errMsg := extractUpstreamErrorMessage(respBody), extractUpstreamErrorMessage(respBody)
 		setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, "")
 		writeAnthropicCountTokensError(c, resp.StatusCode, "upstream_error", errMsg)
 		if upstreamMsg == "" {
@@ -126,7 +127,7 @@ func (s *OpenAIGatewayService) forwardAnthropicCountTokensWithFallback(
 		// 响应格式不对，回落本地估算（宽容处理）
 		logger.L().Warn("ag_hub count_tokens: upstream success but missing input_tokens, falling back",
 			zap.Int64("account_id", account.ID),
-			zap.String("response_preview", truncateString(string(respBody), 200)),
+			zap.String("response_preview", truncate(string(respBody), 200)),
 		)
 		estimated, err := estimateAnthropicCountTokensLocally(body)
 		if err != nil {
@@ -147,11 +148,4 @@ func (s *OpenAIGatewayService) forwardAnthropicCountTokensWithFallback(
 		"input_tokens": int(inputTokensResult.Int()),
 	})
 	return nil
-}
-
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
 }
