@@ -342,11 +342,11 @@ describe('AccountBatchTestModal', () => {
 
     // 行容器自身是纵向排布，协议之间才真的换行
     const container = chatLine.element.parentElement as HTMLElement
-    expect(container.className).toContain('space-y-0.5')
+    expect(container.className).toContain('space-y-1')
   })
 
-  // FORK-ANCHOR: batch-test-failure-spec (二开：失败账号的报错要显示出来)
-  it('失败的协议把完整报错显示在行里，收尾错误单独成行', async () => {
+  // FORK-ANCHOR: batch-test-failure-spec (二开：失败账号的报错要显示出来，且只显示一次)
+  it('失败的协议把完整报错显示在行里，收尾汇总不重复', async () => {
     global.fetch = vi.fn().mockResolvedValue(
       createStreamResponse([
         'data: {"type":"protocol_result","account_id":1,"protocol":"chat_completions","protocol_ok":false,"error":"401 invalid api key"}\n',
@@ -369,6 +369,8 @@ describe('AccountBatchTestModal', () => {
     const row1 = wrapper.get('[data-testid="batch-row-1"]')
     expect(row1.text()).toContain('401 invalid api key')
     expect(row1.text()).toContain('404 not found')
+    // FORK-ANCHOR: batch-test-failure-dedup-spec (二开：收尾汇总的是同样的报错，行级红块不重复出现)
+    expect(row1.find('[data-testid="batch-failure-1"]').exists()).toBe(false)
 
     // 账号 2：失败行状态是失败，且逐协议报错可见
     const row2 = wrapper.get('[data-testid="batch-row-2"]')

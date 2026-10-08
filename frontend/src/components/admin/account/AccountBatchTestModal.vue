@@ -109,15 +109,16 @@
             </div>
 
             <!-- FORK-ANCHOR: batch-test-protocol-lines (二开：一个账号的每个协议各占一行，不再挤在同一行)
-                 逐协议一行显示状态与返回正文，失败时再补一行完整报错。 -->
+                 失败信息只在这里显示一次：失败协议优先显示完整报错，通过协议显示返回正文。 -->
             <div
               v-if="row.eligible && row.expanded && row.protocols.length > 0"
-              class="space-y-0.5 border-t border-gray-100 bg-gray-900 px-3 py-2 font-mono text-xs dark:border-dark-600"
+              class="space-y-1 border-t border-gray-100 bg-gray-900 px-3 py-2 font-mono text-xs dark:border-dark-600"
             >
               <div
                 v-for="result in row.protocols"
                 :key="`line-${result.protocol}`"
-                class="flex items-start gap-2"
+                class="flex items-start gap-2 rounded px-1 py-0.5"
+                :class="result.success === false ? 'bg-red-500/10' : ''"
                 :data-testid="`batch-protocol-line-${row.id}-${result.protocol}`"
               >
                 <span
@@ -131,19 +132,10 @@
                 </span>
                 <span class="min-w-0 flex-1 whitespace-pre-wrap break-all" :class="protocolTextClass(result.success)">
                   <template v-if="result.success === null">{{ t('admin.accounts.batchTest.pending') }}</template>
-                  <template v-else-if="result.body">{{ result.body }}</template>
                   <template v-else-if="result.success === false && result.error">{{ result.error }}</template>
+                  <template v-else-if="result.body">{{ result.body }}</template>
                   <template v-else>{{ dashPlaceholder }}</template>
                 </span>
-              </div>
-              <!-- 失败协议的完整报错单独成行，正文里没有它也不会丢 -->
-              <div
-                v-for="result in failedProtocolsWithBody(row)"
-                :key="`err-${result.protocol}`"
-                class="whitespace-pre-wrap break-all pl-1 text-[11px] text-red-400"
-                :data-testid="`batch-protocol-error-${row.id}-${result.protocol}`"
-              >
-                [{{ shortProtocolLabel(result.protocol) }}] {{ t('admin.accounts.protocolProbeErrorLabel') }}{{ result.error }}
               </div>
             </div>
 
@@ -334,12 +326,12 @@ const protocolTextClass = (success: boolean | null) => {
 // 占位符：协议测通但没有正文时用它，避免该行看起来是空的
 const dashPlaceholder = '—'
 
-// FORK-ANCHOR: batch-test-failed-with-body (二开：既有正文又有报错的失败协议，报错另起一行补显示)
-// 正文已经在逐协议行里了，报错没进正文的才需要再补一行，避免同一段文本显示两遍。
-const failedProtocolsWithBody = (row: BatchRow) =>
-  row.protocols.filter(
-    (result) => result.success === false && result.error && !result.body.includes(result.error)
-  )
+// FORK-ANCHOR: batch-test-failed-with-body (二开：失败协议的报错去重辅助)
+// 报错现在只在逐协议行显示，这个辅助保留给行级失败判定用：失败协议的报错集合。
+const failedProtocolErrors = (row: BatchRow) =>
+  row.protocols
+    .filter((result) => result.success === false && result.error)
+    .map((result) => result.error)
 
 const statusLabel = (row: BatchRow) => {
   switch (row.status) {
@@ -557,15 +549,21 @@ const handleEvent = (event: {
     case 'batch_test_complete':
       row.status = event.success === true ? 'success' : 'error'
       if (event.success !== true) {
-        // FORK-ANCHOR: batch-test-complete-failure-capture (二开：收尾事件带的是各失败协议的完整报错)
-        // 这些报错已经逐条挂在对应协议上，这里只收下不属于任何协议的那种
-        // （超时、未返回完成事件等），避免同一段文本在行里显示两遍。
-        const protocolErrors = row.protocols
-          .filter((result) => result.success === false && result.error)
-          .map((result) => result.error)
-        const isProtocolDetail = !!event.error && protocolErrors.some((text) => text === event.error)
-        if (event.error && !isProtocolDetail) {
-          row.rowFailure = appendFailure(row.rowFailure, event.error)
+        // FORK-ANCHOR: batch-test-complete-failure-capture (二开：收尾事件只收非协议类失败)
+        // 后端收尾可能把各失败协议的报错 join 汇总成一段文本，逐协议行已经各自显示过了；
+        // 这里逐段拆开，凡是能在失败协议报错里找到的段落都跳过，只把「非协议类」失败
+        // （超时、未返回完成事件等）挂到行级失败原因，避免同一段文本显示多遍。
+        const knownErrors = failedProtocolErrors(row)
+        const segments = (event.error || '').split('\n').map((s) => s.trim()).filter(Boolean)
+        const novel = segments.filter(
+          (segment) => !knownErrors.some((known) => known === segment || known.includes(segment) || segment.includes(known))
+        )
+        for (const segment of novel) {
+          row.rowFailure = appendFailure(row.rowFailure, segment)
+        }
+        if (event.error && !novel.length && !event.error.includes('\n')) {
+          // 整段都是已知协议报错的拼接：不重复挂；但行级 error 仍要有内容供状态列显示
+          row.error = row.error || segments[0] || ''
         }
         const hasProtocolFailure = row.protocols.some((result) => result.success === false)
         if (!row.rowFailure && !row.error && !hasProtocolFailure) {
