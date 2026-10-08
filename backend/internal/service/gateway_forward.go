@@ -153,7 +153,8 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 
 	// Beta policy: evaluate once; block check + cache filter set for buildUpstreamRequest.
 	// Always overwrite the cache to prevent stale values from a previous retry with a different account.
-	if account.Platform == PlatformAnthropic && c != nil {
+	// FORK-ANCHOR: ag-hub-beta-policy (二开：聚合中转走 anthropic 协议时也启用 beta policy)
+	if (account.Platform == PlatformAnthropic || (account.Platform == PlatformAggregateHub && account.SupportsAPIProtocol(APIProtocolAnthropic))) && c != nil {
 		policy := s.evaluateBetaPolicy(ctx, c.GetHeader("anthropic-beta"), account, parsed.Model)
 		if policy.blockErr != nil {
 			return nil, policy.blockErr

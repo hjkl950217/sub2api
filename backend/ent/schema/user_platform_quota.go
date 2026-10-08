@@ -40,9 +40,10 @@ func (UserPlatformQuota) Fields() []ent.Field {
 			Validate(func(s string) error {
 				// 注意：平台列表的单一权威源为 service.AllowedQuotaPlatforms；
 				// 此处为 ent 构建期约束，需与 service.AllowedQuotaPlatforms 保持同步。
+				// FORK-ANCHOR: ag-hub-quota-schema (二开：聚合中转加入配额 schema 白名单)
 				switch s {
 				case "anthropic", "openai", "gemini", "antigravity", "grok",
-					"kimi", "zhipu", "deepseek", "minimax", "opencode_go", "typesafe":
+					"kimi", "zhipu", "deepseek", "minimax", "opencode_go", "typesafe", "ag_hub":
 					return nil
 				default:
 					return fmt.Errorf("platform %q is not allowed", s)

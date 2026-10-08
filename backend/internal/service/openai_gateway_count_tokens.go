@@ -271,6 +271,7 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 	// count_tokens 为 "Anthropic only"，Kimi/智谱亦无任何文档承诺。转发上游
 	// 只会常态 404，且错误还会流入账号处置逻辑误伤整账号调度；Claude Code
 	// 高频调用此端点，本地 tiktoken 估算是与 Grok 一致的既有方案。
+	// FORK-ANCHOR: ag-hub-count-tokens-try-upstream (二开：聚合中转先试上游，404/501 回落本地)
 	if account.IsCNProvider() || account.IsOpenCodeGo() {
 		estimated, err := estimateAnthropicCountTokensLocally(body)
 		if err != nil {
@@ -285,6 +286,11 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 			"input_tokens": estimated,
 		})
 		return nil
+	}
+
+	// FORK-ANCHOR: ag-hub-count-tokens-upstream-with-fallback (二开：ag_hub 先试上游，失败回落本地)
+	if account.Platform == PlatformAggregateHub {
+		return s.forwardAnthropicCountTokensWithFallback(ctx, c, account, body, defaultMappedModel)
 	}
 
 	prepared, err := prepareOpenAIInputTokensCountRequest(body, account, defaultMappedModel)

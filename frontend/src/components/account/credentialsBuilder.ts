@@ -371,8 +371,9 @@ export function applyOpenCodeGoProtocolRules(
   }
 }
 
+// FORK-ANCHOR: ag-hub-multi-protocol (二开：聚合中转加入多协议白名单)
 export function isMultiProtocolApiKeyPlatform(platform: string): boolean {
-  return platform === 'kimi' || platform === 'zhipu' || platform === 'deepseek' || platform === 'minimax' || platform === 'opencode_go'
+  return platform === 'kimi' || platform === 'zhipu' || platform === 'deepseek' || platform === 'minimax' || platform === 'opencode_go' || platform === 'ag_hub'
 }
 
 export interface CnBaseUrlPreset {
@@ -558,7 +559,9 @@ export function cnQuotaCellVisible(platform: string, accountMode: string): boole
   return (platform === 'kimi' || platform === 'zhipu' || platform === 'minimax') && accountMode === 'coding'
 }
 
+// FORK-ANCHOR: ag-hub-balance-disabled (二开：聚合中转无余额端点，前端不显示余额查询)
 export function cnBalanceCellVisible(platform: string, accountMode: string): boolean {
+  if (platform === 'ag_hub') return false
   return (platform === 'kimi' || platform === 'deepseek') && accountMode !== 'coding'
 }
 

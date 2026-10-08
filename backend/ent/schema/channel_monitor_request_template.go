@@ -39,8 +39,9 @@ func (ChannelMonitorRequestTemplate) Fields() []ent.Field {
 			NotEmpty().
 			MaxLen(100),
 		field.Enum("provider").
+			// FORK-ANCHOR: ag-hub-channel-monitor-template-schema (二开：聚合中转加入请求模板 schema)
 			Values("openai", "anthropic", "gemini", "grok",
-				"antigravity", "kimi", "zhipu", "deepseek", "minimax", "opencode_go"),
+				"antigravity", "kimi", "zhipu", "deepseek", "minimax", "opencode_go", "ag_hub"),
 		field.String("api_mode").
 			Default("chat_completions").
 			MaxLen(32).

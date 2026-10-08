@@ -49,8 +49,9 @@ const (
 	PlatformDeepseek   = domain.PlatformDeepseek
 	PlatformMiniMax    = domain.PlatformMiniMax
 	PlatformTypeSafe   = domain.PlatformTypeSafe
-	PlatformOpenCodeGo = domain.PlatformOpenCodeGo
-	PlatformComposite  = domain.PlatformComposite
+	PlatformOpenCodeGo   = domain.PlatformOpenCodeGo
+	PlatformComposite    = domain.PlatformComposite
+	PlatformAggregateHub = domain.PlatformAggregateHub // FORK-ANCHOR: ag-hub-platform-alias (二开：聚合中转平台别名)
 	// PlatformKiro is retained for unsupported-platform threshold tests and legacy
 	// account rows. Scheduling-threshold evaluation never pauses kiro accounts.
 	PlatformKiro = "kiro"
@@ -117,14 +118,16 @@ func IsOpenCodeGo(platform string) bool {
 }
 
 // IsMultiProtocolAPIKeyProvider 报告 platform 是否为多协议 API Key 网关
-// （国产供应商 + OpenCode）：走 OpenAI 网关、支持 adaptive 协议分流。
+// （国产供应商 + OpenCode + 聚合中转）：走 OpenAI 网关、支持 adaptive 协议分流。
+// FORK-ANCHOR: ag-hub-multi-protocol-provider (二开：聚合中转纳入多协议白名单)
 func IsMultiProtocolAPIKeyProvider(platform string) bool {
-	return IsCNProvider(platform) || platform == PlatformOpenCodeGo
+	return IsCNProvider(platform) || platform == PlatformOpenCodeGo || platform == PlatformAggregateHub
 }
 
 // AllowedQuotaPlatforms 是允许设置 user × platform quota 的平台列表（单一权威来源）。
 // ent/schema/user_platform_quota.go 的 Validate 函数独立维护（构建期约束），
 // 若新增平台需同步修改该 schema。
+// FORK-ANCHOR: ag-hub-quota-platforms (二开：聚合中转加入配额平台白名单)
 var AllowedQuotaPlatforms = []string{
 	PlatformAnthropic,
 	PlatformOpenAI,
@@ -137,6 +140,7 @@ var AllowedQuotaPlatforms = []string{
 	PlatformMiniMax,
 	PlatformOpenCodeGo,
 	PlatformTypeSafe,
+	PlatformAggregateHub,
 }
 
 // AllowedSchedulingThresholdPlatforms 是允许设置账号自动停调阈值的平台列表。

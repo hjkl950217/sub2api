@@ -81,12 +81,13 @@ type BatchTestRunOptions struct {
 }
 
 // batchTestEligible 报告账号能否参与批量测试。范围与测试弹窗的「更新支持协议」
-// 按钮一致：国产四家 + openai API Key。
+// 按钮一致：国产四家 + openai API Key + 聚合中转。
+// FORK-ANCHOR: ag-hub-batch-test-eligible (二开：聚合中转加入批量测试白名单)
 func batchTestEligible(account *Account) (bool, string) {
 	if account == nil {
 		return false, batchTestIneligiblePlatform
 	}
-	if !account.IsCNProvider() && !account.IsOpenAIApiKey() {
+	if !account.IsCNProvider() && !account.IsOpenAIApiKey() && account.Platform != PlatformAggregateHub {
 		return false, batchTestIneligiblePlatform
 	}
 	if len(account.GetModelMapping()) == 0 {
@@ -96,11 +97,12 @@ func batchTestEligible(account *Account) (bool, string) {
 }
 
 // batchTestProtocols 报告账号会被探测哪些协议，顺序与协议矩阵的探测顺序一致。
+// FORK-ANCHOR: ag-hub-batch-test-protocols (二开：聚合中转返回三协议探测顺序)
 func batchTestProtocols(account *Account) []string {
 	if account == nil {
 		return nil
 	}
-	if account.IsCNProvider() {
+	if account.IsCNProvider() || account.Platform == PlatformAggregateHub {
 		return cnProtocolProbeOrder
 	}
 	if account.IsOpenAIApiKey() {

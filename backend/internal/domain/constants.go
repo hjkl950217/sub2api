@@ -33,6 +33,10 @@ const (
 	// 值保持 opencode_go 以兼容已落库的分组、配额与 Composite 路由 CHECK。
 	PlatformOpenCodeGo = "opencode_go"
 	PlatformComposite  = "composite"
+	// FORK-ANCHOR: ag-hub-platform-constant (二开：聚合中转平台常量)
+	// PlatformAggregateHub 是聚合中转平台（中转站提供多协议端点）。
+	// 只支持 API Key，支持三协议复选（chat_completions / anthropic / responses）。
+	PlatformAggregateHub = "ag_hub"
 )
 
 // Account mode constants 区分国产供应商的「按量付费（余额）」与「Coding Plan」两种接入方式。

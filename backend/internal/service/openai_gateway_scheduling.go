@@ -290,9 +290,10 @@ func (s *OpenAIGatewayService) SelectAccountForTokenCount(
 // kimi 分组请求只命中 kimi 账号，语义与 openai/grok 一致。
 // （upstream 曾将本函数改为未导出 normalizeOpenAICompatiblePlatform，本分支的
 // handler 调度入口仍需导出，保持导出名。）
+// FORK-ANCHOR: ag-hub-normalize-platform (二开：聚合中转保留原值，不归一为 openai)
 func NormalizeOpenAICompatiblePlatform(platform string) string {
 	switch platform {
-	case PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo:
+	case PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformAggregateHub:
 		return platform
 	default:
 		return PlatformOpenAI

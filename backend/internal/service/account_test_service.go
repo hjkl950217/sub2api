@@ -440,6 +440,11 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 		return s.probeOpenAIAPIKeyProtocolsConnection(c, account, modelID, prompt, openaiAPIKeyProtocolProbeOrder, testOpts.SyncProtocols)
 	}
 
+	// FORK-ANCHOR: ag-hub-test-routing (二开：聚合中转走协议探测矩阵)
+	if account.Platform == PlatformAggregateHub {
+		return s.probeCNProviderProtocolsConnection(c, account, modelID, prompt, testOpts.SyncProtocols)
+	}
+
 	if account.IsOpenAI() {
 		return s.testOpenAIAccountConnection(c, account, modelID, prompt, normalizeAccountTestMode(mode))
 	}

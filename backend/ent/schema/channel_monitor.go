@@ -35,8 +35,9 @@ func (ChannelMonitor) Fields() []ent.Field {
 			NotEmpty().
 			MaxLen(100),
 		field.Enum("provider").
+			// FORK-ANCHOR: ag-hub-channel-monitor-schema (二开：聚合中转加入渠道监控 schema)
 			Values("openai", "anthropic", "gemini", "grok",
-				"antigravity", "kimi", "zhipu", "deepseek", "minimax", "opencode_go"),
+				"antigravity", "kimi", "zhipu", "deepseek", "minimax", "opencode_go", "ag_hub"),
 		// check_mode: 'probe' | 'quota' | 'quota_probe'
 		//   probe       - LLM 探活（默认，原有行为）
 		//   quota       - 仅查关联账号的用量/余额（零 LLM 成本；endpoint/api_key 可空）

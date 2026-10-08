@@ -9,6 +9,7 @@ export interface PlatformOption<T extends string = string> {
  * Concrete upstream platforms supported by accounts and request routing.
  * Keep platform selectors derived from this catalog so newly added providers
  * do not silently disappear from list filters.
+ * FORK-ANCHOR: ag-hub-platform-option (二开：聚合中转平台选项)
  */
 export const CONCRETE_PLATFORM_OPTIONS = [
   { value: 'anthropic', label: 'Anthropic' },
@@ -21,7 +22,8 @@ export const CONCRETE_PLATFORM_OPTIONS = [
   { value: 'deepseek', label: 'DeepSeek' },
   { value: 'minimax', label: 'MiniMax' },
   { value: 'opencode_go', label: 'OpenCode' },
-  { value: 'typesafe', label: 'TypeSafe / Jev' }
+  { value: 'typesafe', label: 'TypeSafe / Jev' },
+  { value: 'ag_hub', label: '聚合中转' }
 ] as const satisfies readonly PlatformOption<AccountPlatform>[]
 
 /** Platforms that can own a group. */

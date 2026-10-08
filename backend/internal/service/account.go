@@ -1707,6 +1707,12 @@ func (a *Account) defaultCNProtocolBaseURL(protocol string) string {
 			return DefaultMiniMaxAnthropicBaseURL
 		case PlatformOpenCodeGo:
 			return a.openCodeDefaultAnthropicBaseURL()
+		// FORK-ANCHOR: ag-hub-anthropic-base-url (二开：聚合中转 anthropic 协议端点取凭据)
+		case PlatformAggregateHub:
+			if baseURL := strings.TrimSpace(a.GetCredential("base_url")); baseURL != "" {
+				return baseURL
+			}
+			return ""
 		}
 	case APIProtocolChatCompletions, APIProtocolResponses:
 		switch a.Platform {
@@ -1732,6 +1738,12 @@ func (a *Account) defaultCNProtocolBaseURL(protocol string) string {
 				return baseURL
 			}
 			return "https://api.openai.com"
+		// FORK-ANCHOR: ag-hub-base-url-default (二开：聚合中转平台默认端点取凭据 base_url，无预设)
+		case PlatformAggregateHub:
+			if baseURL := strings.TrimSpace(a.GetCredential("base_url")); baseURL != "" {
+				return baseURL
+			}
+			return ""
 		}
 	}
 	return ""
