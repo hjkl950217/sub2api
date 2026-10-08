@@ -179,15 +179,25 @@
           <div
             v-for="item in protocolResults"
             :key="item.protocol"
-            class="flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs"
+            class="rounded-lg border px-2.5 py-1.5 text-xs"
             :class="item.success
               ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-400'
               : 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400'"
             :data-testid="`protocol-result-${item.protocol}`"
           >
-            <Icon :name="item.success ? 'check' : 'x'" size="sm" :stroke-width="2" />
-            <span class="font-medium">{{ t(`admin.accounts.cnProviders.apiProtocol.${protocolLabelKey(item.protocol)}`) }}</span>
-            <span class="ml-auto">{{ item.success ? t('admin.accounts.protocolProbePassed') : t('admin.accounts.protocolProbeFailed') }}</span>
+            <div class="flex items-center gap-2">
+              <Icon :name="item.success ? 'check' : 'x'" size="sm" :stroke-width="2" />
+              <span class="font-medium">{{ t(`admin.accounts.cnProviders.apiProtocol.${protocolLabelKey(item.protocol)}`) }}</span>
+              <span class="ml-auto">{{ item.success ? t('admin.accounts.protocolProbePassed') : t('admin.accounts.protocolProbeFailed') }}</span>
+            </div>
+            <!-- FORK-ANCHOR: test-modal-protocol-error-view (二开：失败的协议把完整报错显示出来) -->
+            <div
+              v-if="!item.success && item.error"
+              class="mt-1 whitespace-pre-wrap break-all border-t border-red-200/70 pt-1 font-mono text-[11px] leading-relaxed text-red-600 dark:border-red-500/30 dark:text-red-300"
+              :data-testid="`protocol-error-${item.protocol}`"
+            >
+              {{ item.error }}
+            </div>
           </div>
         </div>
       </div>
@@ -456,6 +466,8 @@ const supportsProtocolSync = computed(
 interface ProtocolProbeResult {
   protocol: string
   success: boolean
+  // FORK-ANCHOR: test-modal-protocol-error-field (二开：协议失败时后端给回的完整报错)
+  error: string
 }
 const protocolResults = ref<ProtocolProbeResult[]>([])
 // FORK-ANCHOR: test-modal-expected-protocol-count (二开：同步按钮的完成条件按平台协议数，openai 只有 chat 与 responses 两个)
@@ -1089,6 +1101,7 @@ const handleEvent = (event: {
   protocol_ok?: boolean
   protocol_applied?: boolean
 }) => {
+  // event.error 已在签名里（error?: string）
   switch (event.type) {
     // FORK-ANCHOR: test-modal-protocol-events (二开：协议探测矩阵的逐协议事件)
     case 'protocol_probe':
@@ -1105,11 +1118,28 @@ const handleEvent = (event: {
     case 'protocol_result':
       if (event.protocol) {
         // 后端用 protocol_ok 上报结论（success 字段带 omitempty，false 会被省略）
-        protocolResults.value.push({ protocol: event.protocol, success: event.protocol_ok === true })
+        // FORK-ANCHOR: test-modal-protocol-error-capture (二开：失败协议连同完整报错一起记下)
+        protocolResults.value.push({
+          protocol: event.protocol,
+          success: event.protocol_ok === true,
+          error: event.error || ''
+        })
         // FORK-ANCHOR: test-modal-protocol-content (二开：按协议分行显示各协议返回的正文)
         // 正文只作展示，通过与否仍由后端的格式解析决定（见 protocol_ok）。
-        if (event.text) {
-          addLine(`[${protocolShortLabel(event.protocol)}]${event.text}`, 'text-green-300')
+        if (event.protocol_ok === true) {
+          if (event.text) {
+            addLine(`[${protocolShortLabel(event.protocol)}]${event.text}`, 'text-green-300')
+          }
+        } else {
+          // FORK-ANCHOR: test-modal-protocol-error-line (二开：失败的协议把完整报错也写进输出框)
+          // 正文原样保留（可能是上游返回的报错正文），后端解析出的报错另起一行，两者都不丢。
+          if (event.text) {
+            addLine(`[${protocolShortLabel(event.protocol)}]${event.text}`, 'text-red-300')
+          }
+          addLine(
+            `[${protocolShortLabel(event.protocol)}] ${t('admin.accounts.protocolProbeErrorLabel')}${event.error || t('admin.accounts.protocolProbeFailed')}`,
+            'text-red-400'
+          )
         }
       }
       break

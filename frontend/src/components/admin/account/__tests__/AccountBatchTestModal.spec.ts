@@ -33,7 +33,11 @@ vi.mock('vue-i18n', async () => {
     'admin.accounts.batchTest.passed': 'passed',
     'admin.accounts.batchTest.failed': 'failed',
     'admin.accounts.batchTest.pending': 'pending',
-    'admin.accounts.batchTest.testing': 'testing'
+    'admin.accounts.batchTest.testing': 'testing',
+    // FORK-ANCHOR: batch-test-spec-i18n (二开：逐协议行的状态与失败原因文案)
+    'admin.accounts.protocolProbePassed': 'passed-protocol',
+    'admin.accounts.protocolProbeFailed': 'failed-protocol',
+    'admin.accounts.protocolProbeErrorLabel': 'reason:'
   }
   return {
     ...actual,
@@ -303,6 +307,91 @@ describe('AccountBatchTestModal', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="batch-row-1"]').text()).toContain('hello-body')
+  })
+
+  // FORK-ANCHOR: batch-test-protocol-line-spec (二开：一个账号的三个协议各占一行，不挤在同一行)
+  it('一个账号的每个协议各占一行，行内显示状态与正文', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_result","account_id":1,"protocol":"chat_completions","protocol_ok":true,"text":"chat-body"}\n',
+        'data: {"type":"protocol_result","account_id":1,"protocol":"responses","protocol_ok":false,"error":"responses 404"}\n',
+        'data: {"type":"batch_test_complete","account_id":1,"success":true}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({ show: false, accountIds: [1, 2, 3] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="batch-test-start-button"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    // 每个协议一行，两个协议就是两个独立的行容器
+    const chatLine = wrapper.get('[data-testid="batch-protocol-line-1-chat_completions"]')
+    const responsesLine = wrapper.get('[data-testid="batch-protocol-line-1-responses"]')
+    expect(chatLine.exists()).toBe(true)
+    expect(responsesLine.exists()).toBe(true)
+    expect(chatLine.element).not.toBe(responsesLine.element)
+
+    // 通过的那行显示正文，失败的那行显示报错
+    expect(chatLine.text()).toContain('chat-body')
+    expect(chatLine.text()).toContain('passed-protocol')
+    expect(responsesLine.text()).toContain('responses 404')
+    expect(responsesLine.text()).toContain('failed-protocol')
+
+    // 行容器自身是纵向排布，协议之间才真的换行
+    const container = chatLine.element.parentElement as HTMLElement
+    expect(container.className).toContain('space-y-0.5')
+  })
+
+  // FORK-ANCHOR: batch-test-failure-spec (二开：失败账号的报错要显示出来)
+  it('失败的协议把完整报错显示在行里，收尾错误单独成行', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_result","account_id":1,"protocol":"chat_completions","protocol_ok":false,"error":"401 invalid api key"}\n',
+        'data: {"type":"protocol_result","account_id":1,"protocol":"responses","protocol_ok":false,"error":"404 not found"}\n',
+        'data: {"type":"batch_test_complete","account_id":1,"error":"chat_completions: 401 invalid api key\\nresponses: 404 not found"}\n',
+        'data: {"type":"protocol_result","account_id":2,"protocol":"chat_completions","protocol_ok":false,"error":"timeout after 90s"}\n',
+        'data: {"type":"batch_test_complete","account_id":2}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({ show: false, accountIds: [1, 2, 3] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="batch-test-start-button"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    // 账号 1：每个失败协议的报错都在各自的行里
+    const row1 = wrapper.get('[data-testid="batch-row-1"]')
+    expect(row1.text()).toContain('401 invalid api key')
+    expect(row1.text()).toContain('404 not found')
+
+    // 账号 2：失败行状态是失败，且逐协议报错可见
+    const row2 = wrapper.get('[data-testid="batch-row-2"]')
+    expect(row2.text()).toContain('timeout after 90s')
+  })
+
+  it('整账号级失败（非协议报错）也显示失败原因', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"batch_test_complete","account_id":1,"error":"测试未返回完成事件，无法判定结果"}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({ show: false, accountIds: [1, 2, 3] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="batch-test-start-button"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    const failure = wrapper.get('[data-testid="batch-failure-1"]')
+    expect(failure.text()).toContain('测试未返回完成事件')
   })
 
   it('每行调度开关直接调调度接口，成功后通知外层刷新', async () => {

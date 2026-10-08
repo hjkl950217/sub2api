@@ -330,6 +330,8 @@ export default {
       protocolProbing: '正在测试 {protocol} 端点…',
       protocolProbePassed: '可用',
       protocolProbeFailed: '不可用',
+      // FORK-ANCHOR: i18n-protocol-probe-error-zh (二开：失败协议的完整报错前缀)
+      protocolProbeErrorLabel: '失败原因：',
       cnProviders: {
         accountMode: {
           title: '账号类型',
@@ -1695,7 +1697,10 @@ export default {
         updateProtocolsCount: '更新支持协议（{count}）',
         updateProtocolsNone: '没有账号有测通的协议',
         updateProtocolsDone: '已更新 {count} 个账号的支持协议',
-        updateProtocolsPartial: '更新完成：成功 {success} 个，失败 {failed} 个'
+        updateProtocolsPartial: '更新完成：成功 {success} 个，失败 {failed} 个',
+        // FORK-ANCHOR: i18n-batch-test-failure-zh (二开：批量测试的失败详情文案)
+        protocolLineHint: '各协议结果',
+        failureReason: '失败原因'
       },
       selectTestModel: '选择测试模型',
       testModel: '测试模型',

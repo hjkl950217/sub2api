@@ -48,6 +48,11 @@ const (
 	defaultAntigravityTestModel = "claude-sonnet-4-6"
 )
 
+// FORK-ANCHOR: protocol-matrix-error-collector (二开：收集协议探测过程中推送到测试上下文的完整报错)
+// 各协议的探测函数在失败时把报错写成 error 事件，协议矩阵抑制了该事件后错误文本就丢了。
+// sendEvent 把它按当前协议收集进这个 builder，矩阵跑完后随 protocol_result 一起给前端。
+const accountTestErrorContextKey = "account_test_error"
+
 // TestEvent represents a SSE event for account testing
 type TestEvent struct {
 	Type     string `json:"type"`
@@ -3329,6 +3334,19 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 		if suppress, ok := c.Get(accountTestSuppressContentContextKey); ok {
 			if suppressContent, _ := suppress.(bool); suppressContent {
 				return
+			}
+		}
+	}
+	// FORK-ANCHOR: protocol-matrix-error-collect (二开：协议矩阵收集失败的完整报错)
+	// 与 content 一样放在抑制判断之前：收集只影响协议矩阵取回报错文本，不改变
+	// error 事件是否推给前端。同协议的多次报错按行拼接，保留全部失败信息。
+	if event.Type == "error" && event.Error != "" {
+		if collector, ok := c.Get(accountTestErrorContextKey); ok {
+			if builder, ok := collector.(*strings.Builder); ok {
+				if builder.Len() > 0 {
+					builder.WriteString("\n")
+				}
+				builder.WriteString(event.Error)
 			}
 		}
 	}

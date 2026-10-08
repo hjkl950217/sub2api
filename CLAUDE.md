@@ -502,6 +502,55 @@ openai 平台的 API Key 账号，新增、编辑、测试三页 UI 与国产供
 删除位置上。`defineEmits` 声明与 `AccountsView.vue` 侧的处理逻辑原样保留（只是没有按钮再触发），
 `@probe-upstream-billing` 这些模板绑定的类型检查因此不受影响；恢复只需把按钮加回去。
 
+**2026-10-08 第五轮：失败信息完整回传 + 逐协议换行**（长空，新增 11 个锚点）
+
+起因是长空的三个要求：① 测试账号弹窗现在能同测三个协议了，**失败的信息也要返回，要完整、格式和之前一致**；
+② 批量测试页面也要显示失败；③ 批量测试里一个账号的三个协议挤在同一行，**没有换行区分**。
+
+| # | 问题 | 处理 |
+|---|---|---|
+| ① | 协议失败只显示「不可用」，看不见原因 | 后端在协议矩阵探测期间**收集**各协议推送到测试上下文的 `error` 事件文本（`accountTestErrorContextKey`），探测结束后随 `protocol_result` 的 `error` 字段发给前端；前端弹窗在失败协议卡片里加一行等宽小字显示完整报错，输出框同时按 `[协议] 失败原因：…` 追加一行，格式与既有的 `[协议]正文` 行一致 |
+| ② | 批量测试只标红，看不到失败详情 | 逐协议报错存进 `ProtocolResult.error` 并按协议行显示；`batch_test_complete` 的 `error` 改为汇总各失败协议的 `协议名: 报错`（换行分隔），非协议级错误（超时、无完成事件）单独成行显示 |
+| ③ | 一账号三协议同在一行 | 协议标签行保留（概览用），下方新增**逐协议行**：每协议一行，左边协议名+状态，右边返回正文或报错；容器用 `space-y-0.5` 纵向排布，失败正文与报错都 `whitespace-pre-wrap break-all` |
+
+**为什么要在后端收集报错**：协议矩阵用 `accountTestSuppressErrorContextKey` 抑制了各协议的
+`error` 事件（单个协议失败是「该协议不支持」的正常结论，不是整场测试的终止错误），抑制之后报错文本
+就丢了，前端手里只剩一个 `protocol_ok: false`。收集动作与既有的 `content` 收集一样**放在抑制判断
+之前**（`sendEvent` 里），所以抑制策略不变、只是把文本留了下来。
+
+**报错文本的优先级**：协议矩阵优先用收集到的报错文本覆盖探测函数的返回值文本——返回值常是
+`API returned 400` 这种概括，收集到的才是带上游原文的完整信息。两者都没有才回落「不可用」。
+
+**本轮锚点（11 个新增）**
+
+| 文件 | 锚点 |
+|---|---|
+| `backend/internal/service/account_test_service.go` | `protocol-matrix-error-collector` / `protocol-matrix-error-collect` |
+| `.../account_test_service_cn_protocol_matrix.go` | `protocol-matrix-collect-error-text` / `protocol-matrix-error-event` / `protocol-matrix-collect-error-text-seq` / `protocol-matrix-error-event-seq` |
+| `.../account_test_service_openai_protocol_matrix.go` | `protocol-matrix-collect-error-text-openai` / `protocol-matrix-error-event-openai` |
+| `.../account_batch_test_service.go` | `batch-test-protocol-failures` / `batch-test-protocol-failure-text` / `batch-test-complete-failures` |
+| `frontend/.../AccountTestModal.vue` | `test-modal-protocol-error-field` / `test-modal-protocol-error-view` / `test-modal-protocol-error-capture` / `test-modal-protocol-error-line` |
+| `frontend/.../AccountBatchTestModal.vue` | `batch-test-protocol-error-field` / `batch-test-protocol-body-field` / `batch-test-row-failure-field` / `batch-test-protocol-lines` / `batch-test-row-failure-line` / `batch-test-protocol-line-helpers` / `batch-test-failed-with-body` / `batch-test-protocol-error-capture` / `batch-test-protocol-body-capture` / `batch-test-error-append` / `batch-test-complete-failure-capture` / `batch-test-append-failure` |
+| `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` | `i18n-protocol-probe-error-{zh,en}` / `i18n-batch-test-failure-{zh,en}` |
+
+**测试**：Go `fork_batch_test_service_test.go` 改写 `TestForkBatchTestRunCompletesFailedTarget`
+（收尾事件现在**要**带失败汇总）+ 新增 `TestForkProtocolMatrixReportsFailureError`（三协议各自的
+完整报错 + 汇总）；前端 `AccountTestModal.spec.ts` +1 用例、`AccountBatchTestModal.spec.ts` +3 用例。
+
+**本轮踩坑**
+
+1. **失败行被 `!row.expanded` 挡住**。第一批实现把行级失败原因写成 `v-if="... && !row.expanded"`，
+   而行的默认就是展开的，结果失败文本一次都没渲染出来（`batch-row-2` 的用例报
+   `expected ... to contain 'boom'`）。行级失败原因要**无条件可见**，它承载的是逐协议报错之外
+   的收尾错误，用户不该为了看它先点「收起」。
+2. **测试桩里的 JSON 内层引号没转义**。`"error":"401 {"error":{...}}"` 会让整个 SSE 行解析失败、
+   该事件被静默丢弃，现象是「只有部分协议有结果」。写协议报错桩时要么转义内层引号，要么用不含
+   引号的文本。
+3. **新增用例要做变异验证**。把逐协议行容器的 `v-if` 临时改成 `false` 跑一遍，确认 3 个新用例
+   变红（`3 failed | 7 passed`），证明用例真的在验行为、不是恒过。
+4. **CN 协议矩阵只在 `赛博羊毛-DS` 分组账号上并发探测**（`isDeepseekDSGroupAccount`）。写
+   「三协议报错」的用例时账号必须挂该分组，否则退回单协议路径，只拿到一份结果。
+
 ### 2.18 使用记录页：时间列可配置 + 贴底横向滚动条（改上游文件，新增 8 个锚点）
 
 **背景**（长空 2026-10-05 提出）：管理端 `/admin/usage` 的表格列多，横向滚动条压在表格最底部，

@@ -127,6 +127,8 @@ export default {
       protocolProbing: 'Testing the {protocol} endpoint…',
       protocolProbePassed: 'Available',
       protocolProbeFailed: 'Unavailable',
+      // FORK-ANCHOR: i18n-protocol-probe-error-en (fork: prefix for a failed protocol's full error)
+      protocolProbeErrorLabel: 'Failure reason: ',
       cnProviders: {
         accountMode: {
           title: 'Account Type',
@@ -1607,7 +1609,10 @@ export default {
         updateProtocolsCount: 'Update protocols ({count})',
         updateProtocolsNone: 'No account has a passing protocol',
         updateProtocolsDone: 'Updated supported protocols for {count} accounts',
-        updateProtocolsPartial: 'Update finished: {success} succeeded, {failed} failed'
+        updateProtocolsPartial: 'Update finished: {success} succeeded, {failed} failed',
+        // FORK-ANCHOR: i18n-batch-test-failure-en (fork: batch test failure detail copy)
+        protocolLineHint: 'Per-protocol results',
+        failureReason: 'Failure reason'
       },
       selectTestModel: 'Select Test Model',
       testModel: 'Test model',

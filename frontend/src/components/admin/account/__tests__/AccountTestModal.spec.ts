@@ -360,6 +360,43 @@ describe('AccountTestModal', () => {
     expect(wrapper.emitted('protocols-updated')).toBeUndefined()
   })
 
+  // FORK-ANCHOR: test-modal-protocol-error-spec (二开：失败协议把完整报错显示出来)
+  it('失败的协议显示后端给的完整报错，通过的不显示', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_result","protocol":"chat_completions","protocol_ok":true,"text":"chat-ok"}\n',
+        'data: {"type":"protocol_result","protocol":"anthropic","protocol_ok":false,"error":"401 invalid api key"}\n',
+        'data: {"type":"protocol_result","protocol":"responses","protocol_ok":false,"error":"404 page not found"}\n',
+        'data: {"type":"test_complete","success":true}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({
+      id: 7,
+      name: 'DeepSeek',
+      platform: 'deepseek',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    ;(wrapper.vm as any).selectedModelId = 'deepseek-chat'
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+
+    // 失败协议各自带一条完整报错
+    const anthropicError = wrapper.get('[data-testid="protocol-error-anthropic"]')
+    expect(anthropicError.text()).toContain('invalid api key')
+    expect(wrapper.get('[data-testid="protocol-error-responses"]').text()).toContain('404 page not found')
+    // 通过的不显示报错块
+    expect(wrapper.find('[data-testid="protocol-error-chat_completions"]').exists()).toBe(false)
+
+    // 输出框里也带上失败原因，复制日志时能一起带走（本 spec 的 i18n 未翻译，返回原始 key）
+    expect(wrapper.text()).toContain('admin.accounts.protocolProbeErrorLabel')
+    expect(wrapper.text()).toContain('[anthropic] admin.accounts.protocolProbeErrorLabel401 invalid api key')
+  })
+
   it('OpenAI Compact 探测会携带 compact 测试模式', async () => {
     getAvailableModels.mockResolvedValue([
       { id: 'gpt-5.4', display_name: 'GPT-5.4' }

@@ -77,6 +77,8 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 		protocol string
 		err      error
 		text     string
+		// errText 是探测函数推送到测试上下文 error 事件里的完整报错，探测失败时非空。
+		errText string
 	}
 	results := make(chan result, len(cnProtocolProbeOrder))
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
@@ -87,6 +89,9 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 				results <- result{protocol: protocol, err: errors.New("provider has no native Responses endpoint")}
 				return
 			}
+			// FORK-ANCHOR: protocol-matrix-collect-error-text (二开：探测失败的完整报错也要收集)
+			// 各协议的探测函数把报错塞在测试上下文的 error 事件里，只看返回值拿不到文本。
+			// 收一份到 errorBuilder，随 protocol_result 一起给前端，失败原因才看得见。
 			probeContext, _ := gin.CreateTestContext(httptest.NewRecorder())
 			probeContext.Request = c.Request.Clone(c.Request.Context())
 			probeContext.Set(accountTestSuppressErrorContextKey, true)
@@ -95,6 +100,8 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 			probeContext.Set(accountTestSuppressContentContextKey, true)
 			contentBuilder := &strings.Builder{}
 			probeContext.Set(accountTestContentContextKey, contentBuilder)
+			errorBuilder := &strings.Builder{}
+			probeContext.Set(accountTestErrorContextKey, errorBuilder)
 			probeAccount := *account
 			probeAccount.modelMappingCache = nil
 			probeAccount.modelMappingCacheReady = false
@@ -122,7 +129,7 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 			default:
 				err = probeService.testCNProviderChatCompletionsConnection(probeContext, &probeAccount, modelID, prompt)
 			}
-			results <- result{protocol: protocol, err: err, text: contentBuilder.String()}
+			results <- result{protocol: protocol, err: err, text: contentBuilder.String(), errText: errorBuilder.String()}
 		}(protocol)
 	}
 
@@ -136,6 +143,10 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 		event := TestEvent{Type: "protocol_result", Protocol: result.protocol, ProtocolOK: forkBoolPtr(ok), Text: result.text}
 		if result.err != nil {
 			event.Error = result.err.Error()
+		}
+		// FORK-ANCHOR: protocol-matrix-error-event (二开：把收集到的完整报错挂到 protocol_result 上)
+		if !ok && strings.TrimSpace(result.errText) != "" {
+			event.Error = strings.TrimSpace(result.errText)
 		}
 		s.sendEvent(c, event)
 	}
@@ -174,6 +185,9 @@ func (s *AccountTestService) probeCNProviderProtocolsConnectionSequential(c *gin
 		c.Set(accountTestSuppressContentContextKey, true)
 		contentBuilder := &strings.Builder{}
 		c.Set(accountTestContentContextKey, contentBuilder)
+		// FORK-ANCHOR: protocol-matrix-collect-error-text-seq (二开：串行路径同样收集失败报错)
+		errorBuilder := &strings.Builder{}
+		c.Set(accountTestErrorContextKey, errorBuilder)
 		s.sendEvent(c, TestEvent{Type: "protocol_probe", Protocol: protocol})
 		var err error
 		switch protocol {
@@ -187,7 +201,15 @@ func (s *AccountTestService) probeCNProviderProtocolsConnectionSequential(c *gin
 		if err == nil {
 			passed = append(passed, protocol)
 		}
-		s.sendEvent(c, TestEvent{Type: "protocol_result", Protocol: protocol, ProtocolOK: forkBoolPtr(err == nil), Text: contentBuilder.String()})
+		// FORK-ANCHOR: protocol-matrix-error-event-seq (二开：串行路径也把完整报错带回去)
+		seqEvent := TestEvent{Type: "protocol_result", Protocol: protocol, ProtocolOK: forkBoolPtr(err == nil), Text: contentBuilder.String()}
+		if err != nil {
+			seqEvent.Error = err.Error()
+		}
+		if err != nil && strings.TrimSpace(errorBuilder.String()) != "" {
+			seqEvent.Error = strings.TrimSpace(errorBuilder.String())
+		}
+		s.sendEvent(c, seqEvent)
 	}
 	applied := len(passed) > 0 && s.applyProbedCNProtocols(c, account, passed)
 	c.Set(accountTestSuppressErrorContextKey, false)

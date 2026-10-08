@@ -214,9 +214,65 @@ func TestForkBatchTestRunCompletesFailedTarget(t *testing.T) {
 	require.Len(t, probeResults, 2)
 	for _, result := range probeResults {
 		require.Equal(t, false, result["protocol_ok"], "两个协议都应探测失败")
+		// 逐协议结果必须带上失败原因，前端才能显示完整报错
+		require.NotEmpty(t, result["error"], "失败的协议要带完整报错")
 	}
 	require.NotEqual(t, true, completion["success"], "全部协议失败时不能判通过")
-	require.Nil(t, completion["error"], "具体失败原因由逐协议结果给出，收尾事件不重复带错误文本")
+	// 收尾事件汇总各失败协议的报错（一行一个），前端收起正文时也能看到原因。
+	summary, _ := completion["error"].(string)
+	require.Contains(t, summary, "chat_completions: ", "汇总要带协议名")
+	require.Contains(t, summary, "responses: ")
+	require.Contains(t, summary, "\n", "多个失败协议按行分隔")
+}
+
+// FORK: 协议探测失败时，逐协议结果要带上完整的后端报错文本，
+// 前端「测试」弹窗与批量测试的失败详情都依赖它。
+func TestForkProtocolMatrixReportsFailureError(t *testing.T) {
+	account := forkBatchTestAccount(31, PlatformDeepseek, "deepseek-chat")
+	// 国产矩阵只在「赛博羊毛-DS」分组账号上跑并发三协议探测（见 isDeepseekDSGroupAccount），
+	// 不挂分组会退回单协议路径，拿不到三份逐协议结果。
+	account.Groups = []*Group{{Name: "赛博羊毛-DS"}}
+	svc, upstream, _ := forkBatchTestService(account)
+	upstream.responses = protocolMatrixResponses(
+		func() *http.Response { return newJSONResponse(http.StatusBadRequest, `{"error":"chat down"}`) },
+		func() *http.Response { return newJSONResponse(http.StatusBadRequest, `{"error":"anthropic down"}`) },
+		func() *http.Response { return newJSONResponse(http.StatusBadRequest, `{"error":"responses down"}`) },
+	)
+	c, recorder := newTestContext()
+
+	err := svc.RunAccountBatchTest(c, BatchTestRunOptions{Targets: []BatchTestTarget{
+		{AccountID: 31, ModelID: "deepseek-chat", Prompt: "hi"},
+	}})
+	require.NoError(t, err)
+
+	events := forkBatchTestEvents(t, recorder.Body.String())
+	errorsByProtocol := map[string]string{}
+	completion := map[string]any{}
+	for _, event := range events {
+		switch event["type"] {
+		case "protocol_result":
+			if ok, _ := event["protocol_ok"].(bool); !ok {
+				protocol, _ := event["protocol"].(string)
+				text, _ := event["error"].(string)
+				errorsByProtocol[protocol] = text
+			}
+		case "batch_test_complete":
+			completion = event
+		}
+	}
+
+	require.Len(t, errorsByProtocol, 3, "三个协议都应回报失败")
+	for protocol, text := range errorsByProtocol {
+		require.NotEmpty(t, text, "协议 %s 的失败必须带报错文本", protocol)
+	}
+	require.Contains(t, errorsByProtocol[APIProtocolChatCompletions], "chat down")
+	require.Contains(t, errorsByProtocol[APIProtocolAnthropic], "anthropic down")
+	require.Contains(t, errorsByProtocol[APIProtocolResponses], "responses down")
+
+	summary, _ := completion["error"].(string)
+	require.Contains(t, summary, "chat down")
+	require.Contains(t, summary, "anthropic down")
+	require.Contains(t, summary, "responses down")
 }
 
 // 账号取不到（已删除）时判失败，不给没有结论的账号标「通过」。

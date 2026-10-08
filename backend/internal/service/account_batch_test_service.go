@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -226,6 +227,10 @@ type batchTestWriter struct {
 	// 协议矩阵在「三个协议全失败」时仍然返回 nil，靠返回值判断会把失败标成通过。
 	completion   bool
 	completionOK bool
+	// FORK-ANCHOR: batch-test-protocol-failures (二开：汇总失败协议的完整报错，随收尾事件回传)
+	// 逐协议的 protocol_result 已经各自转发给前端了，这里再汇总一份是为了在
+	// batch_test_complete 上也能拿到失败详情（前端不必自己拼，也不会漏掉乱序到达）。
+	protocolFailures []string
 }
 
 func (w *batchTestWriter) Header() http.Header    { return http.Header{} }
@@ -259,7 +264,29 @@ func (w *batchTestWriter) forwardChunk(chunk []byte) {
 		w.completion = true
 		w.completionOK = event.Success
 	}
+	if event.Type == "protocol_result" && event.ProtocolOK != nil && !*event.ProtocolOK {
+		w.protocolFailures = append(w.protocolFailures, batchTestProtocolFailureText(event))
+	}
 	w.sink.forwardEvent(w.accountID, event)
+}
+
+// FORK-ANCHOR: batch-test-protocol-failure-text (二开：拼一条「协议名：失败原因」的可读文本)
+// 报错为空时退回“不可用”，保证失败协议一定有可见说明，不会只留一个红标签。
+func batchTestProtocolFailureText(event TestEvent) string {
+	label := event.Protocol
+	switch event.Protocol {
+	case APIProtocolAnthropic:
+		label = "anthropic"
+	case APIProtocolResponses:
+		label = "responses"
+	case APIProtocolChatCompletions:
+		label = "chat_completions"
+	}
+	reason := strings.TrimSpace(event.Error)
+	if reason == "" {
+		reason = "protocol probe failed"
+	}
+	return label + ": " + reason
 }
 
 // RunAccountBatchTest 并发跑完一批账号连通性测试，逐账号把 SSE 事件转发到 c。
@@ -323,8 +350,12 @@ func (s *AccountTestService) runSingleBatchTarget(ctx context.Context, sink *bat
 	case !writer.completion:
 		sink.forwardEvent(target.AccountID, TestEvent{Type: "batch_test_complete", Error: batchTestNoCompletion})
 	case !writer.completionOK:
-		// 具体哪几个协议没过已经在 protocol_result 里逐条给出，这里不重复带错误文本。
-		sink.forwardEvent(target.AccountID, TestEvent{Type: "batch_test_complete"})
+		// FORK-ANCHOR: batch-test-complete-failures (二开：收尾事件带上失败协议的完整报错)
+		// 逐协议的 protocol_result 里也有，这里再汇总一份，前端展示失败原因不必自己拼。
+		sink.forwardEvent(target.AccountID, TestEvent{
+			Type:  "batch_test_complete",
+			Error: strings.Join(writer.protocolFailures, "\n"),
+		})
 	default:
 		sink.forwardEvent(target.AccountID, TestEvent{Type: "batch_test_complete", Success: true})
 	}

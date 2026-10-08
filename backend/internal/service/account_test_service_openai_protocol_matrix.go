@@ -106,6 +106,9 @@ func (s *AccountTestService) probeOpenAIAPIKeyProtocolsConnection(c *gin.Context
 		c.Set(accountTestSuppressContentContextKey, true)
 		contentBuilder := &strings.Builder{}
 		c.Set(accountTestContentContextKey, contentBuilder)
+		// FORK-ANCHOR: protocol-matrix-collect-error-text-openai (二开：openai 两协议矩阵同样收集失败报错)
+		errorBuilder := &strings.Builder{}
+		c.Set(accountTestErrorContextKey, errorBuilder)
 		s.sendEvent(c, TestEvent{Type: "protocol_probe", Protocol: protocol})
 
 		probeAccount := cloneAccountForProtocolProbe(account)
@@ -123,6 +126,10 @@ func (s *AccountTestService) probeOpenAIAPIKeyProtocolsConnection(c *gin.Context
 		event := TestEvent{Type: "protocol_result", Protocol: protocol, ProtocolOK: forkBoolPtr(probeErr == nil), Text: contentBuilder.String()}
 		if probeErr != nil {
 			event.Error = probeErr.Error()
+		}
+		// FORK-ANCHOR: protocol-matrix-error-event-openai (二开：把收集到的完整报错挂到 protocol_result 上)
+		if probeErr != nil && strings.TrimSpace(errorBuilder.String()) != "" {
+			event.Error = strings.TrimSpace(errorBuilder.String())
 		}
 		s.sendEvent(c, event)
 	}
