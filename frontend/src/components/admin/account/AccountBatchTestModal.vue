@@ -245,6 +245,8 @@ interface BatchRow {
   status: 'idle' | 'running' | 'success' | 'error'
   error: string
   protocols: ProtocolResult[]
+  // 整账号的原始文本流（各协议事件按到达顺序拼接），展开详情时显示
+  excerpt: string
   // FORK-ANCHOR: batch-test-row-failure-field (二开：不属于任何协议的失败原因，如超时、无完成事件)
   // 逐协议报错挂在各自的 ProtocolResult.error 上，不重复进这里。
   rowFailure: string
