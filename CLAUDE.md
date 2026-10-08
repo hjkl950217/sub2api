@@ -557,6 +557,32 @@ openai 平台的 API Key 账号，新增、编辑、测试三页 UI 与国产供
    检查，这类错误它抓不到）。**正确做法**：直接用本地二进制
    `node_modules/.bin/vue-tsc.cmd --noEmit -p tsconfig.json`，绕开 pnpm 的依赖解析。
 
+**2026-10-08 第六轮：测试弹窗默认显示协议占位**（长空要求：默认就显示「协议探测结果」，
+三个协议是灰色的，点测试之后再变色）
+
+单账号测试弹窗原来要等第一个 `protocol_result` 事件才出现面板（`v-if="protocolResults.length > 0"`），
+点测试前完全看不到会测哪几个协议。改为：
+
+- 打开弹窗就按平台铺好卡片：国产三家 `chat_completions / anthropic / responses`，openai API Key 只有
+  `chat_completions / responses`，顺序对齐后端 `cnProtocolProbeOrder` / `openaiAPIKeyProtocolProbeOrder`。
+- `ProtocolProbeResult.success` 由 `boolean` 放宽为 `boolean | null`（`null` = 未测），三态配色：
+  未测灰（`bg-gray-50`）+ `clock` 图标 + 「未测试」/ 通过绿 / 失败红。
+- 事件到达时就地改那一张卡片的颜色，不再 push 新条目（清单外的协议才追加，兜底）。
+- 重跑测试时退回灰色占位（`resetState` 里 `protocolResults = buildProtocolPlaceholders()`）。
+- 不跑协议矩阵的平台（如 grok）不显示该面板（`hasProtocolPanel`）。
+
+**这一轮踩到的坑**：同步按钮原判据是 `protocolResults.length !== expectedProtocolCount`，
+占位卡片一开着弹窗就在了，会让按钮**没测试就可点**。改为 `testedProtocolCount`（数 `success !== null`
+的数量）。这是「占位」与「结果」共用同一个数组带来的必然副作用，改这类状态时要注意所有依赖
+`length` 的判断。
+
+锚点：`test-modal-protocol-placeholders` / `test-modal-tested-protocol-count` /
+`test-modal-protocol-three-state` / `test-modal-protocol-seed-on-open` /
+`i18n-protocol-probe-pending-{zh,en}`（`test-modal-protocol-results-reset` 语义改为「退回占位」）。
+
+测试：`AccountTestModal.spec.ts` 新增 3 个用例（占位三态与改色、openai 只铺两张、非矩阵平台不显示），
+共 12 个；并做变异验证——把占位构造改成空数组时 2 个用例如期变红。
+
 **2026-10-08 部署记录**：镜像 `ghcr.io/hjkl950217/sub2api:0.2.14`（manifest list digest
 `sha256:a968d3d980fe0a0b98f514dfd8ca431ae04867d4985a0d7e96f6f776fb54819f`），`v0.2.14` 已指向
 `848f9f38f`。NAS 运行 revision `848f9f38f06afafd1c069664479955a46f856417`，`healthy`，入口 chunk
