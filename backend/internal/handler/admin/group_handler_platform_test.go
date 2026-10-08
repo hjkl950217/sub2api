@@ -29,6 +29,7 @@ func TestGroupPlatformBinding_AllowedPlatforms(t *testing.T) {
 		"anthropic", "openai", "gemini", "antigravity", "grok",
 		"kimi", "zhipu", "deepseek", "minimax", "opencode_go", "composite",
 		"typesafe",
+		"ag_hub", // FORK-ANCHOR: ag-hub-group-binding-test (二开：聚合中转应通过分组平台校验)
 	}
 	for _, platform := range allowed {
 		t.Run("create_"+platform, func(t *testing.T) {
