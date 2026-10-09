@@ -262,6 +262,10 @@ export type CnAccountMode = 'payg' | 'coding'
 export type OpenCodeAccountMode = 'zen' | 'go'
 export type CnProviderPlatform = 'kimi' | 'zhipu' | 'deepseek' | 'minimax'
 
+// FORK-ANCHOR: ag-hub-preset-platform (二开：聚合中转作为 base url 预设平台参与类型)
+/** 支持三协议自适应端点配置的平台（含聚合中转）。 */
+export type AdaptivePresetPlatform = CnProviderPlatform | 'opencode_go' | 'ag_hub'
+
 /** deepseek / kimi / minimax 支持原生 responses；adaptive 会按入站协议选择原生端点。 */
 export type CnApiProtocol = 'adaptive' | 'chat_completions' | 'anthropic' | 'responses'
 export type CnNativeApiProtocol = Exclude<CnApiProtocol, 'adaptive'>
@@ -276,9 +280,10 @@ export function supportsProtocolSelection(platform: string): boolean {
   return isCNProviderPlatform(platform) || platform === 'openai'
 }
 
-/** DeepSeek、Kimi、MiniMax 与 openai 提供原生 Responses 端点。 */
+/** DeepSeek、Kimi、MiniMax、openai 与聚合中转提供原生 Responses 端点。 */
 export function cnSupportsNativeResponses(platform: string): boolean {
-  return platform === 'deepseek' || platform === 'kimi' || platform === 'minimax' || platform === 'opencode_go' || platform === 'openai'
+  // FORK-ANCHOR: ag-hub-native-responses (二开：聚合中转支持原生 Responses)
+  return platform === 'deepseek' || platform === 'kimi' || platform === 'minimax' || platform === 'opencode_go' || platform === 'openai' || platform === 'ag_hub'
 }
 
 // FORK-ANCHOR: openai-protocols-from-responses-mode (二开：从旧 responses_mode 反推 openai 协议勾选)
@@ -439,6 +444,9 @@ export function defaultCNBaseUrl(
         return 'https://api.minimaxi.com/anthropic'
       case 'opencode_go':
         return mode === 'zen' ? OPENCODE_ZEN_ANTHROPIC_BASE_URL : OPENCODE_GO_ANTHROPIC_BASE_URL
+      // FORK-ANCHOR: ag-hub-default-base-url (二开：聚合中转无官方端点，留空由用户填写)
+      case 'ag_hub':
+        return ''
       default:
         return ''
     }
@@ -457,6 +465,9 @@ export function defaultCNBaseUrl(
       return 'https://api.minimaxi.com/v1'
     case 'opencode_go':
       return mode === 'zen' ? OPENCODE_ZEN_BASE_URL : OPENCODE_GO_BASE_URL
+    // FORK-ANCHOR: ag-hub-default-base-url (二开：聚合中转无官方端点，留空由用户填写)
+    case 'ag_hub':
+      return ''
     default:
       return ''
   }
@@ -464,7 +475,7 @@ export function defaultCNBaseUrl(
 
 /** 返回自适应模式下需要配置的原生协议及其默认端点。 */
 export function defaultCNAdaptiveBaseUrls(
-  platform: CnProviderPlatform | 'opencode_go',
+  platform: AdaptivePresetPlatform,
   mode: CnAccountMode | OpenCodeAccountMode
 ): Record<CnNativeApiProtocol, string> {
   return {

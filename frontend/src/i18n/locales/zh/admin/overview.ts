@@ -980,6 +980,8 @@ export default {
         opencode_go: 'OpenCode',
         typesafe: 'TypeSafe / Jev',
         composite: 'Composite',
+        // FORK-ANCHOR: i18n-ag-hub-platform-groups-zh (分组管理平台显示名)
+        ag_hub: 'AG_Hub',
       },
       saving: '保存中...',
       noGroups: '暂无分组',

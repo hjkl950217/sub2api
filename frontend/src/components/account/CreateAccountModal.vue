@@ -241,6 +241,20 @@
             <PlatformIcon platform="typesafe" size="sm" />
             TypeSafe / Jev
           </button>
+          <!-- FORK-ANCHOR: create-ag-hub-platform-button (二开：新增账号支持「聚合中转」平台) -->
+          <button
+            type="button"
+            @click="selectAgHubPlatform()"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'ag_hub'
+                ? 'bg-white text-cyan-700 shadow-sm dark:bg-dark-600 dark:text-cyan-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <PlatformIcon platform="ag_hub" size="sm" />
+            AG_Hub
+          </button>
         </div>
       </div>
 
@@ -4063,6 +4077,7 @@ import {
   type CnApiProtocol,
   type CnNativeApiProtocol,
   type CnProviderPlatform,
+  type AdaptivePresetPlatform,
   type HeaderOverrideRow,
   type OpenCodeAccountMode,
   type OpenCodeGoProtocolRule
@@ -4286,7 +4301,8 @@ const adaptiveBaseUrls = ref<Record<CnNativeApiProtocol, string>>({
 })
 const isCNPlatform = computed(() => isCNProviderPlatform(form.platform))
 const isOpenCodeGoPlatform = computed(() => form.platform === 'opencode_go')
-const isMultiProtocolPlatform = computed(() => isCNPlatform.value || isOpenCodeGoPlatform.value)
+// FORK-ANCHOR: create-ag-hub-multi-protocol (二开：聚合中转也是多协议平台)
+const isMultiProtocolPlatform = computed(() => isCNPlatform.value || isOpenCodeGoPlatform.value || form.platform === 'ag_hub')
 // FORK-ANCHOR: create-openai-protocol-select-platform (二开：openai API Key 账号启用协议复选卡片)
 // openai 平台的 API Key 账号（中转站）可能只支持 chat 或只支持 responses，用与国产
 // 供应商相同的复选 + 兜底交互声明支持集合；OAuth 账号不适用。
@@ -4294,7 +4310,7 @@ const isOpenAIProtocolSelectPlatform = computed(
   () => form.platform === 'openai' && accountCategory.value === 'apikey'
 )
 const isProtocolMultiselectPlatform = computed(
-  () => isCNPlatform.value || isOpenAIProtocolSelectPlatform.value
+  () => isCNPlatform.value || isOpenAIProtocolSelectPlatform.value || form.platform === 'ag_hub'
 )
 function currentOpenCodeOrCNMode(): CnAccountMode | OpenCodeAccountMode {
   return isOpenCodeGoPlatform.value ? openCodeAccountMode.value : accountMode.value
@@ -4307,8 +4323,9 @@ const cnPresetPlatform = computed<CnProviderPlatform>(() => {
   }
   return 'kimi'
 })
-const adaptivePresetPlatform = computed<CnProviderPlatform | 'opencode_go'>(() => {
+const adaptivePresetPlatform = computed<AdaptivePresetPlatform>(() => {
   if (form.platform === 'opencode_go') return 'opencode_go'
+  if (form.platform === 'ag_hub') return 'ag_hub'
   return cnPresetPlatform.value
 })
 // 当前平台可选的协议档（responses 仅 deepseek / kimi）。
@@ -4399,7 +4416,8 @@ function toggleCnProtocol(protocol: CnNativeApiProtocol): void {
   ensureFallbackProtocol()
 }
 // 新选 CN 平台/模式：默认勾选该平台支持的全部协议，兜底取优先顺序第一个。
-function applyDefaultCnProtocolSelection(platform: CnProviderPlatform): void {
+// FORK-ANCHOR: create-ag-hub-protocol-defaults (二开：聚合中转走同一默认勾选逻辑)
+function applyDefaultCnProtocolSelection(platform: CnProviderPlatform | 'ag_hub'): void {
   apiProtocols.value = normalizeCnProtocols(CN_API_PROTOCOLS, platform)
   fallbackProtocol.value = defaultFallbackProtocol(apiProtocols.value)
 }
@@ -4411,7 +4429,7 @@ function applyDefaultOpenAIProtocolSelection(): void {
 }
 
 function resetAdaptiveBaseUrls(
-  platform: CnProviderPlatform | 'opencode_go',
+  platform: AdaptivePresetPlatform,
   mode: CnAccountMode | OpenCodeAccountMode
 ) {
   adaptiveBaseUrls.value = defaultCNAdaptiveBaseUrls(platform, mode)
@@ -4482,6 +4500,15 @@ function selectTypeSafePlatform() {
   accountCategory.value = 'apikey'
   apiKeyBaseUrl.value = 'https://api.typesafe.ai'
   allowedModels.value = ['jev-latest']
+}
+// FORK-ANCHOR: create-ag-hub-platform-select (二开：聚合中转平台切换——强制 apikey，三协议占位与 DS 分组一致)
+function selectAgHubPlatform() {
+  form.platform = 'ag_hub'
+  form.type = 'apikey'
+  accountCategory.value = 'apikey'
+  apiProtocol.value = 'adaptive'
+  resetAdaptiveBaseUrls('ag_hub', accountMode.value)
+  apiKeyBaseUrl.value = adaptiveBaseUrls.value[fallbackProtocol.value as CnNativeApiProtocol] || ''
 }
 // 账号类型 / 协议变更时同步默认 base url。
 watch(openCodeAccountMode, (mode, previousMode) => {
@@ -5065,7 +5092,8 @@ watch(
   () => form.platform,
   (newPlatform) => {
     // Reset base URL based on platform
-    if (isCNProviderPlatform(newPlatform) || newPlatform === 'opencode_go') {
+    // FORK-ANCHOR: create-ag-hub-platform-watch (二开：切到聚合中转也重置端点与协议勾选)
+    if (isCNProviderPlatform(newPlatform) || newPlatform === 'opencode_go' || newPlatform === 'ag_hub') {
       const mode = newPlatform === 'opencode_go' ? openCodeAccountMode.value : accountMode.value
       // FORK-ANCHOR: create-cn-platform-watch-reset (切换平台时重置端点与协议勾选默认值)
       resetAdaptiveBaseUrls(newPlatform, mode)
@@ -6041,11 +6069,12 @@ const handleSubmit = async () => {
   // 国产供应商：账号模式 + 协议 + 对应端点写入凭据；后端按 account_mode 路由
   // 额度/余额探测，按 api_protocol 路由转发端点与格式。注意 CN apikey 走本函数
   // 的通用路径（直接 doCreateAccount），不经过 createAccountAndFinish。
-  if (isCNProviderPlatform(form.platform) || form.platform === 'opencode_go') {
+  // FORK-ANCHOR: create-ag-hub-credentials (二开：聚合中转按 CN 字段契约写入三协议)
+  if (isCNProviderPlatform(form.platform) || form.platform === 'opencode_go' || form.platform === 'ag_hub') {
     credentials.account_mode = form.platform === 'opencode_go' ? openCodeAccountMode.value : accountMode.value
     credentials.api_protocol = apiProtocol.value
     // FORK-ANCHOR: create-cn-protocol-credentials (按字段契约写入 api_protocols/fallback_protocol/api_base_urls/base_url)
-    if (isCNPlatform.value) {
+    if (isCNPlatform.value || form.platform === 'ag_hub') {
       // 兜底：勾选集合为空（理论上不会发生）时回落到旧字段映射，保证 api_protocols 非空。
       const normalizedProtocols = normalizeCnProtocols(apiProtocols.value, form.platform)
       const selectedProtocols = normalizedProtocols.length > 0
@@ -6079,7 +6108,7 @@ const handleSubmit = async () => {
       credentials.api_base_urls = protocolBaseUrls
       credentials.base_url = protocolBaseUrls.chat_completions
     }
-    if (!isCNPlatform.value) {
+    if (!isCNPlatform.value && form.platform !== 'ag_hub') {
       const resolvedCNBase = (
         apiKeyBaseUrl.value.trim() || defaultCNBaseUrl(form.platform, currentOpenCodeOrCNMode(), apiProtocol.value)
       ).trim()

@@ -324,6 +324,8 @@ export function platformLabel(p: string): string {
     case 'opencode_go': return 'OpenCode'
     case 'typesafe': return 'TypeSafe / Jev'
     case 'composite': return 'Composite'
+    // FORK-ANCHOR: platform-label-ag-hub (聚合中转平台显示名)
+    case 'ag_hub': return 'AG_Hub'
     default: return p || 'API'
   }
 }
