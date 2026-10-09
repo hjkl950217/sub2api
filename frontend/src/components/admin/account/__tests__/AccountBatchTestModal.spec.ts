@@ -337,7 +337,7 @@ describe('AccountBatchTestModal', () => {
     const line = row.get('[data-testid="batch-protocol-line-1-chat_completions"]')
     const body = line.findAll('span').at(-1)!
     expect(body.text()).toBe(longBody)
-    expect(body.classes()).toContain('text-gray-300')
+    expect(body.classes()).toContain('text-gray-700')
     expect(body.classes()).not.toContain('text-green-300')
   })
 

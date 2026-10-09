@@ -112,7 +112,7 @@
                  失败信息只在这里显示一次：失败协议优先显示完整报错，通过协议显示返回正文。 -->
             <div
               v-if="row.eligible && row.expanded && row.protocols.length > 0"
-              class="space-y-1 border-t border-gray-100 bg-gray-900 px-3 py-2 font-mono text-xs dark:border-dark-600"
+              class="space-y-1 border-t border-gray-100 bg-gray-50 px-3 py-2 font-mono text-xs dark:border-dark-600 dark:bg-gray-900"
             >
               <div
                 v-for="result in row.protocols"
@@ -132,7 +132,7 @@
                 </span>
                 <!-- FORK-ANCHOR: batch-test-body-neutral-color (二开：正文用中性色，颜色只留给协议状态，绿色会被当成「返回值」)
                      成功/失败只靠左侧状态标签和失败行的红底区分，正文本身不着色。 -->
-                <span class="min-w-0 flex-1 whitespace-pre-wrap break-all text-gray-300">
+                <span class="min-w-0 flex-1 whitespace-pre-wrap break-all text-gray-700 dark:text-gray-300">
                   <template v-if="result.success === null && result.probing">{{ t('admin.accounts.batchTest.testing') }}</template>
                   <template v-else-if="result.success === null">{{ t('admin.accounts.batchTest.pending') }}</template>
                   <template v-else-if="result.success === false && result.error">{{ result.error }}</template>
@@ -313,10 +313,11 @@ const protocolClass = (result: ProtocolResult) => {
 // FORK-ANCHOR: batch-test-protocol-probing-class (二开：探测中即「测试中」中间态)
 const protocolProbing = (result: ProtocolResult) => result.probing && result.success === null
 
+// FORK-ANCHOR: batch-test-body-theme-aware (二开：正文区跟随主题，浅色下不再是一块深色终端)
 const protocolTextClass = (result: ProtocolResult) => {
-  if (result.success === true) return 'text-green-300'
-  if (result.success === false) return 'text-red-300'
-  if (protocolProbing(result)) return 'text-amber-300'
+  if (result.success === true) return 'text-green-600 dark:text-green-300'
+  if (result.success === false) return 'text-red-600 dark:text-red-300'
+  if (protocolProbing(result)) return 'text-amber-600 dark:text-amber-300'
   return 'text-gray-500'
 }
 
