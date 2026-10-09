@@ -19,5 +19,8 @@ func TestAllPlatformsIncludesEveryConcretePlatform(t *testing.T) {
 		"minimax",
 		"opencode_go",
 		"typesafe",
+		"ag_hub", // FORK-ANCHOR: ag-hub-platform-registry (二开：聚合中转登记进平台清单)
+		"command_code",
+		"cline",
 	}, AllPlatforms())
 }

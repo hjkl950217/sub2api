@@ -1337,6 +1337,8 @@ function generateRoutedCodexFiles(
     ag_hub: '聚合中转', // FORK-ANCHOR: ag-hub-label (二开：聚合中转显示名)
     opencode_go: 'OpenCode',
     typesafe: 'TypeSafe / Jev',
+    command_code: 'Command Code',
+    cline: 'Cline',
     composite: 'Composite'
   }
   const label = labels[platform]

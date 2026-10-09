@@ -30,13 +30,19 @@ const (
 	PlatformMiniMax  = "minimax"  // MiniMax (M 系列)
 	PlatformTypeSafe = "typesafe" // TypeSafe AI System One (Jev)
 	// PlatformOpenCodeGo 是 OpenCode 平台（账号类型 Zen 按量 / Go 订阅）。
-	// 值保持 opencode_go 以兼容已落库的分组、配额与 Composite 路由 CHECK。
+	// 值保持 opencode_go 以兼容已落库的账号、分组、配额与 Composite 路由。
 	PlatformOpenCodeGo = "opencode_go"
-	PlatformComposite  = "composite"
+	// PlatformCommandCode 是 Command Code Provider API（多模型聚合，积分计费，
+	// 订阅套餐另有 5 小时 / 每周滚动窗口）。
+	PlatformCommandCode = "command_code"
+	// PlatformCline 是 Cline API（多模型聚合，OpenAI 兼容 Chat Completions；按量积分计费，
+	// 另有 ClinePass 订阅）。
+	PlatformCline = "cline"
 	// FORK-ANCHOR: ag-hub-platform-constant (二开：聚合中转平台常量)
 	// PlatformAggregateHub 是聚合中转平台（中转站提供多协议端点）。
 	// 只支持 API Key，支持三协议复选（chat_completions / anthropic / responses）。
 	PlatformAggregateHub = "ag_hub"
+	PlatformComposite    = "composite"
 )
 
 // Account mode constants 区分国产供应商的「按量付费（余额）」与「Coding Plan」两种接入方式。

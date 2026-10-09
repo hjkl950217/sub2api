@@ -5,6 +5,7 @@
         <div class="flex flex-wrap-reverse items-start justify-between gap-3">
           <!-- FORK-ANCHOR: account-search-debounce（搜索框单独 500ms 防抖，勿删） -->
           <AccountTableFilters
+            class="lg:w-auto lg:flex-1"
             v-model:searchQuery="params.search"
             :filters="params"
             :groups="groups"

@@ -163,7 +163,7 @@
         </div>
         <!-- Multi-protocol API-key providers: DeepSeek / 聚合中转 / Kimi / Zhipu GLM / OpenCode / TypeSafe / MiniMax -->
         <!-- FORK-ANCHOR: create-platform-row2-order (二开：第 2 行平台按钮按常用度重排，MiniMax 留在行末) -->
-        <div class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
+        <div class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700" data-testid="platform-row-cn">
           <button
             type="button"
             @click="selectCNPlatform('deepseek')"
@@ -219,6 +219,7 @@
           </button>
           <button
             type="button"
+            data-testid="platform-button-opencode_go"
             @click="selectOpenCodeGoPlatform()"
             :class="[
               'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
@@ -230,6 +231,8 @@
             <PlatformIcon platform="opencode_go" size="sm" />
             OpenCode
           </button>
+          <!-- 没有专属界面的多协议供应商：通用表单（模式 / 协议 / 端点来自 profile） -->
+          <!-- FORK-ANCHOR: create-typesafe-row2 (二开：TypeSafe / Jev 仍留在第 2 行，保持长空点名的第二行顺序) -->
           <button
             type="button"
             @click="selectTypeSafePlatform()"
@@ -242,6 +245,22 @@
           >
             <PlatformIcon platform="typesafe" size="sm" />
             TypeSafe / Jev
+          </button>
+          <button
+            v-for="spec in extraMultiProtocolPlatforms"
+            :key="spec.id"
+            type="button"
+            :data-testid="`platform-button-${spec.id}`"
+            @click="selectGenericMultiProtocolPlatform(spec.id)"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === spec.id
+                ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-600 dark:text-primary-400'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <PlatformIcon :platform="spec.id" size="sm" />
+            {{ spec.display_name }}
           </button>
           <button
             type="button"
@@ -560,6 +579,35 @@
         </div>
       </div>
 
+      <!-- Account Mode Selection (providers using the generic form) -->
+      <div v-if="isGenericMultiProtocolPlatform && genericAccountModes.length > 1" data-testid="generic-account-mode">
+        <label class="input-label">{{ t('admin.accounts.cnProviders.accountMode.title') }}</label>
+        <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <button
+            v-for="mode in genericAccountModes"
+            :key="mode"
+            type="button"
+            @click="accountMode = mode"
+            :class="[
+              'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+              accountMode === mode
+                ? cnAccentActiveClass
+                : 'border-gray-200 hover:border-gray-400 dark:border-dark-600 dark:hover:border-gray-600'
+            ]"
+          >
+            <div
+              :class="[
+                'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+                accountMode === mode ? cnAccentIconClass : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+              ]"
+            >
+              <Icon name="creditCard" size="sm" />
+            </div>
+            <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ providerModeLabel(mode, t) }}</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Account Mode Selection (Kimi / Zhipu / DeepSeek / 聚合中转) -->
       <!-- FORK-ANCHOR: create-ag-hub-account-mode (二开：聚合中转与 deepseek 一样显示按量付费档) -->
       <div v-if="(isCNPlatform && !isOpenCodeGoPlatform) || form.platform === 'ag_hub'">
@@ -696,7 +744,7 @@
                   v-if="form.platform !== 'ag_hub'"
                   class="mt-2"
                   :platform="cnPresetPlatform"
-                  :mode="accountMode"
+                  :mode="cnPresetMode"
                   :protocol="item.value"
                   :current-url="adaptiveBaseUrls[item.value]"
                   @select="onCnPresetSelect"
@@ -1495,7 +1543,7 @@
             v-if="isCNPlatform && !isOpenCodeGoPlatform"
             class="mt-2"
             :platform="cnPresetPlatform"
-            :mode="accountMode"
+            :mode="cnPresetMode"
             :protocol="apiProtocol"
             :current-url="apiKeyBaseUrl"
             @select="onCnPresetSelect"
@@ -1517,11 +1565,15 @@
               />
             </div>
           </div>
+          <p v-if="!cnSupportsNativeResponses(form.platform, currentOpenCodeOrCNMode())" class="input-hint">
+            {{ t('admin.accounts.cnProviders.apiProtocol.responsesFallbackDesc') }}
+          </p>
         </div>
         <OpenCodeGoProtocolRulesEditor
-          v-if="isOpenCodeGoPlatform && apiProtocol === 'adaptive'"
+          v-if="routesByModel && apiProtocol === 'adaptive'"
           v-model:rows="openCodeGoProtocolRules"
-          :plan="openCodeAccountMode"
+          :platform="form.platform"
+          :plan="currentOpenCodeOrCNMode()"
         />
         <div>
           <label class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
@@ -4073,21 +4125,28 @@ import {
   defaultCNBaseUrl,
   defaultFallbackProtocol,
   defaultOpenCodeProtocolRules,
+  defaultProviderProtocolRules,
   isCNProviderPlatform,
   isCnNativeProtocol,
   legacyProtocolFromSelection,
   normalizeCnProtocols,
   isHeaderOverrideCapable,
+  isMultiProtocolApiKeyPlatform,
+  providerAccountModes,
+  providerModeLabel,
+  providerNativeProtocols,
+  providerRoutesByModel,
+  resolveProviderAccountMode,
   validateHeaderOverrideRows,
   type CnAccountMode,
   type CnApiProtocol,
   type CnNativeApiProtocol,
   type CnProviderPlatform,
-  type AdaptivePresetPlatform,
   type HeaderOverrideRow,
   type OpenCodeAccountMode,
   type OpenCodeGoProtocolRule
 } from '@/components/account/credentialsBuilder'
+import { listPlatforms } from '@/constants/platformCatalog'
 import {
   formatDateTimeLocalInput,
   getBrowserTimeZone,
@@ -4153,7 +4212,8 @@ const baseUrlHint = computed(() => {
 const apiKeyHint = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.openai.apiKeyHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.apiKeyHint')
-  if (form.platform === 'grok') return ''
+  // Grok 与多协议供应商没有对应的说明文案；通用文案指 Claude Console Key。
+  if (form.platform === 'grok' || isMultiProtocolPlatform.value) return ''
   return t('admin.accounts.apiKeyHint')
 })
 
@@ -4197,7 +4257,7 @@ const apiKeyValuePlaceholder = computed(() => {
     case 'typesafe':
       return 'ts-...'
     default:
-      return 'sk-ant-...'
+      return isMultiProtocolPlatform.value ? 'sk-...' : 'sk-ant-...'
   }
 })
 
@@ -4285,7 +4345,8 @@ const apiKeyValue = ref('')
 const upstreamBillingAutoProbeEnabled = ref(true)
 
 // ── 国产供应商（Kimi / Zhipu / DeepSeek）账号类型、API 协议与端点 ──
-const accountMode = ref<CnAccountMode>('payg')
+// 多协议供应商（国产厂商与走通用表单的供应商）的接入模式；OpenCode 用 openCodeAccountMode。
+const accountMode = ref<string>('payg')
 const openCodeAccountMode = ref<OpenCodeAccountMode>('zen')
 // API 协议决定转发端点与格式：cc=现有转换链，anthropic=原生直通（Claude Code），
 // responses=deepseek / kimi 原生 Responses 端点（Codex）。与账号类型正交。
@@ -4307,18 +4368,39 @@ const adaptiveBaseUrls = ref<Record<CnNativeApiProtocol, string>>({
 })
 const isCNPlatform = computed(() => isCNProviderPlatform(form.platform))
 const isOpenCodeGoPlatform = computed(() => form.platform === 'opencode_go')
-// FORK-ANCHOR: create-ag-hub-multi-protocol (二开：聚合中转也是多协议平台)
-const isMultiProtocolPlatform = computed(() => isCNPlatform.value || isOpenCodeGoPlatform.value || form.platform === 'ag_hub')
+const isMultiProtocolPlatform = computed(() => isMultiProtocolApiKeyPlatform(form.platform))
 // FORK-ANCHOR: create-openai-protocol-select-platform (二开：openai API Key 账号启用协议复选卡片)
 // openai 平台的 API Key 账号（中转站）可能只支持 chat 或只支持 responses，用与国产
 // 供应商相同的复选 + 兜底交互声明支持集合；OAuth 账号不适用。
 const isOpenAIProtocolSelectPlatform = computed(
   () => form.platform === 'openai' && accountCategory.value === 'apikey'
 )
+// FORK-ANCHOR: create-ag-hub-multi-protocol (二开：聚合中转与国产供应商共用复选表单)
 const isProtocolMultiselectPlatform = computed(
   () => isCNPlatform.value || isOpenAIProtocolSelectPlatform.value || form.platform === 'ag_hub'
 )
-function currentOpenCodeOrCNMode(): CnAccountMode | OpenCodeAccountMode {
+// FORK-ANCHOR: create-ag-hub-uses-cn-form (二开：聚合中转沿用国产供应商的复选表单，不走通用表单)
+const isGenericMultiProtocolPlatform = computed(
+  () =>
+    isMultiProtocolPlatform.value &&
+    !isCNPlatform.value &&
+    !isOpenCodeGoPlatform.value &&
+    form.platform !== 'ag_hub'
+)
+// FORK-ANCHOR: create-ag-hub-excluded-from-extras (二开：聚合中转已有专属按钮，不再由清单兜底渲染)
+const extraMultiProtocolPlatforms = computed(() =>
+  listPlatforms().filter(
+    spec =>
+      !!spec.multi_protocol &&
+      !isCNProviderPlatform(spec.id) &&
+      spec.id !== 'opencode_go' &&
+      spec.id !== 'ag_hub'
+  )
+)
+const genericAccountModes = computed(() => providerAccountModes(form.platform))
+// 按模型分流的供应商（OpenCode 等）：adaptive 账号携带 protocol_rules。
+const routesByModel = computed(() => providerRoutesByModel(form.platform))
+function currentOpenCodeOrCNMode(): string {
   return isOpenCodeGoPlatform.value ? openCodeAccountMode.value : accountMode.value
 }
 // CnBaseUrlPresets 的 platform prop 是平台字面量联合类型，模板里不能写
@@ -4329,11 +4411,10 @@ const cnPresetPlatform = computed<CnProviderPlatform>(() => {
   }
   return 'kimi'
 })
-const adaptivePresetPlatform = computed<AdaptivePresetPlatform>(() => {
-  if (form.platform === 'opencode_go') return 'opencode_go'
-  if (form.platform === 'ag_hub') return 'ag_hub'
-  return cnPresetPlatform.value
-})
+// FORK-ANCHOR: create-adaptive-preset-platform (二开：多协议平台一律按自身平台取端点预设，不再回落 CN 预设)
+const adaptivePresetPlatform = computed<string>(() =>
+  isMultiProtocolPlatform.value ? form.platform : cnPresetPlatform.value
+)
 // 当前平台可选的协议档（responses 仅 deepseek / kimi）。
 const cnProtocolOptions = computed<Array<{ value: CnApiProtocol; labelKey: string }>>(() => {
   const opts: Array<{ value: CnApiProtocol; labelKey: string }> = [
@@ -4424,7 +4505,7 @@ function toggleCnProtocol(protocol: CnNativeApiProtocol): void {
 }
 // 新选 CN 平台/模式：默认勾选该平台支持的全部协议，兜底取优先顺序第一个。
 // FORK-ANCHOR: create-ag-hub-protocol-defaults (二开：聚合中转走同一默认勾选逻辑)
-function applyDefaultCnProtocolSelection(platform: CnProviderPlatform | 'ag_hub'): void {
+function applyDefaultCnProtocolSelection(platform: string): void {
   apiProtocols.value = normalizeCnProtocols(CN_API_PROTOCOLS, platform)
   fallbackProtocol.value = defaultFallbackProtocol(apiProtocols.value)
 }
@@ -4435,10 +4516,10 @@ function applyDefaultOpenAIProtocolSelection(): void {
   fallbackProtocol.value = defaultFallbackProtocol(apiProtocols.value)
 }
 
-function resetAdaptiveBaseUrls(
-  platform: AdaptivePresetPlatform,
-  mode: CnAccountMode | OpenCodeAccountMode
-) {
+// 国产厂商的接入模式只有 payg / coding（selectCNPlatform 已按 profile 规范化）。
+const cnPresetMode = computed<CnAccountMode>(() => (accountMode.value === 'coding' ? 'coding' : 'payg'))
+
+function resetAdaptiveBaseUrls(platform: string, mode: string) {
   adaptiveBaseUrls.value = defaultCNAdaptiveBaseUrls(platform, mode)
   // FORK-ANCHOR: create-cn-protocol-defaults-on-reset (切换平台/账号类型时重置勾选与兜底默认值)
   if (platform !== 'opencode_go') applyDefaultCnProtocolSelection(platform)
@@ -4483,9 +4564,9 @@ function selectCNPlatform(platform: CnProviderPlatform) {
   form.type = 'apikey'
   accountCategory.value = 'apikey'
   apiProtocol.value = 'adaptive'
-  if (platform === 'deepseek') {
-    accountMode.value = 'payg'
-  }
+  // deepseek 无 coding 套餐（profile 仅 payg）；从其他供应商切换来的未知模式回落默认模式。
+  accountMode.value = resolveProviderAccountMode(platform, accountMode.value)
+  apiKeyBaseUrl.value = defaultCNBaseUrl(platform, accountMode.value, apiProtocol.value)
   resetAdaptiveBaseUrls(platform, accountMode.value)
   // FORK-ANCHOR: create-cn-platform-default-protocols (选 CN 平台时默认勾选全部支持协议并同步 base url)
   apiKeyBaseUrl.value = adaptiveBaseUrls.value[fallbackProtocol.value as CnNativeApiProtocol] ||
@@ -4514,8 +4595,19 @@ function selectAgHubPlatform() {
   form.type = 'apikey'
   accountCategory.value = 'apikey'
   apiProtocol.value = 'adaptive'
+  accountMode.value = resolveProviderAccountMode('ag_hub', undefined)
   resetAdaptiveBaseUrls('ag_hub', accountMode.value)
   apiKeyBaseUrl.value = adaptiveBaseUrls.value[fallbackProtocol.value as CnNativeApiProtocol] || ''
+}
+function selectGenericMultiProtocolPlatform(platform: string) {
+  form.platform = platform
+  form.type = 'apikey'
+  accountCategory.value = 'apikey'
+  apiProtocol.value = 'adaptive'
+  accountMode.value = resolveProviderAccountMode(platform, undefined)
+  apiKeyBaseUrl.value = defaultCNBaseUrl(platform, accountMode.value, apiProtocol.value)
+  resetAdaptiveBaseUrls(platform, accountMode.value)
+  openCodeGoProtocolRules.value = cloneOpenCodeGoProtocolRules(defaultProviderProtocolRules(platform, accountMode.value))
 }
 // 账号类型 / 协议变更时同步默认 base url。
 watch(openCodeAccountMode, (mode, previousMode) => {
@@ -4539,6 +4631,12 @@ watch(openCodeAccountMode, (mode, previousMode) => {
 })
 watch(accountMode, (mode, previousMode) => {
   if (!isMultiProtocolPlatform.value || isOpenCodeGoPlatform.value) return
+  if (routesByModel.value) {
+    const previousRules = JSON.stringify(defaultProviderProtocolRules(form.platform, previousMode))
+    if (JSON.stringify(openCodeGoProtocolRules.value) === previousRules) {
+      openCodeGoProtocolRules.value = cloneOpenCodeGoProtocolRules(defaultProviderProtocolRules(form.platform, mode))
+    }
+  }
   if (apiProtocol.value === 'adaptive') {
     const previousDefaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, previousMode)
     const nextDefaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, mode)
@@ -5112,8 +5210,7 @@ watch(
   () => form.platform,
   (newPlatform) => {
     // Reset base URL based on platform
-    // FORK-ANCHOR: create-ag-hub-platform-watch (二开：切到聚合中转也重置端点与协议勾选)
-    if (isCNProviderPlatform(newPlatform) || newPlatform === 'opencode_go' || newPlatform === 'ag_hub') {
+    if (isMultiProtocolApiKeyPlatform(newPlatform)) {
       const mode = newPlatform === 'opencode_go' ? openCodeAccountMode.value : accountMode.value
       // FORK-ANCHOR: create-cn-platform-watch-reset (切换平台时重置端点与协议勾选默认值)
       resetAdaptiveBaseUrls(newPlatform, mode)
@@ -6089,8 +6186,7 @@ const handleSubmit = async () => {
   // 国产供应商：账号模式 + 协议 + 对应端点写入凭据；后端按 account_mode 路由
   // 额度/余额探测，按 api_protocol 路由转发端点与格式。注意 CN apikey 走本函数
   // 的通用路径（直接 doCreateAccount），不经过 createAccountAndFinish。
-  // FORK-ANCHOR: create-ag-hub-credentials (二开：聚合中转按 CN 字段契约写入三协议)
-  if (isCNProviderPlatform(form.platform) || form.platform === 'opencode_go' || form.platform === 'ag_hub') {
+  if (isMultiProtocolApiKeyPlatform(form.platform)) {
     credentials.account_mode = form.platform === 'opencode_go' ? openCodeAccountMode.value : accountMode.value
     credentials.api_protocol = apiProtocol.value
     // FORK-ANCHOR: create-cn-protocol-credentials (按字段契约写入 api_protocols/fallback_protocol/api_base_urls/base_url)
@@ -6122,8 +6218,9 @@ const handleSubmit = async () => {
         form.platform === 'opencode_go' ? openCodeAccountMode.value : accountMode.value
       )
       const protocolBaseUrls: Record<string, string> = {}
-      for (const item of cnAdaptiveProtocolOptions.value) {
-        protocolBaseUrls[item.value] = (adaptiveBaseUrls.value[item.value] || defaults[item.value]).trim()
+      // FORK-ANCHOR: create-generic-endpoint-protocol-filter (二开：通用表单只写该供应商 profile 里确实存在的协议端点)
+      for (const protocol of providerNativeProtocols(form.platform, currentOpenCodeOrCNMode())) {
+        protocolBaseUrls[protocol] = (adaptiveBaseUrls.value[protocol] || defaults[protocol]).trim()
       }
       credentials.api_base_urls = protocolBaseUrls
       credentials.base_url = protocolBaseUrls.chat_completions
@@ -6141,7 +6238,7 @@ const handleSubmit = async () => {
       if (zhipuOrganization.value.trim()) credentials.zhipu_organization = zhipuOrganization.value.trim()
       if (zhipuProject.value.trim()) credentials.zhipu_project = zhipuProject.value.trim()
     }
-    if (form.platform === 'opencode_go') {
+    if (providerRoutesByModel(form.platform)) {
       applyOpenCodeGoProtocolRules(credentials, openCodeGoProtocolRules.value, 'create')
     }
   }
