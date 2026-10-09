@@ -689,7 +689,9 @@
                   :data-testid="`cn-adaptive-base-url-${item.value}`"
                 />
                 <!-- FORK-ANCHOR: create-cn-endpoint-presets (已勾选协议端点保留快捷预设填充) -->
+                <!-- FORK-ANCHOR: create-ag-hub-endpoint-no-presets (二开：聚合中转无官方端点，不显示预设按钮，避免点击把账号类型切成预设档) -->
                 <CnBaseUrlPresets
+                  v-if="form.platform !== 'ag_hub'"
                   class="mt-2"
                   :platform="cnPresetPlatform"
                   :mode="accountMode"

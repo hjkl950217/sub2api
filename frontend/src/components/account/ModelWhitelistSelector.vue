@@ -211,7 +211,9 @@ const upstreamSyncPlatforms = new Set([
   'zhipu',
   'deepseek',
   'minimax',
-  'opencode_go'
+  'opencode_go',
+  // FORK-ANCHOR: ag-hub-sync-upstream-models (二开：聚合中转支持同步上游模型)
+  'ag_hub'
 ])
 const canSyncUpstream = computed(() => {
   if (props.accountId) {
