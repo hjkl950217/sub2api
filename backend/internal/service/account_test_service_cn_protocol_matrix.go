@@ -42,6 +42,11 @@ const accountTestContentContextKey = "account_test_content"
 // 协议矩阵下三个协议的正文要按协议分开显示，不能各自流式灌进同一个输出框。
 const accountTestSuppressContentContextKey = "account_test_suppress_content"
 
+// accountTestFirstByteContextKey 挂一个 *time.Time。sendEvent 收到第一条 content
+// 事件时打点，协议矩阵据此算出「首字响应」耗时；完整耗时用探针前后的时间差。
+// FORK-ANCHOR: protocol-probe-timing-context (二开：逐协议首字/完整耗时打点)
+const accountTestFirstByteContextKey = "account_test_first_byte"
+
 // cnProtocolProbeOrder 探测顺序，与前端协议卡片顺序、兜底优先级一致。
 var cnProtocolProbeOrder = []string{APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses}
 
@@ -79,6 +84,9 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 		text     string
 		// errText 是探测函数推送到测试上下文 error 事件里的完整报错，探测失败时非空。
 		errText string
+		// FORK-ANCHOR: protocol-matrix-timing-result (二开：逐协议首字与完整耗时)
+		ttfb  time.Duration
+		total time.Duration
 	}
 	results := make(chan result, len(cnProtocolProbeOrder))
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
@@ -102,6 +110,9 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 			probeContext.Set(accountTestContentContextKey, contentBuilder)
 			errorBuilder := &strings.Builder{}
 			probeContext.Set(accountTestErrorContextKey, errorBuilder)
+			// FORK-ANCHOR: protocol-matrix-timing-probe (二开：首字打点，探针结束后算首字/完整耗时)
+			firstByte := time.Time{}
+			probeContext.Set(accountTestFirstByteContextKey, &firstByte)
 			probeAccount := *account
 			probeAccount.modelMappingCache = nil
 			probeAccount.modelMappingCacheReady = false
@@ -120,6 +131,7 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 			if !syncProtocols {
 				probeService.accountRepo = protocolProbeAccountRepository{AccountRepository: s.accountRepo}
 			}
+			start := time.Now()
 			var err error
 			switch protocol {
 			case APIProtocolAnthropic:
@@ -129,7 +141,12 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 			default:
 				err = probeService.testCNProviderChatCompletionsConnection(probeContext, &probeAccount, modelID, prompt)
 			}
-			results <- result{protocol: protocol, err: err, text: contentBuilder.String(), errText: errorBuilder.String()}
+			total := time.Since(start)
+			var ttfb time.Duration
+			if !firstByte.IsZero() {
+				ttfb = firstByte.Sub(start)
+			}
+			results <- result{protocol: protocol, err: err, text: contentBuilder.String(), errText: errorBuilder.String(), ttfb: ttfb, total: total}
 		}(protocol)
 	}
 
@@ -141,6 +158,9 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 			passed = append(passed, result.protocol)
 		}
 		event := TestEvent{Type: "protocol_result", Protocol: result.protocol, ProtocolOK: forkBoolPtr(ok), Text: result.text}
+		// FORK-ANCHOR: protocol-matrix-timing-event (二开：逐协议首字/完整耗时随 protocol_result 回传)
+		event.FirstByteMS = result.ttfb.Milliseconds()
+		event.TotalMS = result.total.Milliseconds()
 		if result.err != nil {
 			event.Error = result.err.Error()
 		}
@@ -189,6 +209,10 @@ func (s *AccountTestService) probeCNProviderProtocolsConnectionSequential(c *gin
 		errorBuilder := &strings.Builder{}
 		c.Set(accountTestErrorContextKey, errorBuilder)
 		s.sendEvent(c, TestEvent{Type: "protocol_probe", Protocol: protocol})
+		// FORK-ANCHOR: protocol-matrix-timing-seq (二开：串行路径同样打点，前端显示首字/完整耗时)
+		firstByte := time.Time{}
+		c.Set(accountTestFirstByteContextKey, &firstByte)
+		start := time.Now()
 		var err error
 		switch protocol {
 		case APIProtocolAnthropic:
@@ -198,11 +222,16 @@ func (s *AccountTestService) probeCNProviderProtocolsConnectionSequential(c *gin
 		default:
 			err = s.testCNProviderChatCompletionsConnection(c, account, modelID, prompt)
 		}
+		total := time.Since(start)
 		if err == nil {
 			passed = append(passed, protocol)
 		}
 		// FORK-ANCHOR: protocol-matrix-error-event-seq (二开：串行路径也把完整报错带回去)
 		seqEvent := TestEvent{Type: "protocol_result", Protocol: protocol, ProtocolOK: forkBoolPtr(err == nil), Text: contentBuilder.String()}
+		seqEvent.TotalMS = total.Milliseconds()
+		if !firstByte.IsZero() {
+			seqEvent.FirstByteMS = firstByte.Sub(start).Milliseconds()
+		}
 		if err != nil {
 			seqEvent.Error = err.Error()
 		}

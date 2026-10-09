@@ -76,6 +76,10 @@ type TestEvent struct {
 	ProtocolOK *bool `json:"protocol_ok,omitempty"`
 	// ProtocolApplied 仅在 test_complete 上出现，表示探测结果是否已写回账号配置。
 	ProtocolApplied bool `json:"protocol_applied,omitempty"`
+	// FORK-ANCHOR: protocol-result-timing (二开：逐协议耗时，前端在状态与正文之间显示「首字/完整」)
+	// FirstByteMS 是首字响应耗时，TotalMS 是完整响应耗时，单位毫秒；0 表示没测到。
+	FirstByteMS int64 `json:"first_byte_ms,omitempty"`
+	TotalMS     int64 `json:"total_ms,omitempty"`
 }
 
 // AccountTestOptions carries optional media for admin connectivity tests.
@@ -3331,6 +3335,12 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 		}
 	}
 	if event.Type == "content" && event.Text != "" {
+		// FORK-ANCHOR: protocol-first-byte-stamp (二开：首字响应打点，协议矩阵据此算「首字耗时」)
+		if marker, ok := c.Get(accountTestFirstByteContextKey); ok {
+			if stamp, ok := marker.(*time.Time); ok && stamp != nil && stamp.IsZero() {
+				*stamp = time.Now()
+			}
+		}
 		if collector, ok := c.Get(accountTestContentContextKey); ok {
 			if builder, ok := collector.(*strings.Builder); ok {
 				builder.WriteString(event.Text)

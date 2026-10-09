@@ -344,12 +344,36 @@ describe('AccountBatchTestModal', () => {
     await row.get('[data-testid="batch-protocol-toggle-1-chat_completions"]').trigger('click')
     expect(chatLine.findAll('.line-clamp-2')).toHaveLength(0)
     expect(anthropicLine.findAll('.line-clamp-2')).toHaveLength(1)
+    // 展开后按钮变「收起」，还能收回去（不会展开一次就收不回）
+    expect(row.get('[data-testid="batch-protocol-toggle-1-chat_completions"]').text()).toBe(
+      'admin.accounts.batchTest.collapse'
+    )
 
     // 正文不着色：状态色只留在左侧标签上，避免绿色被当成返回值
     const body = chatLine.findAll('span').at(-1)!
     expect(body.text()).toBe(longBody)
     expect(body.classes()).toContain('text-gray-700')
     expect(body.classes()).not.toContain('text-green-300')
+  })
+
+  // FORK-ANCHOR: batch-test-timing-spec (二开：状态与正文之间显示「首字/完整」耗时)
+  it('协议行在状态与正文之间显示首字/完整耗时', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_result","account_id":1,"protocol":"chat_completions","protocol_ok":true,"text":"hello","first_byte_ms":120,"total_ms":1230}\n',
+        'data: {"type":"batch_test_complete","account_id":1,"success":true}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({ show: false, accountIds: [1, 2, 3] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="batch-test-start-button"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="batch-protocol-timing-1-chat_completions"]').text()).toBe('0.1s/1.2s')
   })
 
   // FORK-ANCHOR: batch-test-header-short-status-spec (二开：行头只显示短状态，完整报错不挤在调度开关旁)

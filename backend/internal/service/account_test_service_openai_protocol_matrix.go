@@ -16,6 +16,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
@@ -111,6 +112,10 @@ func (s *AccountTestService) probeOpenAIAPIKeyProtocolsConnection(c *gin.Context
 		c.Set(accountTestErrorContextKey, errorBuilder)
 		s.sendEvent(c, TestEvent{Type: "protocol_probe", Protocol: protocol})
 
+		// FORK-ANCHOR: protocol-matrix-timing-openai (二开：openai 两协议矩阵同样打点，前端显示首字/完整耗时)
+		firstByte := time.Time{}
+		c.Set(accountTestFirstByteContextKey, &firstByte)
+		start := time.Now()
 		probeAccount := cloneAccountForProtocolProbe(account)
 		var probeErr error
 		switch protocol {
@@ -120,10 +125,15 @@ func (s *AccountTestService) probeOpenAIAPIKeyProtocolsConnection(c *gin.Context
 		default:
 			probeErr = probeService.testOpenAIChatCompletionsConnection(c, probeAccount, testModelID, prompt, normalizedBaseURL, authToken)
 		}
+		total := time.Since(start)
 		if probeErr == nil {
 			passed = append(passed, protocol)
 		}
 		event := TestEvent{Type: "protocol_result", Protocol: protocol, ProtocolOK: forkBoolPtr(probeErr == nil), Text: contentBuilder.String()}
+		event.TotalMS = total.Milliseconds()
+		if !firstByte.IsZero() {
+			event.FirstByteMS = firstByte.Sub(start).Milliseconds()
+		}
 		if probeErr != nil {
 			event.Error = probeErr.Error()
 		}

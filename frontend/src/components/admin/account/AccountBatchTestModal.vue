@@ -109,7 +109,7 @@
               <div
                 v-for="result in row.protocols"
                 :key="`line-${result.protocol}`"
-                class="flex items-start gap-2 rounded px-1 py-0.5"
+                class="flex items-center gap-1 rounded px-1 py-0.5"
                 :class="result.success === false ? 'bg-red-500/10' : ''"
                 :data-testid="`batch-protocol-line-${row.id}-${result.protocol}`"
               >
@@ -121,6 +121,14 @@
                 </span>
                 <span class="shrink-0 text-[11px]" :class="protocolTextClass(result)">
                   {{ protocolStatusLabel(result) }}
+                </span>
+                <!-- FORK-ANCHOR: batch-test-timing-display (二开：状态与正文之间显示「首字/完整」耗时) -->
+                <span
+                  v-if="timingLabel(result)"
+                  class="shrink-0 text-[11px] text-gray-400"
+                  :data-testid="`batch-protocol-timing-${row.id}-${result.protocol}`"
+                >
+                  {{ timingLabel(result) }}
                 </span>
                 <!-- FORK-ANCHOR: batch-test-body-neutral-color (二开：正文用中性色，颜色只留给协议状态，绿色会被当成「返回值」)
                      成功/失败只靠左侧状态标签和失败行的红底区分，正文本身不着色。 -->
@@ -240,6 +248,9 @@ interface ProtocolResult {
   // FORK-ANCHOR: batch-test-protocol-expanded-field (二开：展开/收起是按「单个账号的单个协议」，
   // 长正文默认折叠 2 行，各自展开看全文)
   expanded: boolean
+  // FORK-ANCHOR: batch-test-protocol-timing-field (二开：首字响应 / 完整响应耗时，单位毫秒)
+  firstByteMs: number | null
+  totalMs: number | null
 }
 
 interface BatchRow {
@@ -346,9 +357,18 @@ const dashPlaceholder = '—'
 // FORK-ANCHOR: batch-test-protocol-line-clamp (二开：逐协议正文默认折叠 2 行，展开只针对这一条协议)
 const lineClampClass = (result: ProtocolResult) => (result.expanded ? '' : 'line-clamp-2')
 
-// 该条协议正文/报错较长时才给「展开」；还在跑的不给，避免测试中途按钮闪现。
+// 该条协议正文/报错较长时给「展开/收起」；是否已展开不影响按钮是否出现，
+// 否则展开一次就再也收不回去（FORK-ANCHOR: batch-test-toggle-always-visible）。
 const protocolLineTruncated = (result: ProtocolResult) =>
-  !result.expanded && (result.error || result.body || '').length > 120
+  (result.error || result.body || '').length > 120
+
+// FORK-ANCHOR: batch-test-protocol-timing (二开：状态与正文之间显示「首字/完整」耗时，如 0.1s/1.2s)
+const formatSeconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`
+const timingLabel = (result: ProtocolResult) => {
+  if (result.totalMs == null || result.totalMs <= 0) return ''
+  if (result.firstByteMs == null || result.firstByteMs <= 0) return formatSeconds(result.totalMs)
+  return `${formatSeconds(result.firstByteMs)}/${formatSeconds(result.totalMs)}`
+}
 
 // FORK-ANCHOR: batch-test-failed-with-body (二开：失败协议的报错去重辅助)
 // 报错现在只在逐协议行显示，这个辅助保留给行级失败判定用：失败协议的报错集合。
@@ -402,7 +422,7 @@ const loadPlan = async () => {
           status: 'idle',
           error: '',
           // 打开就按后端给的协议清单铺占位标签，测试推进时逐个变色
-          protocols: (account.protocols || []).map((protocol) => ({ protocol, success: null, probing: false, error: '', body: '', expanded: false })),
+          protocols: (account.protocols || []).map((protocol) => ({ protocol, success: null, probing: false, error: '', body: '', expanded: false, firstByteMs: null, totalMs: null })),
           rowFailure: '',
           schedulable: account.schedulable
         })
@@ -467,6 +487,8 @@ const startTest = async () => {
       result.error = ''
       result.body = ''
       result.expanded = false
+      result.firstByteMs = null
+      result.totalMs = null
     })
     row.rowFailure = ''
   })
@@ -531,6 +553,9 @@ const handleEvent = (event: {
   success?: boolean
   protocol?: string
   protocol_ok?: boolean
+  // FORK-ANCHOR: batch-test-protocol-timing-event-field (二开：逐协议耗时，毫秒)
+  first_byte_ms?: number
+  total_ms?: number
 }) => {
   if (typeof event.account_id !== 'number') return
   const row = rowsById.value.get(event.account_id)
@@ -554,7 +579,7 @@ const handleEvent = (event: {
         const target =
           probed ||
           (() => {
-            const created = { protocol: event.protocol as string, success: null, probing: false, error: '', body: '', expanded: false }
+            const created = { protocol: event.protocol as string, success: null, probing: false, error: '', body: '', expanded: false, firstByteMs: null, totalMs: null }
             row.protocols.push(created)
             return created
           })()
@@ -564,6 +589,9 @@ const handleEvent = (event: {
         target.error = event.error || ''
         // FORK-ANCHOR: batch-test-protocol-body-capture (二开：协议返回的正文单独存，逐协议行显示)
         target.body = event.text || ''
+        // FORK-ANCHOR: batch-test-protocol-timing-capture (二开：记下首字与完整耗时)
+        target.firstByteMs = typeof event.first_byte_ms === 'number' ? event.first_byte_ms : null
+        target.totalMs = typeof event.total_ms === 'number' ? event.total_ms : null
       }
       break
     case 'error':
@@ -595,6 +623,15 @@ const handleEvent = (event: {
         const hasProtocolFailure = row.protocols.some((result) => result.success === false)
         if (!row.rowFailure && !row.error && !hasProtocolFailure) {
           row.rowFailure = t('admin.accounts.batchTest.failed')
+        }
+      }
+      // FORK-ANCHOR: batch-test-finish-gate (二开：所有可测账号都出结论即视为这批结束，
+      // 不再干等 SSE 连接自己关闭——上游偶发不关连接会让按钮一直卡在「测试中」)
+      if (running.value) {
+        const eligible = rows.value.filter((item) => item.eligible)
+        if (eligible.length > 0 && eligible.every((item) => item.status === 'success' || item.status === 'error')) {
+          running.value = false
+          abortStream()
         }
       }
       break
