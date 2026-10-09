@@ -309,12 +309,13 @@ describe('AccountBatchTestModal', () => {
     expect(wrapper.get('[data-testid="batch-row-1"]').text()).toContain('hello-body')
   })
 
-  // FORK-ANCHOR: batch-test-single-toggle-spec (二开：一行只留一个展开/收起入口，正文不再着绿色)
-  it('同一行不会同时出现「展开」和「收起」，正文用中性色', async () => {
+  // FORK-ANCHOR: batch-test-per-protocol-toggle-spec (二开：展开/收起按账号下的每个协议各自独立)
+  it('展开/收起按每个账号的每个协议各自独立，正文用中性色', async () => {
     const longBody = 'x'.repeat(300)
     global.fetch = vi.fn().mockResolvedValue(
       createStreamResponse([
         `data: {"type":"protocol_result","account_id":1,"protocol":"chat_completions","protocol_ok":true,"text":"${longBody}"}\n`,
+        `data: {"type":"protocol_result","account_id":1,"protocol":"anthropic","protocol_ok":true,"text":"${longBody}"}\n`,
         'data: {"type":"batch_test_complete","account_id":1,"success":true}\n'
       ])
     ) as any
@@ -328,17 +329,51 @@ describe('AccountBatchTestModal', () => {
     await flushPromises()
 
     const row = wrapper.get('[data-testid="batch-row-1"]')
-    const texts = row.findAll('button').map((b) => b.text())
-    expect(texts.includes('admin.accounts.batchTest.expand') && texts.includes('admin.accounts.batchTest.collapse')).toBe(false)
-    // 逐协议正文不再二次折叠
-    expect(row.findAll('.line-clamp-2')).toHaveLength(0)
+    // 没有账号级展开入口，只有逐协议的
+    const toggles = row
+      .findAll('button')
+      .filter((b) => (b.attributes('data-testid') || '').startsWith('batch-protocol-toggle-'))
+    expect(toggles).toHaveLength(2)
+
+    const chatLine = row.get('[data-testid="batch-protocol-line-1-chat_completions"]')
+    const anthropicLine = row.get('[data-testid="batch-protocol-line-1-anthropic"]')
+    expect(chatLine.findAll('.line-clamp-2')).toHaveLength(1)
+    expect(anthropicLine.findAll('.line-clamp-2')).toHaveLength(1)
+
+    // 只展开 chat，anthropic 保持折叠
+    await row.get('[data-testid="batch-protocol-toggle-1-chat_completions"]').trigger('click')
+    expect(chatLine.findAll('.line-clamp-2')).toHaveLength(0)
+    expect(anthropicLine.findAll('.line-clamp-2')).toHaveLength(1)
 
     // 正文不着色：状态色只留在左侧标签上，避免绿色被当成返回值
-    const line = row.get('[data-testid="batch-protocol-line-1-chat_completions"]')
-    const body = line.findAll('span').at(-1)!
+    const body = chatLine.findAll('span').at(-1)!
     expect(body.text()).toBe(longBody)
     expect(body.classes()).toContain('text-gray-700')
     expect(body.classes()).not.toContain('text-green-300')
+  })
+
+  // FORK-ANCHOR: batch-test-header-short-status-spec (二开：行头只显示短状态，完整报错不挤在调度开关旁)
+  it('账号行头只显示短状态，完整报错不挤在调度开关旁', async () => {
+    const longError = 'Chat Completions API returned 502: ' + 'E'.repeat(300)
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        `data: {"type":"error","account_id":1,"error":"${longError}"}\n`,
+        'data: {"type":"batch_test_complete","account_id":1}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({ show: false, accountIds: [1, 2, 3] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="batch-test-start-button"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    const row = wrapper.get('[data-testid="batch-row-1"]')
+    const header = row.findAll('div')[0]
+    expect(header.text()).toContain('failed')
+    expect(header.text()).not.toContain(longError)
   })
 
   // FORK-ANCHOR: batch-test-protocol-probing-spec (二开：探测中的标签整套 amber，状态值不再是「待测试」)

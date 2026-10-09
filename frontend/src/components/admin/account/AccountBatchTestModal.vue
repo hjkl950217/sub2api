@@ -83,14 +83,6 @@
                 >
                   {{ shortProtocolLabel(result.protocol) }}
                 </span>
-                <button
-                  v-if="row.excerpt"
-                  type="button"
-                  class="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-300"
-                  @click="row.expanded = !row.expanded"
-                >
-                  {{ row.expanded ? t('admin.accounts.batchTest.collapse') : t('admin.accounts.batchTest.expand') }}
-                </button>
               </template>
               <span v-else class="text-xs text-gray-400">{{ row.reason }}</span>
 
@@ -111,7 +103,7 @@
             <!-- FORK-ANCHOR: batch-test-protocol-lines (二开：一个账号的每个协议各占一行，不再挤在同一行)
                  失败信息只在这里显示一次：失败协议优先显示完整报错，通过协议显示返回正文。 -->
             <div
-              v-if="row.eligible && row.expanded && row.protocols.length > 0"
+              v-if="row.eligible && row.protocols.length > 0"
               class="space-y-1 border-t border-gray-100 bg-gray-50 px-3 py-2 font-mono text-xs dark:border-dark-600 dark:bg-gray-900"
             >
               <div
@@ -132,13 +124,27 @@
                 </span>
                 <!-- FORK-ANCHOR: batch-test-body-neutral-color (二开：正文用中性色，颜色只留给协议状态，绿色会被当成「返回值」)
                      成功/失败只靠左侧状态标签和失败行的红底区分，正文本身不着色。 -->
-                <span class="min-w-0 flex-1 whitespace-pre-wrap break-all text-gray-700 dark:text-gray-300">
+                <span
+                  class="min-w-0 flex-1 whitespace-pre-wrap break-all text-gray-700 dark:text-gray-300"
+                  :class="lineClampClass(result)"
+                >
                   <template v-if="result.success === null && result.probing">{{ t('admin.accounts.batchTest.testing') }}</template>
                   <template v-else-if="result.success === null">{{ t('admin.accounts.batchTest.pending') }}</template>
                   <template v-else-if="result.success === false && result.error">{{ result.error }}</template>
                   <template v-else-if="result.body">{{ result.body }}</template>
                   <template v-else>{{ dashPlaceholder }}</template>
                 </span>
+                <!-- FORK-ANCHOR: batch-test-protocol-toggle (二开：展开/收起按「单个账号的单个协议」，
+                     长正文默认折叠 2 行，只展开这一条协议的结果) -->
+                <button
+                  v-if="protocolLineTruncated(result)"
+                  type="button"
+                  class="shrink-0 text-[11px] text-primary-600 hover:text-primary-700 dark:text-primary-300"
+                  :data-testid="`batch-protocol-toggle-${row.id}-${result.protocol}`"
+                  @click="result.expanded = !result.expanded"
+                >
+                  {{ result.expanded ? t('admin.accounts.batchTest.collapse') : t('admin.accounts.batchTest.expand') }}
+                </button>
               </div>
             </div>
 
@@ -231,6 +237,9 @@ interface ProtocolResult {
   error: string
   // FORK-ANCHOR: batch-test-protocol-body-field (二开：该协议返回的正文，失败时也保留)
   body: string
+  // FORK-ANCHOR: batch-test-protocol-expanded-field (二开：展开/收起是按「单个账号的单个协议」，
+  // 长正文默认折叠 2 行，各自展开看全文)
+  expanded: boolean
 }
 
 interface BatchRow {
@@ -242,12 +251,9 @@ interface BatchRow {
   status: 'idle' | 'running' | 'success' | 'error'
   error: string
   protocols: ProtocolResult[]
-  // 整账号的原始文本流（各协议事件按到达顺序拼接），展开详情时显示
-  excerpt: string
   // FORK-ANCHOR: batch-test-row-failure-field (二开：不属于任何协议的失败原因，如超时、无完成事件)
   // 逐协议报错挂在各自的 ProtocolResult.error 上，不重复进这里。
   rowFailure: string
-  expanded: boolean
   schedulable: boolean
 }
 
@@ -337,8 +343,13 @@ const shortProtocolLabel = (protocol: string) => {
 // 占位符：协议测通但没有正文时用它，避免该行看起来是空的
 const dashPlaceholder = '—'
 
-// FORK-ANCHOR: batch-test-single-toggle (二开：一行只留「展开/收起」一个入口，去掉逐协议正文的二次折叠，
-// 否则同一行会同时出现「收起」（行级）和「展开」（行内），看不懂在收哪个）
+// FORK-ANCHOR: batch-test-protocol-line-clamp (二开：逐协议正文默认折叠 2 行，展开只针对这一条协议)
+const lineClampClass = (result: ProtocolResult) => (result.expanded ? '' : 'line-clamp-2')
+
+// 该条协议正文/报错较长时才给「展开」；还在跑的不给，避免测试中途按钮闪现。
+const protocolLineTruncated = (result: ProtocolResult) =>
+  !result.expanded && (result.error || result.body || '').length > 120
+
 // FORK-ANCHOR: batch-test-failed-with-body (二开：失败协议的报错去重辅助)
 // 报错现在只在逐协议行显示，这个辅助保留给行级失败判定用：失败协议的报错集合。
 const failedProtocolErrors = (row: BatchRow) =>
@@ -353,7 +364,9 @@ const statusLabel = (row: BatchRow) => {
     case 'success':
       return t('admin.accounts.batchTest.passed')
     case 'error':
-      return row.error || t('admin.accounts.batchTest.failed')
+      // FORK-ANCHOR: batch-test-header-short-status (二开：行头只显示短状态，完整报错放在正文区与失败行，
+      // 否则调度开关旁边会糊上一整段上游 HTML 报错)
+      return t('admin.accounts.batchTest.failed')
     default:
       return t('admin.accounts.batchTest.pending')
   }
@@ -389,11 +402,8 @@ const loadPlan = async () => {
           status: 'idle',
           error: '',
           // 打开就按后端给的协议清单铺占位标签，测试推进时逐个变色
-          protocols: (account.protocols || []).map((protocol) => ({ protocol, success: null, probing: false, error: '', body: '' })),
-          excerpt: '',
+          protocols: (account.protocols || []).map((protocol) => ({ protocol, success: null, probing: false, error: '', body: '', expanded: false })),
           rowFailure: '',
-          // 默认展开，测试返回的正文不用再点一下才看得到
-          expanded: true,
           schedulable: account.schedulable
         })
       })
@@ -456,10 +466,9 @@ const startTest = async () => {
       result.success = null
       result.error = ''
       result.body = ''
+      result.expanded = false
     })
-    row.excerpt = ''
     row.rowFailure = ''
-    row.expanded = true
   })
   running.value = true
   abortStream()
@@ -545,7 +554,7 @@ const handleEvent = (event: {
         const target =
           probed ||
           (() => {
-            const created = { protocol: event.protocol as string, success: null, probing: false, error: '', body: '' }
+            const created = { protocol: event.protocol as string, success: null, probing: false, error: '', body: '', expanded: false }
             row.protocols.push(created)
             return created
           })()
@@ -556,12 +565,6 @@ const handleEvent = (event: {
         // FORK-ANCHOR: batch-test-protocol-body-capture (二开：协议返回的正文单独存，逐协议行显示)
         target.body = event.text || ''
       }
-      if (event.text) {
-        row.excerpt += `[${shortProtocolLabel(event.protocol || '')}]${event.text}\n`
-      }
-      break
-    case 'content':
-      if (event.text) row.excerpt += event.text
       break
     case 'error':
       row.status = 'error'
