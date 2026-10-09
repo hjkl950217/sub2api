@@ -1490,6 +1490,9 @@ func defaultModelIDsForPlatform(platform string) []string {
 		return service.DefaultOpenCodeGoModelIDs()
 	case service.PlatformTypeSafe:
 		return []string{"jev-latest"}
+	// FORK-ANCHOR: ag-hub-default-models (二开：聚合中转无静态默认模型列表，账号映射为空时回落空列表而非 claude 系列)
+	case service.PlatformAggregateHub:
+		return nil
 	case service.PlatformComposite:
 		ids := make([]string, 0)
 		seen := make(map[string]struct{})
