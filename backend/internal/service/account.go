@@ -1426,6 +1426,10 @@ func (a *Account) GetOpenAIBaseURL() string {
 		return DefaultMiniMaxBaseURL
 	case PlatformOpenCodeGo:
 		return a.openCodeDefaultChatBaseURL()
+	// FORK-ANCHOR: ag-hub-no-default-base-url (二开：聚合中转没有官方端点，不能回落 api.openai.com——
+	// 否则账号没填地址时会静默把请求发到 OpenAI，前端只看到「同步上游模型失败」)
+	case PlatformAggregateHub:
+		return ""
 	default:
 		return "https://api.openai.com"
 	}

@@ -801,7 +801,7 @@ func (s *AccountTestService) buildUpstreamModelsRequest(ctx context.Context, acc
 		// FORK-ANCHOR: ag-hub-upstream-models-require-base-url (二开：聚合中转无官方端点，
 		// base_url 为空时给可读的配置错误；不能回落 api.openai.com——那会变成 502「无法同步」)
 		if strings.TrimSpace(account.GetOpenAIFormatBaseURL()) == "" {
-			return nil, newUpstreamModelSyncConfigError("Aggregate hub account requires a base URL before syncing upstream models", nil)
+			return nil, newUpstreamModelSyncConfigError("聚合中转账号需要先填写端点地址再同步上游模型", nil)
 		}
 		return s.buildOpenAIUpstreamModelsRequest(ctx, account)
 	case account.IsGemini():
