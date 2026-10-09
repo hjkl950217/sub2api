@@ -294,3 +294,22 @@ func TestBuildAccountForCreateAcceptsTypeSafeAPIKeyWithProbeEnabled(t *testing.T
 	require.NoError(t, err)
 	require.Equal(t, true, account.Extra[UpstreamBillingProbeEnabledExtraKey])
 }
+
+// FORK-ANCHOR: test-ag-hub-probe-eligible (二开：聚合中转登记进平台清单后，创建账号时「自动探测上游声明倍率」不再被拒)
+// 回归：ag_hub 未登记进 domain 平台清单时，IsUpstreamBillingProbeIdentity 返回 false，
+// 新建 ag_hub 账号会以 400 UPSTREAM_BILLING_PROBE_ACCOUNT_INVALID 失败。
+func TestBuildAccountForCreateAcceptsAggregateHubAPIKeyWithProbeEnabled(t *testing.T) {
+	enabled := true
+	require.True(t, IsUpstreamBillingProbeIdentity(PlatformAggregateHub, AccountTypeAPIKey))
+	require.False(t, IsUpstreamBillingProbeIdentity(PlatformAggregateHub, AccountTypeOAuth))
+
+	account, err := buildAccountForCreate(&CreateAccountInput{
+		Name:         "聚合中转",
+		Platform:     PlatformAggregateHub,
+		Type:         AccountTypeAPIKey,
+		Credentials:  map[string]any{"api_key": "nb-key", "base_url": "https://relay.example/v1"},
+		ProbeEnabled: &enabled,
+	}, map[string]any{})
+	require.NoError(t, err)
+	require.Equal(t, true, account.Extra[UpstreamBillingProbeEnabledExtraKey])
+}
