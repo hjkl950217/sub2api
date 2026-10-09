@@ -476,6 +476,8 @@ export function getModelsByPlatform(platform: string): string[] {
       'hy4-preview', 'hy3', 'omen-alpha'
     ]
     case 'typesafe': return ['jev-latest']
+    // FORK-ANCHOR: ag-hub-default-models (二开：聚合中转不预填默认模型，靠「同步上游模型」拉真实列表；失败就报失败，不回退)
+    case 'ag_hub': return []
     case 'doubao': return doubaoModels
     case 'minimax': return minimaxModels
     case 'baidu': return baiduModels

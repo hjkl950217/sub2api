@@ -559,8 +559,9 @@
         </div>
       </div>
 
-      <!-- Account Mode Selection (Kimi / Zhipu / DeepSeek) -->
-      <div v-if="isCNPlatform && !isOpenCodeGoPlatform">
+      <!-- Account Mode Selection (Kimi / Zhipu / DeepSeek / 聚合中转) -->
+      <!-- FORK-ANCHOR: create-ag-hub-account-mode (二开：聚合中转与 deepseek 一样显示按量付费档) -->
+      <div v-if="(isCNPlatform && !isOpenCodeGoPlatform) || form.platform === 'ag_hub'">
         <label class="input-label">{{ t('admin.accounts.cnProviders.accountMode.title') }}</label>
         <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2" data-tour="account-form-mode">
           <!-- Pay-as-you-go (token balance) -->
@@ -589,9 +590,9 @@
               <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.cnProviders.accountMode.paygDesc') }}</span>
             </div>
           </button>
-          <!-- Coding Plan (kimi / zhipu only — DeepSeek has no coding plan) -->
+          <!-- Coding Plan (kimi / zhipu only — DeepSeek 与聚合中转没有 coding plan) -->
           <button
-            v-if="form.platform !== 'deepseek'"
+            v-if="form.platform !== 'deepseek' && form.platform !== 'ag_hub'"
             type="button"
             @click="accountMode = 'coding'"
             :class="[
@@ -672,7 +673,8 @@
           </div>
           <!-- FORK-ANCHOR: create-cn-endpoint-block (端点配置区移到「兜底转发协议」下方，只渲染已勾选协议) -->
           <!-- FORK-ANCHOR: create-openai-endpoint-block-skip (二开：openai 的 chat 与 responses 同域不同路径，不渲染分协议端点输入框) -->
-          <div v-if="isCNPlatform" class="mt-3">
+          <!-- FORK-ANCHOR: create-ag-hub-endpoint-block (二开：聚合中转无官方端点，渲染已勾选协议的 URL 输入框) -->
+          <div v-if="isCNPlatform || form.platform === 'ag_hub'" class="mt-3">
             <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.endpoints') }}</label>
             <p class="input-hint">{{ t('admin.accounts.cnProviders.apiProtocol.endpointsHint') }}</p>
             <div class="mt-2 space-y-3">
@@ -4366,10 +4368,11 @@ function cnProtocolIcon(protocol: CnNativeApiProtocol): CnProtocolIcon {
 const cnNativeProtocolOptions = computed<Array<{ value: CnNativeApiProtocol; labelKey: string; icon: CnProtocolIcon }>>(
   () => cnAdaptiveProtocolOptions.value.map(item => ({ ...item, icon: cnProtocolIcon(item.value) }))
 )
-// 端点输入区：CN 平台只渲染已勾选协议（顺序与卡片一致）；
+// 端点输入区：CN 平台与聚合中转只渲染已勾选协议（顺序与卡片一致）；
 // opencode_go 没有多选状态，仍渲染全部支持的原生协议端点（原行为）。
+// FORK-ANCHOR: create-ag-hub-endpoint-options (二开：聚合中转端点输入按已勾选集合过滤)
 const cnEndpointProtocolOptions = computed(() =>
-  isCNPlatform.value
+  isCNPlatform.value || form.platform === 'ag_hub'
     ? cnAdaptiveProtocolOptions.value.filter(item => apiProtocols.value.includes(item.value))
     : cnAdaptiveProtocolOptions.value
 )

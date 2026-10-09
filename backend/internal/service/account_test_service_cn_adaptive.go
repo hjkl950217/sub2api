@@ -77,6 +77,7 @@ func (s *AccountTestService) testCNProviderSelectedProtocolsConnection(c *gin.Co
 
 	c.Set(accountTestSuppressCompletionContextKey, true)
 	defer c.Set(accountTestSuppressCompletionContextKey, false)
+	hasFailure := false
 	// FORK-ANCHOR: cn-selected-protocol-events (二开：复选顺序测试逐协议发 probe/result 事件，
 	// 弹窗协议框靠这两个事件变色；顺序路径不发的话三张卡永远停在「未测试」)
 	for _, protocol := range protocols {
@@ -100,13 +101,13 @@ func (s *AccountTestService) testCNProviderSelectedProtocolsConnection(c *gin.Co
 		}
 		s.sendEvent(c, seqEvent)
 		c.Set(accountTestSuppressContentContextKey, false)
-		// 中间协议失败即终止：与原 return 语义一致，只是先发完 result 事件。
-		if err != nil {
-			return err
-		}
+		// FORK-ANCHOR: cn-selected-protocol-continue (二开：单协议失败继续测其余协议，失败记录在 result 事件里)
+		// 单协议失败不再终止：剩余协议继续探测，各协议结果由 protocol_result 事件独立回传，
+		// 全部失败时最后发 test_complete success=false（与并发矩阵路径语义一致）。
+		hasFailure = hasFailure || err != nil
 	}
 	c.Set(accountTestSuppressCompletionContextKey, false)
-	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: !hasFailure})
 	return nil
 }
 
