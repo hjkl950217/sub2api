@@ -376,6 +376,28 @@ describe('AccountBatchTestModal', () => {
     expect(wrapper.get('[data-testid="batch-protocol-timing-1-chat_completions"]').text()).toBe('0.1s/1.2s')
   })
 
+  // FORK-ANCHOR: batch-test-error-dedup-spec (二开：与协议行重复的整账号级报错不再重复显示)
+  it('整账号级报错与协议行内容重复时不重复显示', async () => {
+    const err = 'Chat Completions API (/v1/chat/completions) returned 502: upstream down'
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        `data: {"type":"protocol_result","account_id":1,"protocol":"chat_completions","protocol_ok":false,"error":"${err}"}\n`,
+        `data: {"type":"error","account_id":1,"error":"${err}"}\n`,
+        'data: {"type":"batch_test_complete","account_id":1}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({ show: false, accountIds: [1, 2, 3] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="batch-test-start-button"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="batch-failure-1"]').exists()).toBe(false)
+  })
+
   // FORK-ANCHOR: batch-test-header-short-status-spec (二开：行头只显示短状态，完整报错不挤在调度开关旁)
   it('账号行头只显示短状态，完整报错不挤在调度开关旁', async () => {
     const longError = 'Chat Completions API returned 502: ' + 'E'.repeat(300)

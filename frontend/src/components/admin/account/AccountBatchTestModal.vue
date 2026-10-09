@@ -377,6 +377,12 @@ const failedProtocolErrors = (row: BatchRow) =>
     .filter((result) => result.success === false && result.error)
     .map((result) => result.error)
 
+// FORK-ANCHOR: batch-test-protocol-error-seen (二开：判断这段报错是否已经在某条协议行里显示过)
+const protocolErrorSeen = (row: BatchRow, text: string) =>
+  row.protocols.some(
+    (result) => result.error && (result.error === text || result.error.includes(text) || text.includes(result.error))
+  )
+
 const statusLabel = (row: BatchRow) => {
   switch (row.status) {
     case 'running':
@@ -597,8 +603,11 @@ const handleEvent = (event: {
     case 'error':
       row.status = 'error'
       row.error = event.error || ''
-      // FORK-ANCHOR: batch-test-error-append (二开：整账号级错误也进失败原因，收起正文时仍可见)
-      if (event.error) row.rowFailure = appendFailure(row.rowFailure, event.error)
+      // FORK-ANCHOR: batch-test-error-dedup (二开：与某条协议报错重复的整账号级错误不再进失败原因，
+      // 逐协议行已经显示过同一段文本；行级失败原因只留给协议之外的失败)
+      if (event.error && !protocolErrorSeen(row, event.error)) {
+        row.rowFailure = appendFailure(row.rowFailure, event.error)
+      }
       break
     // 每个账号一定以 batch_test_complete 收尾，用它决定行状态
     case 'batch_test_complete':
