@@ -73,13 +73,13 @@
               <span class="truncate text-gray-800 dark:text-gray-200">{{ row.name }}</span>
 
               <template v-if="row.eligible">
-                <!-- FORK: 协议标签三态——未测灰、通过绿、失败红，打开弹窗就铺好占位 -->
+                <!-- FORK: 协议标签四态——未测灰、测试中黄、通过绿、失败红，打开弹窗就铺好占位 -->
                 <span
                   v-for="result in row.protocols"
                   :key="result.protocol"
                   :data-testid="`batch-protocol-${row.id}-${result.protocol}`"
                   class="rounded px-1.5 py-0.5 text-[11px] font-medium"
-                  :class="[protocolClass(result.success), protocolProbingClass(result)]"
+                  :class="protocolClass(result)"
                 >
                   {{ shortProtocolLabel(result.protocol) }}
                 </span>
@@ -123,14 +123,14 @@
               >
                 <span
                   class="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium"
-                  :class="[protocolClass(result.success), protocolProbingClass(result)]"
+                  :class="protocolClass(result)"
                 >
                   {{ shortProtocolLabel(result.protocol) }}
                 </span>
-                <span class="shrink-0 text-[11px]" :class="protocolTextClass(result.success)">
-                  {{ protocolStatusLabel(result.success) }}
+                <span class="shrink-0 text-[11px]" :class="protocolTextClass(result)">
+                  {{ protocolStatusLabel(result) }}
                 </span>
-                <span class="min-w-0 flex-1 whitespace-pre-wrap break-all" :class="[protocolTextClass(result.success), protocolProbingTextClass(result)]">
+                <span class="min-w-0 flex-1 whitespace-pre-wrap break-all" :class="protocolTextClass(result)">
                   <template v-if="result.success === null && result.probing">{{ t('admin.accounts.batchTest.testing') }}</template>
                   <template v-else-if="result.success === null">{{ t('admin.accounts.batchTest.pending') }}</template>
                   <template v-else-if="result.success === false && result.error">{{ result.error }}</template>
@@ -300,37 +300,35 @@ const canStart = computed(
     groups.value.some((group) => group.common_models.length > 0)
 )
 
-// FORK: 协议标签三态配色：未测灰、通过绿、失败红。
-const protocolClass = (success: boolean | null) => {
-  if (success === true) return 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
-  if (success === false) return 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
+// FORK-ANCHOR: batch-test-protocol-four-state (二开：协议标签四态——未测灰、测试中黄、通过绿、失败红)
+const protocolClass = (result: ProtocolResult) => {
+  if (result.success === true) return 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
+  if (result.success === false) return 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
+  if (protocolProbing(result)) return 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
   return 'bg-gray-100 text-gray-400 dark:bg-dark-600 dark:text-gray-500'
 }
 
-// FORK-ANCHOR: batch-test-protocol-probing-class (二开：探测中的标签/行显示「测试中」中间态)
-const protocolProbingClass = (result: ProtocolResult) =>
-  result.probing && result.success === null ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' : ''
+// FORK-ANCHOR: batch-test-protocol-probing-class (二开：探测中即「测试中」中间态)
+const protocolProbing = (result: ProtocolResult) => result.probing && result.success === null
 
-const protocolProbingTextClass = (result: ProtocolResult) =>
-  result.probing && result.success === null ? 'text-amber-300' : ''
+const protocolTextClass = (result: ProtocolResult) => {
+  if (result.success === true) return 'text-green-300'
+  if (result.success === false) return 'text-red-300'
+  if (protocolProbing(result)) return 'text-amber-300'
+  return 'text-gray-500'
+}
+
+const protocolStatusLabel = (result: ProtocolResult) => {
+  if (result.success === true) return t('admin.accounts.protocolProbePassed')
+  if (result.success === false) return t('admin.accounts.protocolProbeFailed')
+  if (protocolProbing(result)) return t('admin.accounts.batchTest.testing')
+  return t('admin.accounts.batchTest.pending')
+}
 
 const shortProtocolLabel = (protocol: string) => {
   if (protocol === 'anthropic') return 'anthropic'
   if (protocol === 'responses') return 'responses'
   return 'chat'
-}
-
-// FORK-ANCHOR: batch-test-protocol-line-helpers (二开：逐协议行的状态文案与配色)
-const protocolStatusLabel = (success: boolean | null) => {
-  if (success === true) return t('admin.accounts.protocolProbePassed')
-  if (success === false) return t('admin.accounts.protocolProbeFailed')
-  return t('admin.accounts.batchTest.pending')
-}
-
-const protocolTextClass = (success: boolean | null) => {
-  if (success === true) return 'text-green-300'
-  if (success === false) return 'text-red-300'
-  return 'text-gray-500'
 }
 
 // 占位符：协议测通但没有正文时用它，避免该行看起来是空的

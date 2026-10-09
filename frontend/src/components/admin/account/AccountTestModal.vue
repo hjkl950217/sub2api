@@ -180,20 +180,19 @@
             v-for="item in protocolResults"
             :key="item.protocol"
             class="rounded-lg border px-2.5 py-1.5 text-xs"
-            :class="protocolCardClass(item.success)"
+            :class="protocolCardClass(item)"
             :data-testid="`protocol-result-${item.protocol}`"
           >
             <div class="flex items-center gap-2">
               <Icon
-                :name="protocolIcon(item.success)"
+                :name="protocolIcon(item)"
                 size="sm"
                 :stroke-width="2"
                 :class="protocolCardProbing(item) ? 'animate-spin' : ''"
               />
               <span class="font-medium">{{ t(`admin.accounts.cnProviders.apiProtocol.${protocolLabelKey(item.protocol)}`) }}</span>
-              <!-- FORK-ANCHOR: test-modal-protocol-probing-label (二开：探测中的卡片显示「测试中」中间态) -->
-              <span v-if="protocolCardProbing(item)" class="text-amber-600 dark:text-amber-400">{{ t('admin.accounts.testing') }}</span>
-              <span v-else class="ml-auto">{{ protocolStatusLabel(item.success) }}</span>
+              <!-- FORK-ANCHOR: test-modal-protocol-probing-label (二开：探测中的卡片状态值显示「测试中」) -->
+              <span class="ml-auto" :class="protocolCardProbing(item) ? 'text-amber-600 dark:text-amber-400' : ''">{{ protocolStatusLabel(item) }}</span>
             </div>
             <!-- FORK-ANCHOR: test-modal-protocol-error-view (二开：失败的协议把完整报错显示出来) -->
             <div
@@ -507,27 +506,30 @@ const protocolLabelKey = (protocol: string): string => {
   return 'chatCompletions'
 }
 
-// FORK-ANCHOR: test-modal-protocol-three-state (二开：协议卡片三态——未测灰、通过绿、失败红)
-const protocolCardClass = (success: boolean | null) => {
-  if (success === true)
+// FORK-ANCHOR: test-modal-protocol-four-state (二开：协议卡片四态——未测灰、测试中黄、通过绿、失败红)
+const protocolCardClass = (item: ProtocolProbeResult) => {
+  if (item.success === true)
     return 'border-green-200 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-400'
-  if (success === false)
+  if (item.success === false)
     return 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400'
+  if (protocolCardProbing(item))
+    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400'
   return 'border-gray-200 bg-gray-50 text-gray-400 dark:border-dark-500 dark:bg-dark-700 dark:text-gray-500'
 }
 
-const protocolIcon = (success: boolean | null) => {
-  if (success === true) return 'check'
-  if (success === false) return 'x'
+const protocolIcon = (item: ProtocolProbeResult) => {
+  if (item.success === true) return 'check'
+  if (item.success === false) return 'x'
   return 'clock'
 }
 
 // FORK-ANCHOR: test-modal-protocol-probing-state (二开：探测中的卡片显示「测试中」中间态)
 const protocolCardProbing = (item: ProtocolProbeResult) => item.probing && item.success === null
 
-const protocolStatusLabel = (success: boolean | null) => {
-  if (success === true) return t('admin.accounts.protocolProbePassed')
-  if (success === false) return t('admin.accounts.protocolProbeFailed')
+const protocolStatusLabel = (item: ProtocolProbeResult) => {
+  if (item.success === true) return t('admin.accounts.protocolProbePassed')
+  if (item.success === false) return t('admin.accounts.protocolProbeFailed')
+  if (protocolCardProbing(item)) return t('admin.accounts.testing')
   return t('admin.accounts.protocolProbePending')
 }
 

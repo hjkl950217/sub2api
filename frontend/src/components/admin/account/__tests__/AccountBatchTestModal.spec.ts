@@ -309,7 +309,7 @@ describe('AccountBatchTestModal', () => {
     expect(wrapper.get('[data-testid="batch-row-1"]').text()).toContain('hello-body')
   })
 
-  // FORK-ANCHOR: batch-test-protocol-probing-spec (二开：探测开始时标签变「测试中」，结果回来才定色)
+  // FORK-ANCHOR: batch-test-protocol-probing-spec (二开：探测中的标签整套 amber，状态值不再是「待测试」)
   it('探测开始时对应协议标签显示「测试中」，结果回来变结论色', async () => {
     global.fetch = vi.fn().mockResolvedValue(
       createStreamResponse([
@@ -336,6 +336,11 @@ describe('AccountBatchTestModal', () => {
     // 账号 2：两个协议都在探测中
     expect(wrapper.get('[data-testid="batch-protocol-2-chat_completions"]').classes()).toContain('bg-amber-100')
     expect(wrapper.get('[data-testid="batch-protocol-2-responses"]').classes()).toContain('bg-amber-100')
+
+    // 逐协议行的状态值显示「测试中」，不再是「待测试」
+    const line = wrapper.get('[data-testid="batch-protocol-line-2-chat_completions"]')
+    expect(line.text()).toContain('testing')
+    expect(line.text()).not.toContain('pending')
   })
 
   // FORK-ANCHOR: batch-test-protocol-line-spec (二开：一个账号的三个协议各占一行，不挤在同一行)
