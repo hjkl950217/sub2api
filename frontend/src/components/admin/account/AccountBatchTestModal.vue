@@ -79,7 +79,7 @@
                   :key="result.protocol"
                   :data-testid="`batch-protocol-${row.id}-${result.protocol}`"
                   class="rounded px-1.5 py-0.5 text-[11px] font-medium"
-                  :class="protocolClass(result.success)"
+                  :class="[protocolClass(result.success), protocolProbingClass(result)]"
                 >
                   {{ shortProtocolLabel(result.protocol) }}
                 </span>
@@ -123,15 +123,16 @@
               >
                 <span
                   class="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium"
-                  :class="protocolClass(result.success)"
+                  :class="[protocolClass(result.success), protocolProbingClass(result)]"
                 >
                   {{ shortProtocolLabel(result.protocol) }}
                 </span>
                 <span class="shrink-0 text-[11px]" :class="protocolTextClass(result.success)">
                   {{ protocolStatusLabel(result.success) }}
                 </span>
-                <span class="min-w-0 flex-1 whitespace-pre-wrap break-all" :class="protocolTextClass(result.success)">
-                  <template v-if="result.success === null">{{ t('admin.accounts.batchTest.pending') }}</template>
+                <span class="min-w-0 flex-1 whitespace-pre-wrap break-all" :class="[protocolTextClass(result.success), protocolProbingTextClass(result)]">
+                  <template v-if="result.success === null && result.probing">{{ t('admin.accounts.batchTest.testing') }}</template>
+                  <template v-else-if="result.success === null">{{ t('admin.accounts.batchTest.pending') }}</template>
                   <template v-else-if="result.success === false && result.error">{{ result.error }}</template>
                   <template v-else-if="result.body">{{ result.body }}</template>
                   <template v-else>{{ dashPlaceholder }}</template>
@@ -222,6 +223,8 @@ interface ProtocolResult {
   protocol: string
   // null = 还没测到（灰色占位），true/false 才是探测结论
   success: boolean | null
+  // FORK-ANCHOR: batch-test-protocol-probing-field (二开：该协议正在探测中，标签显示「测试中」中间态)
+  probing: boolean
   // FORK-ANCHOR: batch-test-protocol-error-field (二开：该协议失败时后端给回的完整报错)
   error: string
   // FORK-ANCHOR: batch-test-protocol-body-field (二开：该协议返回的正文，失败时也保留)
@@ -304,6 +307,13 @@ const protocolClass = (success: boolean | null) => {
   return 'bg-gray-100 text-gray-400 dark:bg-dark-600 dark:text-gray-500'
 }
 
+// FORK-ANCHOR: batch-test-protocol-probing-class (二开：探测中的标签/行显示「测试中」中间态)
+const protocolProbingClass = (result: ProtocolResult) =>
+  result.probing && result.success === null ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' : ''
+
+const protocolProbingTextClass = (result: ProtocolResult) =>
+  result.probing && result.success === null ? 'text-amber-300' : ''
+
 const shortProtocolLabel = (protocol: string) => {
   if (protocol === 'anthropic') return 'anthropic'
   if (protocol === 'responses') return 'responses'
@@ -376,7 +386,7 @@ const loadPlan = async () => {
           status: 'idle',
           error: '',
           // 打开就按后端给的协议清单铺占位标签，测试推进时逐个变色
-          protocols: (account.protocols || []).map((protocol) => ({ protocol, success: null, error: '', body: '' })),
+          protocols: (account.protocols || []).map((protocol) => ({ protocol, success: null, probing: false, error: '', body: '' })),
           excerpt: '',
           rowFailure: '',
           // 默认展开，测试返回的正文不用再点一下才看得到
@@ -515,6 +525,16 @@ const handleEvent = (event: {
   if (!row) return
 
   switch (event.type) {
+    // FORK-ANCHOR: batch-test-protocol-probing-event (二开：探测开始时标签变「测试中」中间态)
+    // 占位标签在打开弹窗时就铺好了，探测开始先把那一个标成进行中，用户能看出测到哪了。
+    case 'protocol_probe':
+      if (event.protocol) {
+        const probing = row.protocols.find((result) => result.protocol === event.protocol)
+        if (probing) {
+          probing.probing = true
+        }
+      }
+      break
     case 'protocol_result':
       if (event.protocol) {
         // 占位标签在打开弹窗时就建好了，这里只改颜色；清单外的协议才追加（兜底）。
@@ -522,11 +542,12 @@ const handleEvent = (event: {
         const target =
           probed ||
           (() => {
-            const created = { protocol: event.protocol as string, success: null, error: '', body: '' }
+            const created = { protocol: event.protocol as string, success: null, probing: false, error: '', body: '' }
             row.protocols.push(created)
             return created
           })()
         target.success = event.protocol_ok === true
+        target.probing = false
         // FORK-ANCHOR: batch-test-protocol-error-capture (二开：失败协议连完整报错一起记下)
         target.error = event.error || ''
         // FORK-ANCHOR: batch-test-protocol-body-capture (二开：协议返回的正文单独存，逐协议行显示)

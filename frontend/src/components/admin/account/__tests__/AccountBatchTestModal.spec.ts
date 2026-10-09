@@ -309,6 +309,35 @@ describe('AccountBatchTestModal', () => {
     expect(wrapper.get('[data-testid="batch-row-1"]').text()).toContain('hello-body')
   })
 
+  // FORK-ANCHOR: batch-test-protocol-probing-spec (二开：探测开始时标签变「测试中」，结果回来才定色)
+  it('探测开始时对应协议标签显示「测试中」，结果回来变结论色', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_probe","account_id":1,"protocol":"chat_completions"}\n',
+        'data: {"type":"protocol_probe","account_id":1,"protocol":"responses"}\n',
+        'data: {"type":"protocol_result","account_id":1,"protocol":"chat_completions","protocol_ok":true,"text":"ok"}\n',
+        'data: {"type":"protocol_probe","account_id":2,"protocol":"chat_completions"}\n',
+        'data: {"type":"protocol_probe","account_id":2,"protocol":"responses"}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({ show: false, accountIds: [1, 2, 3] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="batch-test-start-button"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    // 账号 1：已出结论的标签不是测试中，没回结果的标签是
+    expect(wrapper.get('[data-testid="batch-protocol-1-chat_completions"]').classes()).toContain('bg-green-100')
+    expect(wrapper.get('[data-testid="batch-protocol-1-responses"]').classes()).toContain('bg-amber-100')
+
+    // 账号 2：两个协议都在探测中
+    expect(wrapper.get('[data-testid="batch-protocol-2-chat_completions"]').classes()).toContain('bg-amber-100')
+    expect(wrapper.get('[data-testid="batch-protocol-2-responses"]').classes()).toContain('bg-amber-100')
+  })
+
   // FORK-ANCHOR: batch-test-protocol-line-spec (二开：一个账号的三个协议各占一行，不挤在同一行)
   it('一个账号的每个协议各占一行，行内显示状态与正文', async () => {
     global.fetch = vi.fn().mockResolvedValue(

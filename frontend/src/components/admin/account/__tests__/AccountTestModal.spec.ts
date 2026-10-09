@@ -465,6 +465,40 @@ describe('AccountTestModal', () => {
     expect(wrapper.find('[data-testid="protocol-result-anthropic"]').exists()).toBe(false)
   })
 
+  // FORK-ANCHOR: test-modal-protocol-probing-spec (二开：探测开始时卡片变「测试中」中间态，结果回来才定色)
+  it('探测开始时对应协议卡片显示「测试中」，结果回来变结论色', async () => {
+    // 流里最后一个 protocol_result 一直不发：模拟探测还在进行
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_probe","protocol":"chat_completions"}\n',
+        'data: {"type":"protocol_probe","protocol":"anthropic"}\n',
+        'data: {"type":"protocol_probe","protocol":"responses"}\n',
+        'data: {"type":"protocol_result","protocol":"chat_completions","protocol_ok":true,"text":"chat-ok"}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({
+      id: 7,
+      name: 'DeepSeek',
+      platform: 'deepseek',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    ;(wrapper.vm as any).selectedModelId = 'deepseek-chat'
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+
+    // 已出结论的卡片不是测试中；没回结果的卡片是「测试中」
+    expect(wrapper.get('[data-testid="protocol-result-chat_completions"]').classes()).toContain('bg-green-50')
+    for (const protocol of ['anthropic', 'responses']) {
+      const card = wrapper.get(`[data-testid="protocol-result-${protocol}"]`)
+      expect(card.text()).toContain('admin.accounts.testing')
+    }
+  })
+
   it('不跑协议矩阵的平台不显示协议测试结果面板', async () => {
     const wrapper = mountModal({
       id: 9,

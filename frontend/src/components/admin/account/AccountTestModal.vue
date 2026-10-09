@@ -184,9 +184,16 @@
             :data-testid="`protocol-result-${item.protocol}`"
           >
             <div class="flex items-center gap-2">
-              <Icon :name="protocolIcon(item.success)" size="sm" :stroke-width="2" />
+              <Icon
+                :name="protocolIcon(item.success)"
+                size="sm"
+                :stroke-width="2"
+                :class="protocolCardProbing(item) ? 'animate-spin' : ''"
+              />
               <span class="font-medium">{{ t(`admin.accounts.cnProviders.apiProtocol.${protocolLabelKey(item.protocol)}`) }}</span>
-              <span class="ml-auto">{{ protocolStatusLabel(item.success) }}</span>
+              <!-- FORK-ANCHOR: test-modal-protocol-probing-label (二开：探测中的卡片显示「测试中」中间态) -->
+              <span v-if="protocolCardProbing(item)" class="text-amber-600 dark:text-amber-400">{{ t('admin.accounts.testing') }}</span>
+              <span v-else class="ml-auto">{{ protocolStatusLabel(item.success) }}</span>
             </div>
             <!-- FORK-ANCHOR: test-modal-protocol-error-view (二开：失败的协议把完整报错显示出来) -->
             <div
@@ -465,6 +472,8 @@ interface ProtocolProbeResult {
   protocol: string
   // null = 还没测（灰色占位），true/false 才是探测结论
   success: boolean | null
+  // FORK-ANCHOR: test-modal-protocol-probing-field (二开：该协议正在探测中，卡片显示「测试中」中间态)
+  probing: boolean
   // FORK-ANCHOR: test-modal-protocol-error-field (二开：协议失败时后端给回的完整报错)
   error: string
 }
@@ -482,7 +491,7 @@ const protocolPlaceholderOrder = computed(() => {
   return props.account?.platform === 'openai' ? OPENAI_PROTOCOL_PROBE_ORDER : CN_PROTOCOL_PROBE_ORDER
 })
 const buildProtocolPlaceholders = (): ProtocolProbeResult[] =>
-  protocolPlaceholderOrder.value.map((protocol) => ({ protocol, success: null, error: '' }))
+  protocolPlaceholderOrder.value.map((protocol) => ({ protocol, success: null, probing: false, error: '' }))
 const hasProtocolPanel = computed(() => protocolPlaceholderOrder.value.length > 0)
 // FORK-ANCHOR: test-modal-tested-protocol-count (二开：已出结论的协议数)
 // 占位卡片开着弹窗就在了，所以「能不能同步」不能看 protocolResults.length（永远等于协议数），
@@ -512,6 +521,9 @@ const protocolIcon = (success: boolean | null) => {
   if (success === false) return 'x'
   return 'clock'
 }
+
+// FORK-ANCHOR: test-modal-protocol-probing-state (二开：探测中的卡片显示「测试中」中间态)
+const protocolCardProbing = (item: ProtocolProbeResult) => item.probing && item.success === null
 
 const protocolStatusLabel = (success: boolean | null) => {
   if (success === true) return t('admin.accounts.protocolProbePassed')
@@ -1148,6 +1160,12 @@ const handleEvent = (event: {
     // FORK-ANCHOR: test-modal-protocol-events (二开：协议探测矩阵的逐协议事件)
     case 'protocol_probe':
       if (event.protocol) {
+        // FORK-ANCHOR: test-modal-protocol-probing-event (二开：探测开始时卡片变「测试中」中间态)
+        // 占位卡片在打开弹窗时就铺好了，探测开始先把那一张标成进行中，用户能看出测到哪了。
+        const probing = protocolResults.value.find((item) => item.protocol === event.protocol)
+        if (probing) {
+          probing.probing = true
+        }
         addLine(
           t('admin.accounts.protocolProbing', {
             protocol: t(`admin.accounts.cnProviders.apiProtocol.${protocolLabelKey(event.protocol)}`)
@@ -1165,11 +1183,13 @@ const handleEvent = (event: {
         const probed = protocolResults.value.find((item) => item.protocol === event.protocol)
         if (probed) {
           probed.success = event.protocol_ok === true
+          probed.probing = false
           probed.error = event.error || ''
         } else {
           protocolResults.value.push({
             protocol: event.protocol,
             success: event.protocol_ok === true,
+            probing: false,
             error: event.error || ''
           })
         }
