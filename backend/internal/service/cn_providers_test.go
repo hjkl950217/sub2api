@@ -799,6 +799,26 @@ func TestBuildUpstreamModelsRequest_AnthropicProtocol(t *testing.T) {
 	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/models", req.URL.String())
 }
 
+// TestBuildUpstreamModelsRequest_AggregateHub FORK-ANCHOR: ag-hub-upstream-models
+// 聚合中转复用 OpenAI /v1/models 探测，取 chat_completions 端点（原 switch 缺
+// ag_hub 分支时返回 Unsupported platform，前端拿不到结果只能显示平台默认候选）。
+func TestBuildUpstreamModelsRequest_AggregateHub(t *testing.T) {
+	t.Parallel()
+	svc := &AccountTestService{cfg: &config.Config{}}
+	account := &Account{
+		ID: 1, Platform: PlatformAggregateHub, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":          "sk-test",
+			"api_protocols":    []string{APIProtocolChatCompletions},
+			"fallback_protocol": APIProtocolChatCompletions,
+			"base_url":         "https://relay.example.com/v1",
+		},
+	}
+	req, err := svc.buildUpstreamModelsRequest(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, "https://relay.example.com/v1/models", req.URL.String())
+}
+
 // TestBuildOpenAIResponsesURLForPlatform deepseek 官方端点为 /responses（无 /v1）。
 func TestBuildOpenAIResponsesURLForPlatform(t *testing.T) {
 	t.Parallel()
