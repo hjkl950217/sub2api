@@ -160,11 +160,11 @@
                  逐协议报错之外还有收尾错误（超时、无完成事件等），它们不属于任何协议，
                  这里统一显示，收起正文时也不会漏掉失败原因。 -->
             <div
-              v-if="row.status === 'error' && row.rowFailure"
+              v-if="row.status === 'error' && rowFailureText(row)"
               class="whitespace-pre-wrap break-all border-t border-red-100 bg-red-50 px-3 py-1.5 font-mono text-[11px] text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400"
               :data-testid="`batch-failure-${row.id}`"
             >
-              {{ row.rowFailure }}
+              {{ rowFailureText(row) }}
             </div>
           </div>
         </div>
@@ -377,11 +377,16 @@ const failedProtocolErrors = (row: BatchRow) =>
     .filter((result) => result.success === false && result.error)
     .map((result) => result.error)
 
-// FORK-ANCHOR: batch-test-protocol-error-seen (二开：判断这段报错是否已经在某条协议行里显示过)
-const protocolErrorSeen = (row: BatchRow, text: string) =>
-  row.protocols.some(
-    (result) => result.error && (result.error === text || result.error.includes(text) || text.includes(result.error))
-  )
+// FORK-ANCHOR: batch-test-row-failure-render (二开：行级失败原因渲染时过滤掉已在协议行显示过的文本。
+// 不能在收到 error 事件时就判重——那个事件可能早于 protocol_result 到达，此时协议行还没内容。)
+const rowFailureText = (row: BatchRow) => {
+  const known = failedProtocolErrors(row)
+  return row.rowFailure
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !known.some((k) => k === line || k.includes(line) || line.includes(k)))
+    .join('\n')
+}
 
 const statusLabel = (row: BatchRow) => {
   switch (row.status) {
@@ -603,11 +608,9 @@ const handleEvent = (event: {
     case 'error':
       row.status = 'error'
       row.error = event.error || ''
-      // FORK-ANCHOR: batch-test-error-dedup (二开：与某条协议报错重复的整账号级错误不再进失败原因，
-      // 逐协议行已经显示过同一段文本；行级失败原因只留给协议之外的失败)
-      if (event.error && !protocolErrorSeen(row, event.error)) {
-        row.rowFailure = appendFailure(row.rowFailure, event.error)
-      }
+      // FORK-ANCHOR: batch-test-error-append (二开：整账号级错误也进失败原因，收起正文时仍可见)
+      // 与协议行重复的文本在渲染时再过滤（error 事件可能早于 protocol_result 到达）。
+      if (event.error) row.rowFailure = appendFailure(row.rowFailure, event.error)
       break
     // 每个账号一定以 batch_test_complete 收尾，用它决定行状态
     case 'batch_test_complete':
