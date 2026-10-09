@@ -253,7 +253,7 @@
             ]"
           >
             <PlatformIcon platform="ag_hub" size="sm" />
-            AG_Hub
+            聚合中转
           </button>
         </div>
       </div>

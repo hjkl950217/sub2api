@@ -77,20 +77,32 @@ func (s *AccountTestService) testCNProviderSelectedProtocolsConnection(c *gin.Co
 
 	c.Set(accountTestSuppressCompletionContextKey, true)
 	defer c.Set(accountTestSuppressCompletionContextKey, false)
+	// FORK-ANCHOR: cn-selected-protocol-events (二开：复选顺序测试逐协议发 probe/result 事件，
+	// 弹窗协议框靠这两个事件变色；顺序路径不发的话三张卡永远停在「未测试」)
 	for _, protocol := range protocols {
+		s.sendEvent(c, TestEvent{Type: "protocol_probe", Protocol: protocol})
+		c.Set(accountTestActiveProtocolContextKey, protocol)
+		c.Set(accountTestSuppressContentContextKey, true)
+		contentBuilder := &strings.Builder{}
+		c.Set(accountTestContentContextKey, contentBuilder)
+		var err error
 		switch protocol {
 		case APIProtocolAnthropic:
-			if err := s.testCNProviderAdaptiveAnthropicConnection(c, account, testModelID, authToken, prompt); err != nil {
-				return err
-			}
+			err = s.testCNProviderAdaptiveAnthropicConnection(c, account, testModelID, authToken, prompt)
 		case APIProtocolResponses:
-			if err := s.testCNProviderAdaptiveResponsesConnection(c, account, testModelID, authToken, prompt); err != nil {
-				return err
-			}
+			err = s.testCNProviderAdaptiveResponsesConnection(c, account, testModelID, authToken, prompt)
 		default:
-			if err := s.testCNProviderChatCompletionsConnection(c, account, modelID, prompt); err != nil {
-				return err
-			}
+			err = s.testCNProviderChatCompletionsConnection(c, account, modelID, prompt)
+		}
+		seqEvent := TestEvent{Type: "protocol_result", Protocol: protocol, ProtocolOK: forkBoolPtr(err == nil), Text: contentBuilder.String()}
+		if err != nil {
+			seqEvent.Error = err.Error()
+		}
+		s.sendEvent(c, seqEvent)
+		c.Set(accountTestSuppressContentContextKey, false)
+		// 中间协议失败即终止：与原 return 语义一致，只是先发完 result 事件。
+		if err != nil {
+			return err
 		}
 	}
 	c.Set(accountTestSuppressCompletionContextKey, false)
