@@ -360,6 +360,36 @@ describe('AccountTestModal', () => {
     expect(wrapper.emitted('protocols-updated')).toBeUndefined()
   })
 
+  // FORK-ANCHOR: test-modal-protocol-error-keep-running-spec (二开：逐协议 error 事件不能提前把整个测试标成失败)
+  it('逐协议 error 事件不翻全局状态，未收到 test_complete 前按钮保持「测试中」', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_probe","protocol":"chat_completions"}\n',
+        'data: {"type":"error","error":"404 not found","protocol":"chat_completions"}\n',
+        'data: {"type":"protocol_result","protocol":"chat_completions","protocol_ok":false,"error":"404 not found"}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({
+      id: 7,
+      name: 'DeepSeek',
+      platform: 'deepseek',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    ;(wrapper.vm as any).selectedModelId = 'deepseek-chat'
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+
+    const footerButton = wrapper
+      .findAll('button')
+      .find((button) => /admin\.accounts\.(testing|retry|startTest)/.test(button.text()))
+    expect(footerButton?.text()).toContain('admin.accounts.testing')
+  })
+
   // FORK-ANCHOR: test-modal-protocol-error-spec (二开：失败协议把完整报错显示出来)
   it('失败的协议显示后端给的完整报错，通过的不显示', async () => {
     global.fetch = vi.fn().mockResolvedValue(

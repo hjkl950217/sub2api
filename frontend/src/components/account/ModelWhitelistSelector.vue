@@ -94,7 +94,9 @@
 
     <!-- Quick Actions -->
     <div class="mb-4 flex flex-wrap gap-2">
+      <!-- FORK-ANCHOR: ag-hub-hide-fill-related (二开：聚合中转没有固定模型表，「同步最新支持模型」点了也没东西可填) -->
       <button
+        v-if="!isAggregateHub"
         type="button"
         @click="fillRelated"
         class="rounded-lg border border-blue-200 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
@@ -225,6 +227,10 @@ const canSyncUpstream = computed(() => {
   }
   return false
 })
+// FORK-ANCHOR: ag-hub-hide-fill-related (二开：聚合中转无固定模型表，隐藏「同步最新支持模型」)
+const isAggregateHub = computed(() =>
+  normalizedPlatforms.value.some(platform => platform.toLowerCase() === 'ag_hub')
+)
 
 const availableOptions = computed(() => {
   if (normalizedPlatforms.value.length === 0) {

@@ -268,4 +268,27 @@ describe('ModelWhitelistSelector', () => {
     expect(syncButton).toBeDefined()
     expect(syncButton?.exists()).toBe(true)
   })
+
+  // FORK-ANCHOR: ag-hub-hide-fill-related-spec (二开：聚合中转没有固定模型表，隐藏「同步最新支持模型」)
+  it('聚合中转不显示「同步最新支持模型」，但保留「同步上游支持的模型」', () => {
+    const wrapper = mountSelector({
+      platform: 'ag_hub',
+      syncCredentials: {
+        platform: 'ag_hub',
+        type: 'apikey',
+        base_url: 'https://relay.example.com',
+        api_key: 'sk-test'
+      }
+    })
+
+    const fillRelated = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'admin.accounts.fillRelatedModels')
+    expect(fillRelated).toBeUndefined()
+
+    const syncButton = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'admin.accounts.syncUpstreamModels')
+    expect(syncButton?.exists()).toBe(true)
+  })
 })

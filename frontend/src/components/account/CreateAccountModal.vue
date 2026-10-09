@@ -687,6 +687,7 @@
                   type="text"
                   class="input"
                   :data-testid="`cn-adaptive-base-url-${item.value}`"
+                  @change="onCnEndpointChange(item.value)"
                 />
                 <!-- FORK-ANCHOR: create-cn-endpoint-presets (已勾选协议端点保留快捷预设填充) -->
                 <!-- FORK-ANCHOR: create-ag-hub-endpoint-no-presets (二开：聚合中转无官方端点，不显示预设按钮，避免点击把账号类型切成预设档) -->
@@ -4574,6 +4575,19 @@ function onCnPresetSelect(preset: { mode: CnAccountMode; protocol: CnApiProtocol
     }
     adaptiveBaseUrls.value[preset.protocol] = preset.url
     fallbackProtocol.value = preset.protocol
+  }
+}
+// FORK-ANCHOR: create-endpoint-autofill (二开：deepseek/聚合中转 三个协议端点通常同域，
+// 某个框填好后自动补到其余还空着的框，已填过的不覆盖)
+function onCnEndpointChange(protocol: CnNativeApiProtocol): void {
+  if (form.platform !== 'deepseek' && form.platform !== 'ag_hub') return
+  const value = (adaptiveBaseUrls.value[protocol] ?? '').trim()
+  if (!value) return
+  for (const item of cnEndpointProtocolOptions.value) {
+    if (item.value === protocol) continue
+    if (!(adaptiveBaseUrls.value[item.value] ?? '').trim()) {
+      adaptiveBaseUrls.value[item.value] = value
+    }
   }
 }
 

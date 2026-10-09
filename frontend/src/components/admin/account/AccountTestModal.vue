@@ -1041,7 +1041,8 @@ const startTest = async (syncProtocols = false) => {
 
   abortStream()
 
-  abortController = new AbortController()
+  const controller = new AbortController()
+  abortController = controller
 
   try {
     const requestBody: {
@@ -1132,6 +1133,9 @@ const startTest = async (syncProtocols = false) => {
       }
     }
   } catch (error: unknown) {
+    // FORK-ANCHOR: test-modal-stale-run-guard (二开：被后续一轮测试顶替的旧流，收尾时不能再改状态，
+    // 否则旧的 idle 会覆盖新一轮刚设的 connecting，按钮错乱回「开始测试」)
+    if (abortController !== controller) return
     if (error instanceof DOMException && error.name === 'AbortError') {
       status.value = 'idle'
       return
@@ -1313,6 +1317,9 @@ const handleEvent = (event: {
       break
 
     case 'error':
+      // FORK-ANCHOR: test-modal-protocol-error-keep-running (二开：带 protocol 的 error 只是逐协议诊断，
+      // 不能翻全局状态——否则第一个失败协议就把「重试」点亮，看起来测试提前结束了)
+      if (event.protocol) break
       syncingProtocols.value = false
       status.value = 'error'
       errorMessage.value = event.error || t('common.unknownError')

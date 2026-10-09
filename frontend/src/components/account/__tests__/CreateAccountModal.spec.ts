@@ -704,6 +704,45 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     })
   })
 
+  // FORK-ANCHOR: test-create-endpoint-autofill (二开：deepseek/聚合中转 填一个端点自动补到其余空着的框)
+  it('聚合中转填好一个端点后自动补到其余空框，已填过的不覆盖', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, '聚合中转')
+
+    const chat = wrapper.get('[data-testid="cn-adaptive-base-url-chat_completions"]')
+    const anthropic = wrapper.get('[data-testid="cn-adaptive-base-url-anthropic"]')
+    const responses = wrapper.get('[data-testid="cn-adaptive-base-url-responses"]')
+
+    expect((chat.element as HTMLInputElement).value).toBe('')
+    expect((anthropic.element as HTMLInputElement).value).toBe('')
+    expect((responses.element as HTMLInputElement).value).toBe('')
+
+    await anthropic.setValue('https://relay.example.com')
+    await anthropic.trigger('change')
+    expect((chat.element as HTMLInputElement).value).toBe('https://relay.example.com')
+    expect((responses.element as HTMLInputElement).value).toBe('https://relay.example.com')
+
+    // 手工改过的框不被后续变更覆盖
+    await chat.setValue('https://other.example.com')
+    await chat.trigger('change')
+    expect((anthropic.element as HTMLInputElement).value).toBe('https://relay.example.com')
+    expect((responses.element as HTMLInputElement).value).toBe('https://relay.example.com')
+  })
+
+  it('deepseek 平台同样自动补全端点，其他平台不受影响', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'DeepSeek')
+
+    const chat = wrapper.get('[data-testid="cn-adaptive-base-url-chat_completions"]')
+    const anthropic = wrapper.get('[data-testid="cn-adaptive-base-url-anthropic"]')
+    const official = (anthropic.element as HTMLInputElement).value
+
+    await chat.setValue('https://relay.example.com')
+    await chat.trigger('change')
+    // anthropic 已有官方默认值 → 不被覆盖；只有空框会被补
+    expect((anthropic.element as HTMLInputElement).value).toBe(official)
+  })
+
   it('exposes Agent Identity in the OpenAI authorization methods', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')
