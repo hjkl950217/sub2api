@@ -731,11 +731,17 @@
                 <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
                   {{ t(`admin.accounts.cnProviders.apiProtocol.${item.labelKey}`) }}
                 </label>
+                <!-- FORK-ANCHOR: create-cn-endpoint-live-preview (二开：在第一格输入端点时，其余空格用浅色预览同一地址，失焦或保存时落定) -->
                 <input
                   v-model="adaptiveBaseUrls[item.value]"
                   type="text"
                   class="input"
+                  :class="isEndpointPreview(item.value) ? 'placeholder:italic placeholder:text-gray-400 dark:placeholder:text-gray-500' : ''"
                   :data-testid="`cn-adaptive-base-url-${item.value}`"
+                  :data-preview="isEndpointPreview(item.value) ? 'true' : undefined"
+                  :placeholder="endpointPreviewText(item.value)"
+                  @focus="focusedEndpointProtocol = item.value"
+                  @blur="onCnEndpointBlur(item.value)"
                   @change="onCnEndpointChange(item.value)"
                 />
                 <!-- FORK-ANCHOR: create-cn-endpoint-presets (已勾选协议端点保留快捷预设填充) -->
@@ -4678,8 +4684,26 @@ function onCnPresetSelect(preset: { mode: CnAccountMode; protocol: CnApiProtocol
 }
 // FORK-ANCHOR: create-endpoint-autofill (二开：deepseek/聚合中转 三个协议端点通常同域，
 // 某个框填好后自动补到其余还空着的框，已填过的不覆盖)
+// FORK-ANCHOR: create-cn-endpoint-live-preview (二开：端点输入实时预览)
+// 在第一格输入端点时，其余尚未填写的空格用浅色占位显示同一地址（预备生效）；
+// 离开输入框或直接点保存时由 onCnEndpointChange 落定为真实值，颜色随之变正常。
+const focusedEndpointProtocol = ref<CnNativeApiProtocol | ''>('')
+function onCnEndpointBlur(protocol: CnNativeApiProtocol): void {
+  // 离开输入框即落定（change 在真实浏览器里也会触发，重复执行是幂等的）
+  onCnEndpointChange(protocol)
+  if (focusedEndpointProtocol.value === protocol) focusedEndpointProtocol.value = ''
+}
+function endpointPreviewText(protocol: CnNativeApiProtocol): string | undefined {
+  if ((adaptiveBaseUrls.value[protocol] ?? '').trim()) return undefined
+  const source = focusedEndpointProtocol.value
+  if (!source || source === protocol) return undefined
+  return (adaptiveBaseUrls.value[source] ?? '').trim() || undefined
+}
+function isEndpointPreview(protocol: CnNativeApiProtocol): boolean {
+  return endpointPreviewText(protocol) !== undefined
+}
+
 function onCnEndpointChange(protocol: CnNativeApiProtocol): void {
-  if (form.platform !== 'deepseek' && form.platform !== 'ag_hub') return
   const value = (adaptiveBaseUrls.value[protocol] ?? '').trim()
   if (!value) return
   for (const item of cnEndpointProtocolOptions.value) {

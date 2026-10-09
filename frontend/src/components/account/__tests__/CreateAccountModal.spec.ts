@@ -922,6 +922,30 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect((responses.element as HTMLInputElement).value).toBe('https://relay.example.com')
   })
 
+  // FORK-ANCHOR: test-create-endpoint-live-preview (二开：输入一格时其余空格浅色预览，离开输入框落定)
+  it('端点输入时其余空格显示浅色预览，离开输入框后落定为真实值', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, '聚合中转')
+
+    const chat = wrapper.get('[data-testid="cn-adaptive-base-url-chat_completions"]')
+    const anthropic = wrapper.get('[data-testid="cn-adaptive-base-url-anthropic"]')
+
+    await chat.trigger('focus')
+    // 只派发 input（VTU 的 setValue 会连带派发 change，那样就直接落定了，测不到预览）
+    const chatInput = chat.element as HTMLInputElement
+    chatInput.value = 'https://relay.example.com'
+    await chat.trigger('input')
+    // 还在输入：值只作浅色预览（placeholder + data-preview），没有写进真实值
+    expect((anthropic.element as HTMLInputElement).value).toBe('')
+    expect((anthropic.element as HTMLInputElement).placeholder).toBe('https://relay.example.com')
+    expect(anthropic.attributes('data-preview')).toBe('true')
+
+    await chat.trigger('blur')
+    expect((anthropic.element as HTMLInputElement).value).toBe('https://relay.example.com')
+    expect(anthropic.attributes('data-preview')).toBeUndefined()
+    expect((anthropic.element as HTMLInputElement).placeholder).toBe('')
+  })
+
   it('deepseek 平台同样自动补全端点，其他平台不受影响', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'DeepSeek')

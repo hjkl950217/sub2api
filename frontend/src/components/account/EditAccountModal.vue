@@ -224,11 +224,18 @@
                   <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
                     {{ t(`admin.accounts.cnProviders.apiProtocol.${item.labelKey}`) }}
                   </label>
+                  <!-- FORK-ANCHOR: edit-cn-endpoint-live-preview (二开：在第一格输入端点时，其余空格用浅色预览同一地址，失焦或保存时落定) -->
                   <input
                     v-model="editAdaptiveBaseUrls[item.value]"
                     type="text"
                     class="input"
+                    :class="isEditEndpointPreview(item.value) ? 'placeholder:italic placeholder:text-gray-400 dark:placeholder:text-gray-500' : ''"
                     :data-testid="`cn-adaptive-base-url-${item.value}`"
+                    :data-preview="isEditEndpointPreview(item.value) ? 'true' : undefined"
+                    :placeholder="editEndpointPreviewText(item.value)"
+                    @focus="focusedEditEndpointProtocol = item.value"
+                    @blur="onEditEndpointBlur(item.value)"
+                    @change="onEditEndpointChange(item.value)"
                   />
                   <!-- FORK-ANCHOR: edit-cn-endpoint-presets (已勾选协议端点保留快捷预设填充) -->
                   <CnBaseUrlPresets
@@ -3616,6 +3623,34 @@ function toggleEditCnProtocol(protocol: CnNativeApiProtocol): void {
     copyEditEndpointFromPreviousProtocol(protocol, previous)
   }
   ensureEditFallbackProtocol()
+}
+// FORK-ANCHOR: edit-cn-endpoint-live-preview (二开：端点输入实时预览)
+// 在第一格输入端点时，其余尚未填写的空格用浅色占位显示同一地址（预备生效）；
+// 离开输入框或直接点保存时由 onEditEndpointChange 落定为真实值，颜色随之变正常。
+const focusedEditEndpointProtocol = ref<CnNativeApiProtocol | ''>('')
+function onEditEndpointBlur(protocol: CnNativeApiProtocol): void {
+  // 离开输入框即落定（change 在真实浏览器里也会触发，重复执行是幂等的）
+  onEditEndpointChange(protocol)
+  if (focusedEditEndpointProtocol.value === protocol) focusedEditEndpointProtocol.value = ''
+}
+function editEndpointPreviewText(protocol: CnNativeApiProtocol): string | undefined {
+  if ((editAdaptiveBaseUrls.value[protocol] ?? '').trim()) return undefined
+  const source = focusedEditEndpointProtocol.value
+  if (!source || source === protocol) return undefined
+  return (editAdaptiveBaseUrls.value[source] ?? '').trim() || undefined
+}
+function isEditEndpointPreview(protocol: CnNativeApiProtocol): boolean {
+  return editEndpointPreviewText(protocol) !== undefined
+}
+function onEditEndpointChange(protocol: CnNativeApiProtocol): void {
+  const value = (editAdaptiveBaseUrls.value[protocol] ?? '').trim()
+  if (!value) return
+  for (const item of editEndpointProtocolOptions.value) {
+    if (item.value === protocol) continue
+    if (!(editAdaptiveBaseUrls.value[item.value] ?? '').trim()) {
+      editAdaptiveBaseUrls.value[item.value] = value
+    }
+  }
 }
 watch(editApiProtocol, (protocol, previousProtocol) => {
   if (!isCNApiKeyAccount.value || syncingForm.value) return
