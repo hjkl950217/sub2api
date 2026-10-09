@@ -309,8 +309,8 @@ describe('AccountBatchTestModal', () => {
     expect(wrapper.get('[data-testid="batch-row-1"]').text()).toContain('hello-body')
   })
 
-  // FORK-ANCHOR: batch-test-line-clamp-spec (二开：逐协议正文默认 2 行折叠，点展开看全文)
-  it('超长正文默认折叠成 2 行，点「展开」看全文', async () => {
+  // FORK-ANCHOR: batch-test-single-toggle-spec (二开：一行只留一个展开/收起入口，正文不再着绿色)
+  it('同一行不会同时出现「展开」和「收起」，正文用中性色', async () => {
     const longBody = 'x'.repeat(300)
     global.fetch = vi.fn().mockResolvedValue(
       createStreamResponse([
@@ -327,17 +327,18 @@ describe('AccountBatchTestModal', () => {
     await flushPromises()
     await flushPromises()
 
-    // 行级展开按钮出现，但正文面板默认收起时也带 line-clamp；先展开行详情
     const row = wrapper.get('[data-testid="batch-row-1"]')
-    const lineClampCount = row.findAll('.line-clamp-2').length
-    expect(lineClampCount).toBeGreaterThan(0)
-    expect(wrapper.text()).toContain('admin.accounts.batchTest.expand')
+    const texts = row.findAll('button').map((b) => b.text())
+    expect(texts.includes('admin.accounts.batchTest.expand') && texts.includes('admin.accounts.batchTest.collapse')).toBe(false)
+    // 逐协议正文不再二次折叠
+    expect(row.findAll('.line-clamp-2')).toHaveLength(0)
 
-    // 点「展开」：行数限制解除
-    const toggle = row.findAll('button').find((b) => b.text() === 'admin.accounts.batchTest.expand')
-    expect(toggle).toBeTruthy()
-    await toggle!.trigger('click')
-    expect(row.findAll('.line-clamp-2').length).toBe(0)
+    // 正文不着色：状态色只留在左侧标签上，避免绿色被当成返回值
+    const line = row.get('[data-testid="batch-protocol-line-1-chat_completions"]')
+    const body = line.findAll('span').at(-1)!
+    expect(body.text()).toBe(longBody)
+    expect(body.classes()).toContain('text-gray-300')
+    expect(body.classes()).not.toContain('text-green-300')
   })
 
   // FORK-ANCHOR: batch-test-protocol-probing-spec (二开：探测中的标签整套 amber，状态值不再是「待测试」)

@@ -26,7 +26,9 @@ import (
 const (
 	// defaultBatchTestConcurrency 是批量测试同时进行的账号数上限。并发不暴露给
 	// 前端：一次几十个账号同时打上游容易触发站点限流，也会把本地连接池打满。
-	defaultBatchTestConcurrency = 3
+	// FORK-ANCHOR: batch-test-concurrency (二开：并发从 3 提到 8，部分中转站首字很慢，
+	// 并发太小会让整批长时间干等；单账号仍有 90s 超时兜底)
+	defaultBatchTestConcurrency = 8
 	// defaultBatchTestTimeout 是单个账号的测试超时。整批靠它兜底，避免一个卡死
 	// 的账号拖住后面所有账号。
 	defaultBatchTestTimeout = 90 * time.Second

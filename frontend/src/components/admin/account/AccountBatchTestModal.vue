@@ -130,10 +130,9 @@
                 <span class="shrink-0 text-[11px]" :class="protocolTextClass(result)">
                   {{ protocolStatusLabel(result) }}
                 </span>
-                <span
-                  class="min-w-0 flex-1 whitespace-pre-wrap break-all"
-                  :class="[protocolTextClass(result), lineClampClass(row)]"
-                >
+                <!-- FORK-ANCHOR: batch-test-body-neutral-color (二开：正文用中性色，颜色只留给协议状态，绿色会被当成「返回值」)
+                     成功/失败只靠左侧状态标签和失败行的红底区分，正文本身不着色。 -->
+                <span class="min-w-0 flex-1 whitespace-pre-wrap break-all text-gray-300">
                   <template v-if="result.success === null && result.probing">{{ t('admin.accounts.batchTest.testing') }}</template>
                   <template v-else-if="result.success === null">{{ t('admin.accounts.batchTest.pending') }}</template>
                   <template v-else-if="result.success === false && result.error">{{ result.error }}</template>
@@ -141,15 +140,6 @@
                   <template v-else>{{ dashPlaceholder }}</template>
                 </span>
               </div>
-              <!-- FORK-ANCHOR: batch-test-protocol-lines-toggle (二开：单个协议正文最多 2 行，超出折叠成「展开」) -->
-              <button
-                v-if="protocolLinesTruncated(row)"
-                type="button"
-                class="text-left text-[11px] text-primary-600 hover:text-primary-700 dark:text-primary-300"
-                @click="row.lineExpanded = !row.lineExpanded"
-              >
-                {{ row.lineExpanded ? t('admin.accounts.batchTest.collapse') : t('admin.accounts.batchTest.expand') }}
-              </button>
             </div>
 
             <!-- FORK-ANCHOR: batch-test-row-failure-line (二开：行级失败原因，展开与否都直接可见)
@@ -258,8 +248,6 @@ interface BatchRow {
   // 逐协议报错挂在各自的 ProtocolResult.error 上，不重复进这里。
   rowFailure: string
   expanded: boolean
-  // FORK-ANCHOR: batch-test-line-expanded-field (二开：逐协议正文超出 2 行时是否展开)
-  lineExpanded: boolean
   schedulable: boolean
 }
 
@@ -348,16 +336,8 @@ const shortProtocolLabel = (protocol: string) => {
 // 占位符：协议测通但没有正文时用它，避免该行看起来是空的
 const dashPlaceholder = '—'
 
-// FORK-ANCHOR: batch-test-line-clamp (二开：逐协议正文默认 2 行折叠，展开时不限行数)
-const lineClampClass = (row: BatchRow) => (row.lineExpanded ? '' : 'line-clamp-2')
-
-// 任一协议的正文可能超过 2 行时显示「展开/收起」按钮。
-// 报错通常比正文长，两个都算上；还在跑的行不算，避免测试中途按钮闪现。
-const protocolLinesTruncated = (row: BatchRow) =>
-  !row.lineExpanded &&
-  row.status !== 'running' &&
-  row.protocols.some((result) => (result.error || result.body || '').length > 120)
-
+// FORK-ANCHOR: batch-test-single-toggle (二开：一行只留「展开/收起」一个入口，去掉逐协议正文的二次折叠，
+// 否则同一行会同时出现「收起」（行级）和「展开」（行内），看不懂在收哪个）
 // FORK-ANCHOR: batch-test-failed-with-body (二开：失败协议的报错去重辅助)
 // 报错现在只在逐协议行显示，这个辅助保留给行级失败判定用：失败协议的报错集合。
 const failedProtocolErrors = (row: BatchRow) =>
@@ -413,8 +393,6 @@ const loadPlan = async () => {
           rowFailure: '',
           // 默认展开，测试返回的正文不用再点一下才看得到
           expanded: true,
-          // 逐协议正文默认 2 行折叠，超长的点「展开」看全文
-          lineExpanded: false,
           schedulable: account.schedulable
         })
       })
@@ -481,7 +459,6 @@ const startTest = async () => {
     row.excerpt = ''
     row.rowFailure = ''
     row.expanded = true
-    row.lineExpanded = false
   })
   running.value = true
   abortStream()
