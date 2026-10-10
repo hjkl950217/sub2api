@@ -1,21 +1,8 @@
 <template>
   <AppLayout>
-    <div class="w-full min-w-0 space-y-6 pb-8">
-      <header
-        class="page-header mb-0 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700 sm:p-6"
-      >
-        <h1 class="page-title flex items-center gap-2 text-xl font-black text-gray-900 dark:text-white">
-          <span
-            class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-primary-50 text-primary-500 dark:bg-primary-900/30 dark:text-primary-400"
-          >
-            <Icon name="chart" size="sm" />
-          </span>
-          {{ t('groupModelAccounts.title') }}
-        </h1>
-        <p class="page-description mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-          {{ t('groupModelAccounts.description') }}
-        </p>
-        <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4 dark:border-dark-700">
+    <div class="w-full min-w-0 space-y-5 pb-8">
+      <div class="card p-4">
+        <div class="flex flex-wrap items-center gap-2">
           <input
             v-model="query"
             type="search"
@@ -41,7 +28,11 @@
             </button>
           </div>
           <label class="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
-            <input v-model="onlyScheduled" type="checkbox" />
+            <input
+              v-model="onlyScheduled"
+              type="checkbox"
+              class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600"
+            />
             {{ t('groupModelAccounts.onlyScheduled') }}
           </label>
           <button type="button" class="btn btn-secondary btn-sm" :disabled="loading" @click="load">
@@ -50,25 +41,19 @@
           </button>
           <span class="ml-auto text-xs text-gray-500 dark:text-gray-400">{{ metaText }}</span>
         </div>
-      </header>
+      </div>
 
-      <div v-if="error" class="card text-sm text-red-600 dark:text-red-400">{{ error }}</div>
+      <div v-if="error" class="card p-4 text-sm text-red-600 dark:text-red-400">{{ error }}</div>
 
-      <div v-else-if="loading && !loadedAt" class="card text-sm text-gray-500 dark:text-gray-400">
+      <div v-else-if="loading && !loadedAt" class="card p-4 text-sm text-gray-500 dark:text-gray-400">
         {{ t('groupModelAccounts.loading') }}
       </div>
 
       <template v-else-if="view === 'model'">
-        <div v-if="!modelRows.length" class="card text-sm text-gray-500 dark:text-gray-400">
+        <div v-if="!modelRows.length" class="card p-4 text-sm text-gray-500 dark:text-gray-400">
           {{ t('groupModelAccounts.emptyModel') }}
         </div>
         <div v-else class="card overflow-x-auto">
-          <h2 class="mb-2 text-sm font-semibold text-gray-900 dark:text-white">
-            {{ t('groupModelAccounts.colModel') }}
-            <small class="ml-2 font-normal text-gray-500 dark:text-gray-400">
-              {{ t('groupModelAccounts.modelTableHint') }}
-            </small>
-          </h2>
           <table class="table w-full">
             <thead>
               <tr>
@@ -78,14 +63,22 @@
             </thead>
             <tbody>
               <tr v-for="row in modelRows" :key="row.model">
-                <td class="whitespace-nowrap font-semibold">{{ row.model }}</td>
+                <td class="whitespace-nowrap align-top font-semibold">{{ row.model }}</td>
                 <td>
-                  <div v-for="entry in row.groups" :key="entry.name" class="mb-1.5 last:mb-0">
-                    <span class="tag mr-1.5">{{ entry.name }}</span>
-                    <span class="mr-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  <div
+                    v-for="entry in row.groups"
+                    :key="entry.name"
+                    class="flex flex-wrap items-center gap-1.5 py-0.5"
+                  >
+                    <span class="badge badge-primary">{{ entry.name }}</span>
+                    <span class="text-xs text-gray-400 dark:text-dark-400">
                       {{ t('groupModelAccounts.count', { count: entry.accounts.length }) }}
                     </span>
-                    <span v-for="account in entry.accounts" :key="account.id" class="tag mr-1">
+                    <span
+                      v-for="account in entry.accounts"
+                      :key="account.id"
+                      :class="['badge', account.schedulable ? 'badge-success' : 'badge-gray']"
+                    >
                       {{ account.name }}
                     </span>
                   </div>
@@ -97,45 +90,55 @@
       </template>
 
       <template v-else>
-        <div v-if="!groupRows.length" class="card text-sm text-gray-500 dark:text-gray-400">
+        <div v-if="!groupRows.length" class="card p-4 text-sm text-gray-500 dark:text-gray-400">
           {{ t('groupModelAccounts.emptyGroup') }}
         </div>
-        <div v-for="group in groupRows" :key="group.id" class="card overflow-x-auto">
-          <h2 class="text-sm font-semibold text-gray-900 dark:text-white">
-            {{ group.name }}
-            <small class="ml-2 font-normal text-gray-500 dark:text-gray-400">
-              {{ t('groupModelAccounts.groupMeta', { id: group.id, platform: group.platform || t('groupModelAccounts.unlabeled') }) }}
-            </small>
-          </h2>
-          <p class="mb-2 mt-1 text-xs text-gray-500 dark:text-gray-400">
-            {{ group.total > group.counted
-              ? t('groupModelAccounts.accountSummaryExcluded', { counted: group.counted, total: group.total, excluded: group.total - group.counted })
-              : t('groupModelAccounts.accountSummary', { counted: group.counted, total: group.total }) }}
-          </p>
-          <table v-if="group.models.length" class="table w-full">
-            <thead>
-              <tr>
-                <th>{{ t('groupModelAccounts.colModel') }}</th>
-                <th>{{ t('groupModelAccounts.colAccount') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="entry in group.models" :key="entry.model">
-                <td class="whitespace-nowrap font-semibold">{{ entry.model }}</td>
-                <td>
-                  <span v-for="account in entry.accounts" :key="account.id" class="tag mr-1">
-                    {{ account.name }}
-                  </span>
-                  <span class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('groupModelAccounts.count', { count: entry.accounts.length }) }}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <p v-else class="text-sm text-gray-500 dark:text-gray-400">
-            {{ t('groupModelAccounts.noGroupModels') }}
-          </p>
+        <div v-for="group in groupRows" :key="group.id" class="card overflow-hidden">
+          <div class="border-b border-gray-100 px-4 py-3 dark:border-dark-700">
+            <h2 class="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+              {{ group.name }}
+              <span class="badge badge-gray">{{ group.platform || t('groupModelAccounts.unlabeled') }}</span>
+            </h2>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('groupModelAccounts.groupMeta', { id: group.id }) }}
+              ·
+              {{ group.total > group.counted
+                ? t('groupModelAccounts.accountSummaryExcluded', { counted: group.counted, total: group.total, excluded: group.total - group.counted })
+                : t('groupModelAccounts.accountSummary', { counted: group.counted, total: group.total }) }}
+            </p>
+          </div>
+          <div class="overflow-x-auto">
+            <table v-if="group.models.length" class="table w-full">
+              <thead>
+                <tr>
+                  <th>{{ t('groupModelAccounts.colModel') }}</th>
+                  <th>{{ t('groupModelAccounts.colAccount') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="entry in group.models" :key="entry.model">
+                  <td class="whitespace-nowrap align-top font-semibold">{{ entry.model }}</td>
+                  <td>
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      <span
+                        v-for="account in entry.accounts"
+                        :key="account.id"
+                        :class="['badge', account.schedulable ? 'badge-success' : 'badge-gray']"
+                      >
+                        {{ account.name }}
+                      </span>
+                      <span class="text-xs text-gray-400 dark:text-dark-400">
+                        {{ t('groupModelAccounts.count', { count: entry.accounts.length }) }}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+              {{ t('groupModelAccounts.noGroupModels') }}
+            </p>
+          </div>
         </div>
       </template>
     </div>
