@@ -180,9 +180,10 @@ describe('admin AccountsView lite account list', () => {
     const wrapper = mountView()
     await flushPromises()
 
+    // FORK-ANCHOR: test-page-size-lite-initial (二开：默认每页条数改为 50，上游断言仍是 20)
     expect(listAccounts).toHaveBeenCalledWith(
       1,
-      20,
+      50,
       expect.objectContaining({ lite: '1' }),
       expect.objectContaining({ signal: expect.any(AbortSignal) })
     )
@@ -228,9 +229,10 @@ describe('admin AccountsView lite account list', () => {
     await vi.advanceTimersByTimeAsync(6000)
     await flushPromises()
 
+    // FORK-ANCHOR: test-page-size-lite-etag (二开：默认每页条数改为 50，上游断言仍是 20)
     expect(listWithEtag).toHaveBeenCalledWith(
       1,
-      20,
+      50,
       expect.objectContaining({ lite: '1' }),
       expect.objectContaining({ etag: null })
     )

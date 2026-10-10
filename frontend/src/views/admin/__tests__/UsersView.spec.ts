@@ -391,9 +391,10 @@ describe('admin UsersView', () => {
     await wrapper.get('[data-test="sort-last-used"]').trigger('click')
     await flushPromises()
 
+    // FORK-ANCHOR: test-page-size-users-last-used (二开：默认每页条数改为 50，上游断言仍是 20)
     expect(listUsers).toHaveBeenLastCalledWith(
       1,
-      20,
+      50,
       expect.objectContaining({
         sort_by: 'last_used_at',
         sort_order: 'desc'
@@ -486,9 +487,10 @@ describe('admin UsersView', () => {
 
     expect(localStorage.getItem('admin-users-usage-sort')).toBeNull()
     expect(wrapper.get('[data-test="row-order"]').text()).toBe('last-used-first@example.com,usage-first@example.com')
+    // FORK-ANCHOR: test-page-size-users-clear-sort (二开：默认每页条数改为 50，上游断言仍是 20)
     expect(listUsers).toHaveBeenLastCalledWith(
       1,
-      20,
+      50,
       expect.objectContaining({
         sort_by: 'last_used_at',
         sort_order: 'desc'

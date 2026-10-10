@@ -450,7 +450,11 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	}
 
 	// FORK-ANCHOR: fork-api-protocols-openai-test-routing (二开：openai API Key 账号走 chat/responses 两协议探测矩阵；普通测试只探测不回写)
-	if account.IsOpenAIApiKey() {
+	// FORK-ANCHOR: fork-api-protocols-openai-compact-mode (二开：紧凑测试模式不归协议矩阵管)
+	// 上面这条门控原先把所有 openai API Key 账号都拦下了，使「原生 v2 压缩探测」
+	// （AccountTestModeCompact）对 API Key 账号失效——实际跑的是普通 /responses 探测，
+	// 请求体里没有 compaction_trigger，账号的 openai_compact_supported 永远探不到。
+	if account.IsOpenAIApiKey() && normalizeAccountTestMode(mode) != AccountTestModeCompact {
 		return s.probeOpenAIAPIKeyProtocolsConnection(c, account, modelID, prompt, openaiAPIKeyProtocolProbeOrder, testOpts.SyncProtocols)
 	}
 

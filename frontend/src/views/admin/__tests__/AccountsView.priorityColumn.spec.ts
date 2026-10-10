@@ -115,9 +115,10 @@ describe('admin AccountsView priority column preferences', () => {
     await wrapper.get('[data-test="sort-priority"]').trigger('click')
     await flushPromises()
 
+    // FORK-ANCHOR: test-page-size-priority-column (二开：默认每页条数改为 50，上游断言仍是 20)
     expect(listAccounts).toHaveBeenLastCalledWith(
       1,
-      20,
+      50,
       expect.objectContaining({ sort_by: 'priority', sort_order: 'desc' }),
       expect.objectContaining({ signal: expect.any(AbortSignal) })
     )

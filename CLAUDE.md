@@ -37,16 +37,17 @@ git add -f CLAUDE.md
 
 - 后端用 `//`，前端 `.vue/.ts` 用 `//`（模板里用 `<!-- FORK-ANCHOR: ... -->`），YAML 用 `#`；
 - 一个标记对应一处**改动点**，不是整个文件一处；同一文件改了 3 处就要有 3 个标记；
-- 标记名全局唯一，用下面这条命令列出全部改动点（**排除本文件**，本文件只是在文档里列举锚点名，不是改动点）：
+- 标记名全局唯一，用下面这条命令列出全部改动点（**只数 git 已跟踪文件**，所以中文名文档和 `node_modules` 里的缓存都不会干扰；`.md` 文档里只是在列举锚点名，不算改动点）：
 
   ```bash
-  grep -rn "FORK-ANCHOR:" . --include="*.go" --include="*.vue" --include="*.ts" --include="*.yml" --include="*.py" --include="*.mjs" --include="*.css" | grep -v "^./CLAUDE.md"
+  git -c core.quotepath=false grep -o "FORK-ANCHOR:" -- . | grep -v '\.md:' | wc -l
   ```
 
+  `-c core.quotepath=false` 不能省：中文文件名的路径会被 git 转义成八进制，`grep -v '\.md:'` 就匹配不上，会多算。
+
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **209 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
-  注意：上面那条 grep 命令**不覆盖 `.github/` 下的 15 个锚点**（`.github` 是隐藏目录，`grep -r .` 默认跳过），
-  核对总数时要把它一起算上：`grep -rn "FORK-ANCHOR:" .github/`。
+- 合并上游后先跑上面那条命令对数量（当前 **393 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+  其中 `.github/` 占 15 个，单独看：`git -c core.quotepath=false grep -o "FORK-ANCHOR:" -- .github | wc -l`。
 
 全量清单见 **`锚点清单.md`**：按文件分组列出每个锚点的名字，合并上游后照它逐条核对。
 
