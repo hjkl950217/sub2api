@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, mount } from '@vue/test-utils'
-import { defineComponent } from 'vue'
 import AccountTableFilters from '../AccountTableFilters.vue'
 import Select from '@/components/common/Select.vue'
 import SearchInput from '@/components/common/SearchInput.vue'
@@ -40,53 +39,23 @@ afterEach(() => {
 })
 
 describe('AccountTableFilters', () => {
-  it('toggles an accessible secondary panel without emitting changes or clearing filters', async () => {
+  it('renders every filter inline without a collapse toggle', () => {
     const filters = { ...defaultFilters(), type: 'bedrock', privacy_mode: '__unset__', group: 'ungrouped' }
     const wrapper = mountFilters(filters)
-    const toggle = wrapper.get('button[aria-controls]')
-    const panel = wrapper.get(`[id="${toggle.attributes('aria-controls')}"]`)
 
-    expect(toggle.attributes('type')).toBe('button')
-    expect(toggle.attributes('aria-expanded')).toBe('false')
-    expect(panel.isVisible()).toBe(false)
-    expect(wrapper.findAllComponents(Select).filter(select => select.isVisible())).toHaveLength(2)
-    await toggle.trigger('click')
-    expect(toggle.attributes('aria-expanded')).toBe('true')
-    expect(panel.isVisible()).toBe(true)
+    // 二开：不再有「更多筛选」折叠面板，五个下拉与搜索框同排常显
+    expect(wrapper.find('button[aria-controls]').exists()).toBe(false)
+    expect(wrapper.findAllComponents(Select)).toHaveLength(5)
     expect(wrapper.findAllComponents(Select).every(select => select.isVisible())).toBe(true)
-    await toggle.trigger('click')
-    expect(panel.isVisible()).toBe(false)
-    await toggle.trigger('click')
     expect(wrapper.props('filters')).toEqual(filters)
     expect(wrapper.emitted('update:filters')).toBeUndefined()
     expect(wrapper.emitted('change')).toBeUndefined()
     wrapper.unmount()
   })
 
-  it('indicates active secondary filters while collapsed and reacts to external resets', async () => {
-    const wrapper = mountFilters({ ...defaultFilters(), platform: 'openai', status: 'active' })
-    const toggle = wrapper.get('button[aria-controls]')
-    expect(toggle.find('span').exists()).toBe(false)
-    for (const [filters, count] of [
-      [{ type: 'oauth', privacy_mode: '', group: '' }, 1],
-      [{ type: 'setup-token', privacy_mode: '__unset__', group: 'ungrouped' }, 3],
-      [{ type: '', privacy_mode: 'training_off', group: '42' }, 2]
-    ] as const) {
-      await wrapper.setProps({ filters: { ...defaultFilters(), ...filters } })
-      expect(toggle.get('span').text()).toBe(String(count))
-      expect(toggle.attributes('aria-label')).toBe(`admin.accounts.moreFiltersActive (${count})`)
-      expect(toggle.attributes('aria-expanded')).toBe('false')
-    }
-    await wrapper.setProps({ filters: { type: null, privacy_mode: undefined, group: '' } })
-    expect(toggle.find('span').exists()).toBe(false)
-    expect(toggle.attributes('aria-label')).toBe('admin.accounts.moreFilters')
-    wrapper.unmount()
-  })
-
   it('preserves every option and emits a merged filter snapshot plus change for every selection', async () => {
     const filters = { ...defaultFilters(), platform: 'openai', type: 'oauth', status: 'active', privacy_mode: '__unset__', group: '42' }
     const wrapper = mountFilters(filters)
-    await wrapper.get('button[aria-controls]').trigger('click')
     const expectedOptions = [
       ['platform', ['', ...CONCRETE_PLATFORM_OPTIONS.map(option => option.value)]],
       ['status', ['', 'active', 'inactive', 'error', 'rate_limited', 'temp_unschedulable', 'unschedulable']],
@@ -129,22 +98,19 @@ describe('AccountTableFilters', () => {
     wrapper.unmount()
   })
 
-  it('uses shrinkable, wrapping controls and unique panel IDs for multiple instances', () => {
+  it('uses shrinkable controls with desktop widths that keep the whole bar on one row', () => {
     const wrapper = mountFilters()
     expect(wrapper.classes()).toContain('min-w-0')
     expect(wrapper.get('.grid').classes()).toEqual(expect.arrayContaining(['grid-cols-2', 'sm:flex-wrap']))
     for (const select of wrapper.findAllComponents(Select)) {
       expect(select.classes()).toEqual(expect.arrayContaining(['min-w-0', 'w-full']))
-      expect(select.classes()).not.toContain('w-40')
+      // 二开：一行铺开五个下拉，宽度按最长选项定过，合计不超过 969px 的筛选区
+      expect(select.classes().some(cls => /^sm:w-(36|44)$/.test(cls))).toBe(true)
     }
-    const pair = mount(defineComponent({
-      components: { AccountTableFilters },
-      setup: () => ({ filters: defaultFilters() }),
-      template: '<div><AccountTableFilters search-query="" :filters="filters" /><AccountTableFilters search-query="" :filters="filters" /></div>'
-    }))
-    const toggles = pair.findAll('button[aria-controls]')
-    expect(toggles[0].attributes('aria-controls')).not.toBe(toggles[1].attributes('aria-controls'))
+    const widths = wrapper.findAllComponents(Select).map(select =>
+      Number(select.classes().find(cls => cls.startsWith('sm:w-'))?.slice(5))
+    )
+    expect(widths.slice().sort((a, b) => a - b)).toEqual([36, 36, 36, 36, 44])
     wrapper.unmount()
-    pair.unmount()
   })
 })
