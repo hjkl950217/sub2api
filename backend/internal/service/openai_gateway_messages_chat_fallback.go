@@ -139,14 +139,40 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 
 	// 5. Convert response
 	if clientStream {
-		return s.streamChatCompletionsAsAnthropic(c, resp, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
+		return s.streamChatCompletionsAsAnthropic(c, resp, account, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
 	}
-	return s.bufferChatCompletionsAsAnthropic(c, resp, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
+	return s.bufferChatCompletionsAsAnthropic(c, resp, account, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
+}
+
+// FORK-ANCHOR: messages-cc-empty-completion-guard（二开：/v1/messages→CC 回退链路的上游空正文判定）
+//
+// 上游返回 200 但整条流没有任何正文 / 工具调用 / 推理内容时，按上游异常处理：本次请求记为
+// 错误请求并换号重试。2026-10-10 长空报的 sharellm站-免费（账号 3310）就是这种情况 ——
+// 用量表里 input_tokens 有值、output_tokens=0，客户端只见 message_start 后直接结束。
+//
+// 不复用 openAIChatSilentRefusalDetector.IsSilentRefusal()：那个判据要求整条流里没有 usage，
+// 而中转站通常仍会回一个 completion_tokens=0 的 usage 块，会被判成"有 usage"而漏掉。
+func newChatStreamEmptyBodyDetector() *openAIChatSilentRefusalDetector {
+	// 强制开启：本链路已固定 stream_options.include_usage=true，正常流必有 usage 块，
+	// 空正文只可能是上游异常，不需要 detector 自带的 64KB 请求体门控。
+	detector := newOpenAIChatSilentRefusalDetector(openAISilentRefusalMinRequestBodyBytes)
+	detector.enabled = true
+	return detector
+}
+
+// chatStreamProducedAssistantOutput 报告上游是否已经产出过可交付给客户端的内容。
+// 判据里刻意不含 usage：只有 usage 的流对客户端来说同样是空回复。
+func chatStreamProducedAssistantOutput(d *openAIChatSilentRefusalDetector) bool {
+	if d == nil {
+		return true
+	}
+	return d.sawContent || d.sawToolCall || d.sawFunctionCall || d.sawReasoning || d.sawError
 }
 
 func (s *OpenAIGatewayService) bufferChatCompletionsAsAnthropic(
 	c *gin.Context,
 	resp *http.Response,
+	account *Account,
 	originalModel string,
 	billingModel string,
 	upstreamModel string,
@@ -160,6 +186,11 @@ func (s *OpenAIGatewayService) bufferChatCompletionsAsAnthropic(
 		return nil, err
 	}
 	anthropicResp := apicompat.ChatCompletionsResponseToAnthropic(ccResp, originalModel)
+	// FORK-ANCHOR: messages-cc-empty-completion-nonstream（二开：非流式分支，上游 200 但正文为空
+	// 同样按上游异常处理并换号；判据在 newChatStreamEmptyBodyDetector 上方注释里）
+	if len(anthropicResp.Content) == 0 {
+		return nil, newOpenAISilentRefusalFailoverError(c, account, requestID)
+	}
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -184,6 +215,7 @@ func (s *OpenAIGatewayService) bufferChatCompletionsAsAnthropic(
 func (s *OpenAIGatewayService) streamChatCompletionsAsAnthropic(
 	c *gin.Context,
 	resp *http.Response,
+	account *Account,
 	originalModel string,
 	billingModel string,
 	upstreamModel string,
@@ -197,28 +229,52 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsAnthropic(
 	anthropicState := apicompat.NewChatCompletionsToAnthropicStreamState(originalModel)
 	clientDisconnected := false
 
+	// FORK-ANCHOR: messages-cc-empty-completion-prebuffer（二开：先确认上游有正文再放行客户端输出，
+	// 否则空响应一旦写出响应头就无法换号，客户端只会看到半截空流。见上方 helper 注释）
+	emptyBodyDetector := newChatStreamEmptyBodyDetector()
+	pendingSSE := make([]string, 0, 16)
+	clientOutputStarted := false
+
 	// 与 responses 兄弟不同：客户端断开后仍继续做事件转换（喂 anthropicState），
 	// 仅跳过写出，保证 finalize 阶段的 usage 汇总不受断开影响。
 	emitChunk := func(chunk *apicompat.ChatCompletionsChunk) {
+		emptyBodyDetector.ObserveChatChunk(*chunk)
 		// CC chunk → Anthropic events (direct, single state machine)
 		anthropicEvents := apicompat.ChatCompletionsChunkToAnthropicEvents(chunk, anthropicState)
 		if clientDisconnected {
 			return
 		}
+		var batch []string
 		for _, aEvt := range anthropicEvents {
 			sse, err := apicompat.ResponsesAnthropicEventToSSE(aEvt)
 			if err != nil {
 				continue
 			}
-			writeStreamHeaders()
+			batch = append(batch, sse)
+		}
+		if len(batch) == 0 {
+			return
+		}
+		if !clientOutputStarted && !chatStreamProducedAssistantOutput(emptyBodyDetector) {
+			pendingSSE = append(pendingSSE, batch...)
+			return
+		}
+		writeStreamHeaders()
+		for _, sse := range pendingSSE {
 			if _, err := fmt.Fprint(c.Writer, sse); err != nil {
 				clientDisconnected = true
-				break
+				return
 			}
 		}
-		if !clientDisconnected && len(anthropicEvents) > 0 {
-			c.Writer.Flush()
+		pendingSSE = pendingSSE[:0]
+		for _, sse := range batch {
+			if _, err := fmt.Fprint(c.Writer, sse); err != nil {
+				clientDisconnected = true
+				return
+			}
 		}
+		clientOutputStarted = true
+		c.Writer.Flush()
 	}
 
 	scan := s.scanCCStream(c, resp, "openai messages chat fallback", requestID, startTime, emitChunk)
@@ -247,7 +303,22 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsAnthropic(
 
 	// Finalize: close open blocks + emit message_delta/message_stop.
 	finalEvents := apicompat.FinalizeChatCompletionsAnthropicStream(anthropicState)
+	// FORK-ANCHOR: messages-cc-empty-completion-finalize（二开：整条流没有任何正文 → 记错误请求 + 换号）
+	if !clientDisconnected && !clientOutputStarted && !chatStreamProducedAssistantOutput(emptyBodyDetector) {
+		return nil, newOpenAISilentRefusalFailoverError(c, account, requestID)
+	}
 	if !clientDisconnected {
+		if !clientOutputStarted && len(pendingSSE) > 0 {
+			writeStreamHeaders()
+			for _, sse := range pendingSSE {
+				if _, err := fmt.Fprint(c.Writer, sse); err != nil {
+					clientDisconnected = true
+					break
+				}
+			}
+			pendingSSE = pendingSSE[:0]
+			clientOutputStarted = !clientDisconnected
+		}
 		for _, aEvt := range finalEvents {
 			sse, err := apicompat.ResponsesAnthropicEventToSSE(aEvt)
 			if err != nil {

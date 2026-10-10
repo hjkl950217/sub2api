@@ -322,9 +322,14 @@ func TestForwardAsAnthropic_ForceChatCompletionsStreamingLengthMapsToMaxTokens(t
 	require.Contains(t, out, "event: message_stop")
 }
 
-// An upstream that ends immediately with [DONE] must still produce a fully
-// framed (message_start → message_delta → message_stop) Anthropic stream.
-func TestForwardAsAnthropic_ForceChatCompletionsEmptyStreamStillFramesMessage(t *testing.T) {
+// An upstream that ends immediately with [DONE] and produces no assistant
+// output must not be framed as a successful (empty) Anthropic message.
+//
+// FORK-ANCHOR: test-messages-cc-empty-completion-guard（二开：空流不再合成空回复）
+// 上游只回 [DONE]、整条流没有任何正文时，上游版本会补一个空的 message_delta/message_stop
+// 帧，客户端（claude code）看到的是"请求成功但正文为空"。二开改成按上游异常处理：
+// 不向客户端写任何字节，返回可换号的 UpstreamFailoverError，并记一条错误请求。
+func TestForwardAsAnthropic_ForceChatCompletionsEmptyStreamBecomesFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	body := []byte(`{"model":"gpt-5.4","max_tokens":8,"messages":[{"role":"user","content":"hello"}],"stream":true}`)
@@ -344,13 +349,54 @@ func TestForwardAsAnthropic_ForceChatCompletionsEmptyStreamStillFramesMessage(t 
 	}
 
 	result, err := svc.ForwardAsAnthropic(context.Background(), c, forceChatMessagesFallbackAccount(), body, "", "")
-	require.NoError(t, err)
-	require.NotNil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Nil(t, result)
+	require.Empty(t, rec.Body.String(), "空响应不得向客户端写出任何字节，否则无法换号重试")
 
-	out := rec.Body.String()
-	require.Contains(t, out, "event: message_start")
-	require.Contains(t, out, "event: message_delta")
-	require.Contains(t, out, "event: message_stop")
+	statusVal, ok := c.Get(OpsUpstreamStatusCodeKey)
+	require.True(t, ok, "空响应必须记一条上游错误供「错误请求」列表展示")
+	require.Equal(t, http.StatusBadGateway, statusVal)
+}
+
+// FORK-ANCHOR: test-messages-cc-empty-completion-with-usage（二开：带 usage 的空流同样要换号）
+// 中转站常常回一个 completion_tokens=0 的 usage 块（2026-10-10 sharellm站-免费 就是这样，
+// 用量表里 input_tokens 有值、output_tokens=0），这种"有 usage 没正文"的流不能因为
+// usage 存在就被当成正常响应放行。
+func TestForwardAsAnthropic_ForceChatCompletionsEmptyStreamWithUsageBecomesFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"gpt-5.4","max_tokens":8,"messages":[{"role":"user","content":"hello"}],"stream":true}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstreamBody := strings.Join([]string{
+		`data: {"id":"chatcmpl_eu","object":"chat.completion.chunk","model":"gpt-5.4","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}`,
+		"",
+		`data: {"id":"chatcmpl_eu","object":"chat.completion.chunk","model":"gpt-5.4","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+		"",
+		`data: {"id":"chatcmpl_eu","object":"chat.completion.chunk","model":"gpt-5.4","choices":[],"usage":{"prompt_tokens":98152,"completion_tokens":0,"total_tokens":98152}}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_msg_chat_empty_usage"}},
+		Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          rawChatCompletionsTestConfig(),
+		httpUpstream: upstream,
+	}
+
+	result, err := svc.ForwardAsAnthropic(context.Background(), c, forceChatMessagesFallbackAccount(), body, "", "")
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Nil(t, result)
+	require.Empty(t, rec.Body.String())
 }
 
 // Non-failover 4xx responses must go through the shared compat error handler:
@@ -396,6 +442,35 @@ func TestForwardAsAnthropic_ForceChatCompletionsNonFailover400UsesSharedErrorHan
 	require.Equal(t, http.StatusBadRequest, events[0].UpstreamStatusCode)
 	require.Equal(t, "http_error", events[0].Kind)
 	require.Equal(t, "invalid roles", events[0].Message)
+}
+
+// FORK-ANCHOR: test-messages-cc-empty-completion-nonstream（二开：非流式空正文同样换号）
+func TestForwardAsAnthropic_ForceChatCompletionsNonStreamingEmptyContentBecomesFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"gpt-5.4","max_tokens":32,"messages":[{"role":"user","content":"hello"}],"stream":false}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_msg_chat_json_empty"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"id":"chatcmpl_json_empty","object":"chat.completion","model":"gpt-5.4","choices":[{"index":0,"message":{"role":"assistant","content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":0,"total_tokens":3}}`,
+		)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          rawChatCompletionsTestConfig(),
+		httpUpstream: upstream,
+	}
+
+	result, err := svc.ForwardAsAnthropic(context.Background(), c, forceChatMessagesFallbackAccount(), body, "", "")
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Nil(t, result)
+	require.Empty(t, rec.Body.String())
 }
 
 // A broken upstream read mid-stream must surface an error and must NOT emit a

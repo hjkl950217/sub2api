@@ -187,6 +187,9 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 		}
 		account = selected.Account
 		accountReleaseFunc = release
+		// FORK-ANCHOR: web-search-ops-account（二开：选号成功后写入错误日志账号上下文，
+		// 否则上游失败时「错误请求」列表账号列会错误显示 `-`。勿删）
+		setOpsSelectedAccount(c, account.ID, account.Platform)
 
 		if isXSearch {
 			nativeResp, providerName, err = h.doGrokNativeXSearch(c.Request.Context(), c, account, req, searchModel, maxResults)

@@ -188,6 +188,8 @@ export default {
         trustWarning: '此倍率由上游站点针对当前 API Key 自行声明。Sub2API 无法验证该值是否与实际扣费一致；上游站点或中间代理可能返回伪造、过期或被篡改的数据。请结合账单、余额变化和实际用量自行核验。',
         autoProbe: '自动探测上游声明倍率',
         autoProbeHint: '启用后按全局周期刷新上游声明倍率；此开关本身不会修改账号倍率。',
+        // FORK-ANCHOR: i18n-autoprobe-apikey-only-zh (二开：开关已全平台常显，非 API Key 类型加说明)
+        autoProbeApiKeyOnly: '仅 API Key 类型的账号支持上游倍率探测；当前账号类型不会应用此开关。',
         syncRate: '同步上游声明倍率',
         syncRateHint: '成功探测后自动更新账号倍率，同步的是不含高峰的基准倍率；探测失败或声明超出允许范围时保持不变。开启本项会同时打开“自动探测上游声明倍率”。',
         syncRateManagedHint: '当前倍率由上游声明的基准倍率（不含高峰）自动维护。',
@@ -322,8 +324,8 @@ export default {
         minimax: 'MiniMax',
         opencode_go: 'OpenCode',
         typesafe: 'TypeSafe / Jev',
-        // FORK-ANCHOR: i18n-ag-hub-platform-zh (聚合中转平台显示名)
-        ag_hub: 'AG_Hub',
+        // FORK-ANCHOR: i18n-ag-hub-platform-zh (聚合中转平台显示名：代码标识是 ag_hub，UI 一律显示中文名)
+        ag_hub: '聚合中转',
       },
       // FORK-ANCHOR: i18n-cn-sync-protocols-zh (测试弹窗「更新支持协议」文案；代码引用的是 admin.accounts 顶层路径)
       syncProtocols: '更新支持协议',

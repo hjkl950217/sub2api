@@ -459,7 +459,9 @@
       </template>
       <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
     </TablePageLayout>
-    <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="reload" />
+    <!-- FORK-ANCHOR: create-prefill-pass-group-filter（二开：把当前分组筛选值带进新建弹窗，弹窗据此默认
+         预选该分组的平台并勾选分组） -->
+    <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" :initial-group-id="params.group || ''" @close="showCreate = false" @created="reload" />
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <!-- FORK-ANCHOR: test-modal-protocols-updated-refresh (二开：协议探测回写后刷新账号详情与列表) -->

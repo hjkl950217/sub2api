@@ -1304,20 +1304,8 @@
           />
           <p class="input-hint">{{ t('admin.accounts.upstream.apiKeyHint') }}</p>
         </div>
-        <!-- 上游倍率自动探测：antigravity upstream 也是 API-key 账号 -->
-        <div class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.upstreamBilling.autoProbe') }}</label>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.upstreamBilling.autoProbeHint') }}
-            </p>
-          </div>
-          <Toggle
-            v-model="upstreamBillingAutoProbeEnabled"
-            data-testid="upstream-billing-auto-probe-antigravity"
-            :aria-label="t('admin.accounts.upstreamBilling.autoProbe')"
-          />
-        </div>
+        <!-- FORK-ANCHOR: create-autoprobe-antigravity-removed（二开：antigravity 的探测开关已并入
+             全局常显区块，此处不再单独渲染，勿加回来） -->
       </div>
 
       <!-- Vertex Service Account -->
@@ -1593,22 +1581,8 @@
           <p v-if="apiKeyHint" class="input-hint">{{ apiKeyHint }}</p>
         </div>
 
-        <!-- 上游倍率自动探测：全部 API-key 平台可用（所在区块已限定 apikey 类型） -->
-        <div
-          class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
-        >
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.upstreamBilling.autoProbe') }}</label>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.upstreamBilling.autoProbeHint') }}
-            </p>
-          </div>
-          <Toggle
-            v-model="upstreamBillingAutoProbeEnabled"
-            data-testid="upstream-billing-auto-probe"
-            :aria-label="t('admin.accounts.upstreamBilling.autoProbe')"
-          />
-        </div>
+        <!-- FORK-ANCHOR: create-autoprobe-apikey-block-removed（二开：「自动探测上游声明倍率」已上移为
+             全平台常显区块，此处不再单独渲染，勿加回来） -->
 
         <!-- Gemini API Key tier selection -->
         <div v-if="form.platform === 'gemini'">
@@ -2018,6 +1992,27 @@
           </div>
         </div>
 
+      </div>
+
+      <!-- FORK-ANCHOR: create-autoprobe-always-visible（二开：「自动探测上游声明倍率」对所有平台常显、
+           默认打开。原来它只存在于 apikey 区块内，默认落在 OAuth 档的平台（Anthropic / OpenAI /
+           Gemini / Grok / Antigravity）要先点一下「API Key」才看得到。提交时只在创建 API Key 账号
+           时带上该值，其余类型不写。长空 2026-10-10 要求，勿删） -->
+      <div class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div>
+          <label class="input-label mb-0">{{ t('admin.accounts.upstreamBilling.autoProbe') }}</label>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.upstreamBilling.autoProbeHint') }}
+          </p>
+          <p v-if="form.type !== 'apikey'" class="mt-1 text-xs text-amber-600 dark:text-amber-400">
+            {{ t('admin.accounts.upstreamBilling.autoProbeApiKeyOnly') }}
+          </p>
+        </div>
+        <Toggle
+          v-model="upstreamBillingAutoProbeEnabled"
+          data-testid="upstream-billing-auto-probe"
+          :aria-label="t('admin.accounts.upstreamBilling.autoProbe')"
+        />
       </div>
 
       <!-- Bedrock credentials (only for Anthropic Bedrock type) -->
@@ -4271,6 +4266,9 @@ interface Props {
   show: boolean
   proxies: Proxy[]
   groups: AdminGroup[]
+  // FORK-ANCHOR: create-prefill-prop（二开：账号列表当前的分组筛选值，形如 "14"；空串或
+  // 非数字表示未按分组筛选。打开弹窗时据此预选平台并勾选分组。勿删）
+  initialGroupId?: string
 }
 
 const props = defineProps<Props>()
@@ -4615,6 +4613,41 @@ function selectGenericMultiProtocolPlatform(platform: string) {
   resetAdaptiveBaseUrls(platform, accountMode.value)
   openCodeGoProtocolRules.value = cloneOpenCodeGoProtocolRules(defaultProviderProtocolRules(platform, accountMode.value))
 }
+
+// FORK-ANCHOR: create-prefill-from-filter（二开：账号列表按分组筛选后点「添加账号」时，默认预选该
+// 分组的平台并勾选分组。复用「手动点平台按钮」走的同一批函数，保证协议 / 账号模式 / 端点默认值
+// 与手点完全一致。勿删）
+const GROUP_PLATFORM_SELECTORS: Record<string, () => void> = {
+  deepseek: () => selectCNPlatform('deepseek'),
+  kimi: () => selectCNPlatform('kimi'),
+  zhipu: () => selectCNPlatform('zhipu'),
+  minimax: () => selectCNPlatform('minimax'),
+  ag_hub: () => selectAgHubPlatform(),
+  opencode_go: () => selectOpenCodeGoPlatform(),
+  typesafe: () => selectTypeSafePlatform(),
+  command_code: () => selectGenericMultiProtocolPlatform('command_code'),
+  cline: () => selectGenericMultiProtocolPlatform('cline'),
+}
+const PLAIN_GROUP_PLATFORMS = ['anthropic', 'openai', 'gemini', 'grok', 'antigravity']
+
+const applyActiveGroupPrefill = () => {
+  const raw = String(props.initialGroupId ?? '').trim()
+  if (!/^\d+$/.test(raw)) return
+  const groupId = Number(raw)
+  const group = (props.groups || []).find(candidate => Number(candidate.id) === groupId)
+  if (!group) return
+  const platform = String(group.platform || '')
+  const select = GROUP_PLATFORM_SELECTORS[platform]
+  if (select) {
+    select()
+  } else if (PLAIN_GROUP_PLATFORMS.includes(platform)) {
+    form.platform = platform
+  } else {
+    // composite / 未知平台：不预选平台——分组选择器按平台过滤后该分组会勾不上
+    return
+  }
+  form.group_ids = [groupId]
+}
 // 账号类型 / 协议变更时同步默认 base url。
 watch(openCodeAccountMode, (mode, previousMode) => {
   if (!isOpenCodeGoPlatform.value) return
@@ -4684,7 +4717,7 @@ function onCnPresetSelect(preset: { mode: CnAccountMode; protocol: CnApiProtocol
 }
 // FORK-ANCHOR: create-endpoint-autofill (二开：deepseek/聚合中转 三个协议端点通常同域，
 // 某个框填好后自动补到其余还空着的框，已填过的不覆盖)
-// FORK-ANCHOR: create-cn-endpoint-live-preview (二开：端点输入实时预览)
+// FORK-ANCHOR: create-cn-endpoint-live-preview-state (二开：端点输入实时预览状态)
 // 在第一格输入端点时，其余尚未填写的空格用浅色占位显示同一地址（预备生效）；
 // 离开输入框或直接点保存时由 onCnEndpointChange 落定为真实值，颜色随之变正常。
 const focusedEndpointProtocol = ref<CnNativeApiProtocol | ''>('')
@@ -5174,6 +5207,8 @@ watch(
   () => props.show,
   (newVal) => {
     if (newVal) {
+      // FORK-ANCHOR: create-prefill-apply（二开：先预选平台，再据此填默认模型清单）
+      applyActiveGroupPrefill()
       // Load TLS fingerprint profiles
       adminAPI.tlsFingerprintProfiles.list()
         .then(profiles => { tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name })) })
@@ -6337,7 +6372,9 @@ const handleSubmit = async () => {
     ...form,
     group_ids: form.group_ids,
     extra: withUpstreamRequestIdHeader(extra),
-    upstream_billing_probe_enabled: upstreamBillingAutoProbeEnabled.value,
+    // FORK-ANCHOR: create-autoprobe-apikey-gate（二开：开关已对所有平台常显，但只有 API Key 类型
+    // 的账号吃这个字段；其余类型传 undefined，不让后端按「不支持的身份」拒绝创建）
+    upstream_billing_probe_enabled: form.type === 'apikey' ? upstreamBillingAutoProbeEnabled.value : undefined,
     auto_pause_on_expired: autoPauseOnExpired.value
   })
 }

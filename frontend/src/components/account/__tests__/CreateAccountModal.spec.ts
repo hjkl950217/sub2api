@@ -138,9 +138,9 @@ const ModelWhitelistSelectorStub = defineComponent({
   >models</button>`,
 })
 
-function mountModal(groups: any[] = []) {
+function mountModal(groups: any[] = [], extraProps: Record<string, unknown> = {}) {
   return mount(CreateAccountModal, {
-    props: { show: true, proxies: [], groups },
+    props: { show: true, proxies: [], groups, ...extraProps },
     global: {
       stubs: {
         BaseDialog: BaseDialogStub,
@@ -1083,5 +1083,79 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await flushPromises()
 
     expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(false)
+  })
+})
+
+// FORK-ANCHOR: test-create-prefill-from-filter (二开：账号列表按分组筛选后开「添加账号」，
+// 弹窗应预选该分组的平台并勾选分组；复用平台按钮的选择逻辑，保证协议/端点默认值与手点一致)
+describe('CreateAccountModal group filter prefill', () => {
+  const groups = [
+    { id: 11, name: '官渠-ds', platform: 'deepseek' },
+    { id: 14, name: '羊毛-国模', platform: 'ag_hub' },
+    { id: 7, name: '赛博羊毛-Claude', platform: 'anthropic' },
+  ] as any[]
+
+  // 生产里弹窗常驻挂载、靠 show 切换；预填挂在 show 的 watcher 上，测试要照样走一遍开关
+  async function openModal(initialGroupId: string, groupList: any[] = groups) {
+    const wrapper = mountModal(groupList, { initialGroupId, show: false })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('preselects the platform and group from the active group filter', async () => {
+    const wrapper = await openModal('11')
+
+    // GroupSelector 桩只在被点击时回传，这里直接看传进去的 modelValue
+    expect(wrapper.findComponent(GroupSelectorStub).props('modelValue')).toEqual([11])
+    // DeepSeek 属国产多协议平台，预选后应自动落到 API Key 档
+    expect((wrapper.vm as any).form.platform).toBe('deepseek')
+    expect((wrapper.vm as any).form.type).toBe('apikey')
+  })
+
+  it('does not prefill when the filter is empty, non-numeric, or points at an unknown group', async () => {
+    for (const initialGroupId of ['', 'ungrouped', '999']) {
+      const wrapper = await openModal(initialGroupId)
+      expect(wrapper.findComponent(GroupSelectorStub).props('modelValue')).toEqual([])
+      expect((wrapper.vm as any).form.platform).toBe('anthropic')
+      wrapper.unmount()
+    }
+  })
+
+  it('keeps the group unselected for composite groups while still preselecting nothing', async () => {
+    const compositeGroups = [{ id: 99, name: '混合组', platform: 'composite' }] as any[]
+    const wrapper = await openModal('99', compositeGroups)
+    expect(wrapper.findComponent(GroupSelectorStub).props('modelValue')).toEqual([])
+  })
+})
+
+// FORK-ANCHOR: test-create-autoprobe-always-visible (二开：探测开关对所有平台常显且默认打开；
+// 非 API Key 类型提交时不带该字段，避免后端按「不支持的身份」拒绝)
+describe('CreateAccountModal upstream billing auto probe visibility', () => {
+  it('shows the auto-probe toggle for every platform and every account type, default on', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+    for (const platform of ['Anthropic', 'OpenAI', 'Gemini', 'Grok']) {
+      await selectButtonByText(wrapper, platform)
+      const toggle = wrapper.find('[data-testid="upstream-billing-auto-probe"]')
+      expect(toggle.exists()).toBe(true)
+      expect(toggle.attributes('aria-checked')).toBe('true')
+    }
+    wrapper.unmount()
+  })
+
+  it('omits the probe flag when creating a non-API-Key account', async () => {
+    authIsSimpleMode.value = true
+    createAccountMock.mockReset().mockResolvedValue({ id: 7, platform: 'anthropic', type: 'oauth' })
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Anthropic')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('oauth account')
+    // Anthropic 默认落 OAuth / Setup Token 档，走两步授权流程，第一次 submit 不进 create
+    await wrapper.get('[data-testid="upstream-billing-auto-probe"]').trigger('click')
+    expect(wrapper.get('[data-testid="upstream-billing-auto-probe"]').attributes('aria-checked')).toBe('false')
+    // 关掉后再打开，确认开关可交互（常显不等于锁定）
+    await wrapper.get('[data-testid="upstream-billing-auto-probe"]').trigger('click')
+    expect(wrapper.get('[data-testid="upstream-billing-auto-probe"]').attributes('aria-checked')).toBe('true')
+    wrapper.unmount()
   })
 })

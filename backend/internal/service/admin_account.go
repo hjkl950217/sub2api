@@ -445,6 +445,10 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 			account.Extra = make(map[string]any)
 		}
 		account.Extra[UpstreamBillingProbeEnabledExtraKey] = true
+		// FORK-ANCHOR: create-default-rate-sync（二开：新账号「同步上游声明倍率」默认打开，
+		// 与创建弹窗默认开启的「自动探测上游声明倍率」配套。同步依赖探测，所以只能在这个
+		// 分支里给；用户随后在编辑页关掉探测时，更新路径会把同步一并归零。勿删）
+		account.Extra[UpstreamBillingRateSyncEnabledExtraKey] = true
 	}
 	// 预计算固定时间重置的下次重置时间
 	if account.Extra != nil {

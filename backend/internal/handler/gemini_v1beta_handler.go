@@ -84,6 +84,9 @@ func (h *GatewayHandler) GeminiV1BetaListModels(c *gin.Context) {
 		googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts: "+err.Error())
 		return
 	}
+	// FORK-ANCHOR: gemini-v1beta-models-ops-account（二开：选号成功后写入错误日志账号上下文，
+	// 否则上游失败时「错误请求」列表账号列会错误显示 `-`。勿删）
+	setOpsSelectedAccount(c, account.ID, account.Platform)
 
 	res, err := h.geminiCompatService.ForwardAIStudioGET(c.Request.Context(), account, "/v1beta/models")
 	if err != nil {
@@ -264,6 +267,8 @@ func (h *GatewayHandler) GeminiV1BetaGetModel(c *gin.Context) {
 		googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts: "+err.Error())
 		return
 	}
+	// FORK-ANCHOR: gemini-v1beta-model-ops-account（二开：同 models 列表端点，选号后写入账号上下文。勿删）
+	setOpsSelectedAccount(c, account.ID, account.Platform)
 
 	res, err := h.geminiCompatService.ForwardAIStudioGET(c.Request.Context(), account, "/v1beta/models/"+modelName)
 	if err != nil {

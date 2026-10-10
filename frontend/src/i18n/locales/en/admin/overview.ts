@@ -1047,8 +1047,8 @@ export default {
         opencode_go: 'OpenCode',
         typesafe: 'TypeSafe / Jev',
         composite: 'Composite',
-        // FORK-ANCHOR: i18n-ag-hub-platform-groups-en (group platform display name)
-        ag_hub: 'AG_Hub',
+        // FORK-ANCHOR: i18n-ag-hub-platform-groups-en (聚合中转平台显示名，英文界面保留原名)
+        ag_hub: 'Aggregate Hub',
       },
       deleteConfirm:
         "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",

@@ -119,8 +119,8 @@ export default {
         minimax: 'MiniMax',
         opencode_go: 'OpenCode',
         typesafe: 'TypeSafe / Jev',
-        // FORK-ANCHOR: i18n-ag-hub-platform-en (AG_Hub platform display name)
-        ag_hub: 'AG_Hub',
+        // FORK-ANCHOR: i18n-ag-hub-platform-en (聚合中转平台显示名，英文界面保留原名)
+        ag_hub: 'Aggregate Hub',
       },
       // FORK-ANCHOR: i18n-cn-sync-protocols-en ("Update supported protocols" copy; code references the admin.accounts top-level path)
       syncProtocols: 'Update supported protocols',
@@ -364,6 +364,8 @@ export default {
         trustWarning: 'This rate is declared by the upstream site for the current API key. Sub2API cannot verify that it matches actual charges. The upstream site or an intermediary may return forged, stale, or modified data. Verify it against bills, balance changes, and actual usage.',
         autoProbe: 'Automatically probe upstream declared rate',
         autoProbeHint: 'Refresh the upstream declared rate on the global interval. This switch alone does not change the account rate.',
+        // FORK-ANCHOR: i18n-autoprobe-apikey-only-en (二开：开关已全平台常显，非 API Key 类型加说明)
+        autoProbeApiKeyOnly: 'Upstream rate probing only applies to API Key accounts; the current account type ignores this switch.',
         syncRate: 'Sync upstream declared rate',
         syncRateHint: 'Update the account rate after each successful probe, using the base rate excluding peak hours. Failed probes or declarations outside the allowed range leave it unchanged. Enabling this also turns on "Automatically probe upstream declared rate".',
         syncRateManagedHint: 'The current rate is maintained automatically from the upstream declared base rate (excluding peak hours).',
