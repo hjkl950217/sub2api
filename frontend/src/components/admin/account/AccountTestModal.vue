@@ -508,10 +508,12 @@ const timingLabel = (result: ProtocolProbeResult | undefined) => {
   if (result.firstByteMs == null || result.firstByteMs <= 0) return formatSeconds(result.totalMs)
   return `${formatSeconds(result.firstByteMs)}/${formatSeconds(result.totalMs)}`
 }
-// FORK-ANCHOR: test-modal-protocol-timing-line-helper (二开：输出行追加同一份耗时)
-const timingSuffix = (result: ProtocolProbeResult | undefined) => {
+// FORK-ANCHOR: test-modal-protocol-timing-line-helper (二开：输出行把耗时紧跟在协议名之后，
+// 形如「[chat]0.1s/1.2s 正文」——协议名与耗时之间不留空格（与长空给的示例一致），
+// 耗时与正文之间空一格；没有耗时时返回空串，正文行维持原来的「[chat]正文」)
+const timingInline = (result: ProtocolProbeResult | undefined) => {
   const label = timingLabel(result)
-  return label ? ` · ${label}` : ''
+  return label ? `${label} ` : ''
 }
 const buildProtocolPlaceholders = (): ProtocolProbeResult[] =>
   protocolPlaceholderOrder.value.map((protocol) => ({ protocol, success: null, probing: false, error: '', firstByteMs: null, totalMs: null }))
@@ -1234,20 +1236,24 @@ const handleEvent = (event: {
         }
         // FORK-ANCHOR: test-modal-protocol-content (二开：按协议分行显示各协议返回的正文)
         // 正文只作展示，通过与否仍由后端的格式解析决定（见 protocol_ok）。
-        // FORK-ANCHOR: test-modal-protocol-timing-line (二开：输出行也带上首字/完整耗时，跟批量测试一致)
-        const timing = timingSuffix(probed ?? protocolResults.value[protocolResults.value.length - 1])
+        // FORK-ANCHOR: test-modal-protocol-timing-line (二开：耗时紧跟协议名之后，形如 [chat]0.1s/1.2s 正文)
+        const timing = timingInline(probed ?? protocolResults.value[protocolResults.value.length - 1])
+        const short = protocolShortLabel(event.protocol)
+        // 有耗时时「[chat]0.1s/1.2s 」；没有耗时时正文行「[chat]」、报错行「[chat] 」（保留 ] 后原来的空格）
+        const bodyHead = `[${short}]${timing}`
+        const errorHead = timing ? `[${short}]${timing}` : `[${short}] `
         if (event.protocol_ok === true) {
           if (event.text) {
-            addLine(`[${protocolShortLabel(event.protocol)}]${event.text}${timing}`, 'text-green-300')
+            addLine(`${bodyHead}${event.text}`, 'text-green-300')
           }
         } else {
           // FORK-ANCHOR: test-modal-protocol-error-line (二开：失败的协议把完整报错也写进输出框)
           // 正文原样保留（可能是上游返回的报错正文），后端解析出的报错另起一行，两者都不丢。
           if (event.text) {
-            addLine(`[${protocolShortLabel(event.protocol)}]${event.text}${timing}`, 'text-red-300')
+            addLine(`${bodyHead}${event.text}`, 'text-red-300')
           }
           addLine(
-            `[${protocolShortLabel(event.protocol)}] ${t('admin.accounts.protocolProbeErrorLabel')}${event.error || t('admin.accounts.protocolProbeFailed')}${timing}`,
+            `${errorHead}${t('admin.accounts.protocolProbeErrorLabel')}${event.error || t('admin.accounts.protocolProbeFailed')}`,
             'text-red-400'
           )
         }

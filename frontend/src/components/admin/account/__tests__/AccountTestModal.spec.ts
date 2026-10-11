@@ -613,7 +613,9 @@ describe('AccountTestModal 协议耗时显示', () => {
     expect(wrapper.get('[data-testid="protocol-timing-anthropic"]').text()).toBe('0.1s/2.5s')
     // 没有耗时字段的协议不显示空标签
     expect(wrapper.find('[data-testid="protocol-timing-responses"]').exists()).toBe(false)
-    // 输出行也带上同一份耗时
-    expect(wrapper.text()).toContain('chat-ok · 0.1s/1.2s')
+    // 输出行：耗时紧跟协议名之后，再空一格接正文（[chat]0.1s/1.2s chat-ok）
+    expect(wrapper.text()).toContain('[chat]0.1s/1.2s chat-ok')
+    // 没有耗时的协议，正文行仍是 [协议名]正文，不多空格
+    expect(wrapper.text()).toContain('[responses]responses-ok')
   })
 })
