@@ -193,6 +193,14 @@
               <span class="font-medium">{{ t(`admin.accounts.cnProviders.apiProtocol.${protocolLabelKey(item.protocol)}`) }}</span>
               <!-- FORK-ANCHOR: test-modal-protocol-probing-label (二开：探测中的卡片状态值显示「测试中」) -->
               <span class="ml-auto" :class="protocolCardProbing(item) ? 'text-amber-600 dark:text-amber-400' : ''">{{ protocolStatusLabel(item) }}</span>
+              <!-- FORK-ANCHOR: test-modal-protocol-timing-display (二开：状态右侧显示「首字/完整」耗时，与批量测试一致) -->
+              <span
+                v-if="timingLabel(item)"
+                class="shrink-0 text-[11px] text-gray-400"
+                :data-testid="`protocol-timing-${item.protocol}`"
+              >
+                {{ timingLabel(item) }}
+              </span>
             </div>
             <!-- FORK-ANCHOR: test-modal-protocol-error-view (二开：失败的协议把完整报错显示出来) -->
             <div
@@ -475,6 +483,9 @@ interface ProtocolProbeResult {
   probing: boolean
   // FORK-ANCHOR: test-modal-protocol-error-field (二开：协议失败时后端给回的完整报错)
   error: string
+  // FORK-ANCHOR: test-modal-protocol-timing-field (二开：首字响应 / 完整响应耗时，单位毫秒，与批量测试同口径)
+  firstByteMs: number | null
+  totalMs: number | null
 }
 const protocolResults = ref<ProtocolProbeResult[]>([])
 // FORK-ANCHOR: test-modal-expected-protocol-count (二开：同步按钮的完成条件按平台协议数，openai 只有 chat 与 responses 两个)
@@ -489,8 +500,21 @@ const protocolPlaceholderOrder = computed(() => {
   if (!supportsProtocolSync.value) return []
   return props.account?.platform === 'openai' ? OPENAI_PROTOCOL_PROBE_ORDER : CN_PROTOCOL_PROBE_ORDER
 })
+// FORK-ANCHOR: test-modal-protocol-timing (二开：卡片上显示「首字/完整」耗时，如 0.1s/1.2s，
+// 与批量测试的 batch-test-protocol-timing 同口径同格式)
+const formatSeconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`
+const timingLabel = (result: ProtocolProbeResult | undefined) => {
+  if (!result || result.totalMs == null || result.totalMs <= 0) return ''
+  if (result.firstByteMs == null || result.firstByteMs <= 0) return formatSeconds(result.totalMs)
+  return `${formatSeconds(result.firstByteMs)}/${formatSeconds(result.totalMs)}`
+}
+// FORK-ANCHOR: test-modal-protocol-timing-line-helper (二开：输出行追加同一份耗时)
+const timingSuffix = (result: ProtocolProbeResult | undefined) => {
+  const label = timingLabel(result)
+  return label ? ` · ${label}` : ''
+}
 const buildProtocolPlaceholders = (): ProtocolProbeResult[] =>
-  protocolPlaceholderOrder.value.map((protocol) => ({ protocol, success: null, probing: false, error: '' }))
+  protocolPlaceholderOrder.value.map((protocol) => ({ protocol, success: null, probing: false, error: '', firstByteMs: null, totalMs: null }))
 const hasProtocolPanel = computed(() => protocolPlaceholderOrder.value.length > 0)
 // FORK-ANCHOR: test-modal-tested-protocol-count (二开：已出结论的协议数)
 // 占位卡片开着弹窗就在了，所以「能不能同步」不能看 protocolResults.length（永远等于协议数），
@@ -1160,6 +1184,9 @@ const handleEvent = (event: {
   protocol?: string
   protocol_ok?: boolean
   protocol_applied?: boolean
+  // FORK-ANCHOR: test-modal-protocol-timing-event-field (二开：逐协议首字/完整耗时，毫秒)
+  first_byte_ms?: number
+  total_ms?: number
 }) => {
   // event.error 已在签名里（error?: string）
   switch (event.type) {
@@ -1191,28 +1218,36 @@ const handleEvent = (event: {
           probed.success = event.protocol_ok === true
           probed.probing = false
           probed.error = event.error || ''
+          // FORK-ANCHOR: test-modal-protocol-timing-capture (二开：记下首字与完整耗时)
+          probed.firstByteMs = typeof event.first_byte_ms === 'number' ? event.first_byte_ms : null
+          probed.totalMs = typeof event.total_ms === 'number' ? event.total_ms : null
         } else {
           protocolResults.value.push({
             protocol: event.protocol,
             success: event.protocol_ok === true,
             probing: false,
-            error: event.error || ''
+            error: event.error || '',
+            // FORK-ANCHOR: test-modal-protocol-timing-capture-fallback (同上：兜底追加的协议也带耗时)
+            firstByteMs: typeof event.first_byte_ms === 'number' ? event.first_byte_ms : null,
+            totalMs: typeof event.total_ms === 'number' ? event.total_ms : null
           })
         }
         // FORK-ANCHOR: test-modal-protocol-content (二开：按协议分行显示各协议返回的正文)
         // 正文只作展示，通过与否仍由后端的格式解析决定（见 protocol_ok）。
+        // FORK-ANCHOR: test-modal-protocol-timing-line (二开：输出行也带上首字/完整耗时，跟批量测试一致)
+        const timing = timingSuffix(probed ?? protocolResults.value[protocolResults.value.length - 1])
         if (event.protocol_ok === true) {
           if (event.text) {
-            addLine(`[${protocolShortLabel(event.protocol)}]${event.text}`, 'text-green-300')
+            addLine(`[${protocolShortLabel(event.protocol)}]${event.text}${timing}`, 'text-green-300')
           }
         } else {
           // FORK-ANCHOR: test-modal-protocol-error-line (二开：失败的协议把完整报错也写进输出框)
           // 正文原样保留（可能是上游返回的报错正文），后端解析出的报错另起一行，两者都不丢。
           if (event.text) {
-            addLine(`[${protocolShortLabel(event.protocol)}]${event.text}`, 'text-red-300')
+            addLine(`[${protocolShortLabel(event.protocol)}]${event.text}${timing}`, 'text-red-300')
           }
           addLine(
-            `[${protocolShortLabel(event.protocol)}] ${t('admin.accounts.protocolProbeErrorLabel')}${event.error || t('admin.accounts.protocolProbeFailed')}`,
+            `[${protocolShortLabel(event.protocol)}] ${t('admin.accounts.protocolProbeErrorLabel')}${event.error || t('admin.accounts.protocolProbeFailed')}${timing}`,
             'text-red-400'
           )
         }

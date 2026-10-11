@@ -12,20 +12,25 @@ import (
 // 以下为重构前各处手写的平台列表 / switch，作为平台清单派生结果的等价基准；
 // 重构后新登记的平台（Command Code、Cline）按同类平台（OpenCode）的位置补入。
 var (
+	// FORK-ANCHOR: test-platform-list-include-ag-hub（二开：聚合中转登记进平台清单后，
+	// 下面的基准列表同步补入，位置与 domain/platforms.go 的展示顺序一致——TypeSafe 之后）
 	legacyAllPlatforms = []string{
 		PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok,
 		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformTypeSafe,
+		PlatformAggregateHub,
 		PlatformCommandCode,
 		PlatformCline,
 	}
 	legacySchedulerSnapshotPlatforms = []string{
 		PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok,
 		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformTypeSafe,
+		PlatformAggregateHub,
 		PlatformCommandCode,
 		PlatformCline,
 	}
 	legacyCompositeMatchingPlatforms = legacySchedulerSnapshotPlatforms
-	legacyMultiProtocolProviders     = []string{PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformCommandCode, PlatformCline}
+	// FORK-ANCHOR: test-platform-list-multiprotocol-include-ag-hub（同上：聚合中转有 provider profile，属多协议供应商）
+	legacyMultiProtocolProviders     = []string{PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformAggregateHub, PlatformCommandCode, PlatformCline}
 	platformProbeValues              = append(append([]string{}, legacyAllPlatforms...), PlatformComposite, "", "moonshot", "Kimi", "openai ", "glm", "bogus")
 	platformProbeAccountTypes        = []string{AccountTypeAPIKey, AccountTypeOAuth, AccountTypeSetupToken, AccountTypeUpstream, ""}
 )
@@ -39,12 +44,14 @@ func legacyIsCNProvider(platform string) bool {
 }
 
 func legacyIsOpenAICompatible(platform string) bool {
-	return platform == PlatformOpenAI || platform == PlatformGrok || legacyIsCNProvider(platform) || platform == PlatformOpenCodeGo || platform == PlatformCommandCode || platform == PlatformCline
+	// FORK-ANCHOR: test-legacy-openai-compatible-include-ag-hub（二开：聚合中转走 OpenAI 网关）
+	return platform == PlatformOpenAI || platform == PlatformGrok || legacyIsCNProvider(platform) || platform == PlatformOpenCodeGo || platform == PlatformAggregateHub || platform == PlatformCommandCode || platform == PlatformCline
 }
 
 func legacyNormalizeOpenAICompatiblePlatform(platform string) string {
 	switch platform {
-	case PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformCommandCode, PlatformCline:
+	// FORK-ANCHOR: test-legacy-normalize-include-ag-hub（二开：聚合中转走 OpenAI 网关）
+	case PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformAggregateHub, PlatformCommandCode, PlatformCline:
 		return platform
 	}
 	return PlatformOpenAI
@@ -55,9 +62,10 @@ func legacyIsUpstreamBillingProbeIdentity(platform, accountType string) bool {
 		return false
 	}
 	switch platform {
+	// FORK-ANCHOR: test-legacy-probe-identity-include-ag-hub（二开：聚合中转是已登记的具体平台，需探测）
 	case PlatformOpenAI, PlatformAnthropic, PlatformGemini, PlatformAntigravity, PlatformGrok,
 		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo,
-		PlatformTypeSafe, PlatformCommandCode, PlatformCline:
+		PlatformTypeSafe, PlatformAggregateHub, PlatformCommandCode, PlatformCline:
 		return true
 	}
 	return false
@@ -65,7 +73,8 @@ func legacyIsUpstreamBillingProbeIdentity(platform, accountType string) bool {
 
 func legacyIsHeaderOverrideEligible(platform, accountType string) bool {
 	switch platform {
-	case PlatformAnthropic, PlatformOpenAI, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformCommandCode, PlatformCline:
+	// FORK-ANCHOR: test-legacy-header-override-include-ag-hub（二开：聚合中转有多协议 profile，属可覆写名单）
+	case PlatformAnthropic, PlatformOpenAI, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformAggregateHub, PlatformCommandCode, PlatformCline:
 		return accountType == AccountTypeAPIKey
 	case PlatformGrok:
 		return accountType == AccountTypeAPIKey || accountType == AccountTypeOAuth
@@ -128,8 +137,10 @@ func TestProviderProfileAccountPredicatesMatchLegacy(t *testing.T) {
 	for _, platform := range platformProbeValues {
 		account := &Account{Platform: platform, Type: AccountTypeAPIKey}
 		// Cline 只有 Chat Completions 一个端点，按入站协议分流（其余入站转换）。
-		require.Equal(t, legacyIsCNProvider(platform) || platform == PlatformCline, account.RoutesProtocolByInbound(), platform)
-		require.Equal(t, legacyIsCNProvider(platform) || platform == PlatformOpenCodeGo || platform == PlatformCommandCode || platform == PlatformCline, account.IsMultiProtocolAPIKey(), platform)
+		// FORK-ANCHOR: test-provider-profile-predicates-include-ag-hub（二开：聚合中转 profile 的 Routing 是
+		// by_inbound，且是有 profile 的多协议供应商，两条判定都要把它算进去）
+		require.Equal(t, legacyIsCNProvider(platform) || platform == PlatformCline || platform == PlatformAggregateHub, account.RoutesProtocolByInbound(), platform)
+		require.Equal(t, legacyIsCNProvider(platform) || platform == PlatformOpenCodeGo || platform == PlatformAggregateHub || platform == PlatformCommandCode || platform == PlatformCline, account.IsMultiProtocolAPIKey(), platform)
 	}
 	var nilAccount *Account
 	require.False(t, nilAccount.RoutesProtocolByInbound())

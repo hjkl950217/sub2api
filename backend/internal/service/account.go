@@ -1755,8 +1755,13 @@ func (a *Account) GetOpenAIFormatBaseURL() string {
 // GetCNAPIKey 返回国产 OpenAI 兼容供应商账号的 api_key 凭据（kimi/zhipu/deepseek）。
 // 与 openai 的 GetOpenAIApiKey 区分：后者仅对 openai 平台返回。
 func (a *Account) GetCNAPIKey() string {
-	// FORK-ANCHOR: fork-api-protocols-cn-apikey-gate (二开：保持 CN/OpenCode 语义，openai 复选账号不参与 CN 余额与额度探测)
-	if a == nil || (!a.IsCNProvider() && !a.IsOpenCodeGo()) {
+	// FORK-ANCHOR: fork-api-protocols-cn-apikey-gate (二开：openai 复选账号不参与 CN 余额与额度探测)
+	// 门控只排除 openai：openai API Key 账号在二开里也带协议复选凭据，IsMultiProtocolAPIKey()
+	// 会为真，但它的 key 走 GetOpenAIProtocolAPIKey()，不该被当成 CN 供应商凭据。
+	// Cline / Command Code / 聚合中转同样是多协议 API Key 平台，它们的额度、余额、用量探测
+	// 都要读这个 key，不能被一起挡掉（2026-10-10 修：原先写的是 IsCNProvider() || IsOpenCodeGo()，
+	// 漏掉了上游后加的 Cline 与 Command Code，导致这两个平台的探测全部报 CN_QUOTA_NO_APIKEY）。
+	if a == nil || !a.IsMultiProtocolAPIKey() || a.Platform == PlatformOpenAI {
 		return ""
 	}
 	return a.GetCredential("api_key")

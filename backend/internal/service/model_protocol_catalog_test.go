@@ -328,13 +328,20 @@ func TestProtocolRulesWithProtocolSets(t *testing.T) {
 
 // 经真实入口验证：目录声明模型支持入站协议时原样直通，不做协议转换。
 func TestCommandCodeGatewayPassesThroughCatalogProtocols(t *testing.T) {
+	// FORK-ANCHOR: test-commandcode-catalog-unique-base（二开：每次 forward 需要一个新的目录缓存
+	// key，原实现用 time.Now().UnixNano() 做后缀。本机 Windows 上 Go 的墙钟只有约 15.6ms 台阶，
+	// 相邻两次调用拿到完全相同的纳秒值（实测 1000/1000 相同）→ 两次 forward 撞同一个 key，
+	// 第二次「目录不可用」的用例会读到第一次缓存的目录，断言必失败；Linux 纳秒级不会撞。
+	// 改成自增序号，与时钟分辨率无关。）
+	seq := 0
 	type observation struct {
 		url  string
 		body []byte
 	}
 	forward := func(t *testing.T, ingress routingMatrixIngress, model string, catalog map[string][]string) observation {
 		t.Helper()
-		base := fmt.Sprintf("http://cc-%s-%d.example", strings.ReplaceAll(t.Name(), "/", "-"), time.Now().UnixNano())
+		seq++
+		base := fmt.Sprintf("http://cc-%s-%d.example", strings.ReplaceAll(t.Name(), "/", "-"), seq)
 		account := commandCodeTestAccount(12)
 		account.Credentials["api_base_urls"] = map[string]any{
 			APIProtocolChatCompletions: base + "/provider/v1",

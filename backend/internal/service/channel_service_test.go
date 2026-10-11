@@ -2127,7 +2127,8 @@ func TestMatchingPlatforms(t *testing.T) {
 		{"anthropic returns itself", PlatformAnthropic, []string{PlatformAnthropic}},
 		{"gemini returns itself", PlatformGemini, []string{PlatformGemini}},
 		{"openai returns itself", PlatformOpenAI, []string{PlatformOpenAI}},
-		{"composite returns concrete platforms", PlatformComposite, []string{PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformTypeSafe, PlatformCommandCode, PlatformCline}},
+		// FORK-ANCHOR: test-matching-platforms-include-ag-hub（二开：聚合中转登记进平台清单，组合匹配列表同步补入）
+		{"composite returns concrete platforms", PlatformComposite, []string{PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformTypeSafe, PlatformAggregateHub, PlatformCommandCode, PlatformCline}},
 	}
 
 	for _, tt := range tests {

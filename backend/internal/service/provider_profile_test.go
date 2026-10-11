@@ -132,6 +132,11 @@ func TestProviderProfile_NativeResponsesMatchesLegacy(t *testing.T) {
 		PlatformKimi:       true,
 		PlatformMiniMax:    true,
 		PlatformOpenCodeGo: true,
+		// FORK-ANCHOR: test-provider-profile-openai-native-responses（二开：openai API Key
+		// 被显式视为具备原生 /responses 端点，见 account.go 的
+		// fork-api-protocols-openai-native-responses 与 fork_openai_api_protocols_test.go。
+		// 上游 profile 化之前这里是 false，属于二开的刻意偏离，不是漏改。）
+		PlatformOpenAI: true,
 	}
 	modes := []string{"", AccountModePayG, AccountModeCoding, AccountModeZen, AccountModeGo, "unknown"}
 	for _, platform := range []string{PlatformOpenAI, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo} {
@@ -148,6 +153,13 @@ func TestProviderProfile_BaseURLKeysAreNativeProtocols(t *testing.T) {
 
 	for platform, profile := range providerProfiles {
 		for mode, endpoints := range profile.Modes {
+			// FORK-ANCHOR: test-provider-profile-credential-only-base-urls（二开：聚合中转这类
+			// 端点全部由账号凭据提供的供应商，profile 故意不登记 BaseURLs，只用
+			// ExplicitProtocols 声明支持哪些协议，所以不能要求它必须有 chat_completions 基址。
+			// 见 provider_profile.go 的 ag-hub-provider-profile。）
+			if len(endpoints.BaseURLs) == 0 && len(profile.ExplicitProtocols) > 0 {
+				continue
+			}
 			require.NotEmpty(t, endpoints.BaseURLs[APIProtocolChatCompletions], "%s/%s must have a chat_completions base", platform, mode)
 			for protocol, baseURL := range endpoints.BaseURLs {
 				require.True(t, isNativeUpstreamProtocol(protocol), "%s/%s has unknown protocol key %q", platform, mode, protocol)

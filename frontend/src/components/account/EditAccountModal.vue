@@ -179,7 +179,7 @@
         <!-- API Protocol Selection (CN providers / OpenCode / OpenAI APIKey) -->
         <div v-if="isCNApiKeyAccount || isEditOpenAIProtocolSelectPlatform">
           <!-- FORK-ANCHOR: edit-cn-protocol-multiselect (CN 平台协议改为多选卡片 + 兜底转发协议下拉；openai API Key 复用同一多选) -->
-          <template v-if="isEditCNPlatform || isEditOpenAIProtocolSelectPlatform">
+          <template v-if="isEditCNProtocolUIPlatform || isEditOpenAIProtocolSelectPlatform">
             <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.title') }}</label>
             <div class="mt-2 flex flex-wrap gap-2">
               <button
@@ -216,7 +216,7 @@
             </div>
             <!-- FORK-ANCHOR: edit-cn-endpoint-block (端点配置区移到「兜底转发协议」下方，只渲染已勾选协议) -->
             <!-- FORK-ANCHOR: edit-openai-endpoint-block-skip (二开：openai 的 chat 与 responses 同域不同路径，不渲染分协议端点输入框) -->
-            <div v-if="isEditCNPlatform" class="mt-3">
+            <div v-if="isEditCNProtocolUIPlatform" class="mt-3">
               <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.endpoints') }}</label>
               <p class="input-hint">{{ t('admin.accounts.cnProviders.apiProtocol.endpointsHint') }}</p>
               <div class="mt-2 space-y-3">
@@ -238,7 +238,9 @@
                     @change="onEditEndpointChange(item.value)"
                   />
                   <!-- FORK-ANCHOR: edit-cn-endpoint-presets (已勾选协议端点保留快捷预设填充) -->
+                  <!-- FORK-ANCHOR: edit-ag-hub-endpoint-no-presets (二开：聚合中转无官方端点，不显示默认地址/快捷输入预设) -->
                   <CnBaseUrlPresets
+                    v-if="account.platform !== 'ag_hub'"
                     class="mt-2"
                     :platform="cnPresetPlatform"
                     :mode="cnPresetMode"
@@ -3505,7 +3507,13 @@ const editApiProtocol = ref<CnApiProtocol>('adaptive')
 // FORK-ANCHOR: edit-cn-protocol-state (CN 平台协议多选 + 兜底转发协议状态)
 const editApiProtocols = ref<CnNativeApiProtocol[]>([])
 const editFallbackProtocol = ref<CnNativeApiProtocol | ''>('')
-const isEditCNPlatform = computed(() => isCNProviderPlatform(props.account?.platform ?? ''))
+// FORK-ANCHOR: edit-ag-hub-cn-protocol-ui (二开：聚合中转在编辑页要走和国产供应商同一套 UI ——
+// 协议多选卡片 + 兜底转发协议 + 分协议端点输入框。它由凭据提供端点、没有官方基址，所以端点
+// 那一行不渲染 CnBaseUrlPresets 预设。原先只按 isCNProviderPlatform 判定，聚合中转被判成
+// 非 CN，编辑页于是既没有多选卡片（只剩旧的「自适应」单选），也看不到三个协议的端点。)
+const isEditCNProtocolUIPlatform = computed(
+  () => isCNProviderPlatform(props.account?.platform ?? '') || props.account?.platform === 'ag_hub'
+)
 const isOpenCodeGoPlatform = computed(() => props.account?.platform === 'opencode_go')
 // FORK-ANCHOR: edit-openai-protocol-select-platform (二开：openai API Key 账号启用协议复选卡片)
 const isEditOpenAIProtocolSelectPlatform = computed(
@@ -3578,7 +3586,7 @@ const cnNativeProtocolOptions = computed<Array<{ value: CnNativeApiProtocol; lab
 // 端点输入区：CN 平台只渲染已勾选协议；
 // opencode_go 没有多选状态，仍渲染全部支持的原生协议端点（原行为）。
 const editEndpointProtocolOptions = computed(() =>
-  isEditCNPlatform.value
+  isEditCNProtocolUIPlatform.value
     ? editAdaptiveProtocolOptions.value.filter(item => editApiProtocols.value.includes(item.value))
     : editAdaptiveProtocolOptions.value
 )
@@ -3655,7 +3663,7 @@ function onEditEndpointChange(protocol: CnNativeApiProtocol): void {
 watch(editApiProtocol, (protocol, previousProtocol) => {
   if (!isCNApiKeyAccount.value || syncingForm.value) return
   // FORK-ANCHOR: edit-cn-protocol-watch-skip (CN 平台不再用 editApiProtocol 驱动端点输入区)
-  if (isEditCNPlatform.value) return
+  if (isEditCNProtocolUIPlatform.value) return
   if (protocol === 'adaptive') {
     const defaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, currentOpenCodeOrCNMode())
     for (const item of editAdaptiveProtocolOptions.value) {
@@ -3700,7 +3708,7 @@ watch(editAccountMode, (mode, previousMode) => {
       }
     }
     // FORK-ANCHOR: edit-cn-mode-watch-fallback-base (CN 平台 base_url 取兜底协议端点)
-    editBaseUrl.value = isEditCNPlatform.value
+    editBaseUrl.value = isEditCNProtocolUIPlatform.value
       ? (editAdaptiveBaseUrls.value[editFallbackProtocol.value as CnNativeApiProtocol] || editBaseUrl.value)
       : editAdaptiveBaseUrls.value.chat_completions
     return
@@ -3735,7 +3743,7 @@ function onCnPresetSelect(preset: { mode: CnAccountMode; protocol: CnApiProtocol
   editApiProtocol.value = preset.protocol
   editBaseUrl.value = preset.url
   // FORK-ANCHOR: edit-cn-preset-sync-protocols (快捷预设同步到多选状态与端点)
-  if (isEditCNPlatform.value && isCnNativeProtocol(preset.protocol)) {
+  if (isEditCNProtocolUIPlatform.value && isCnNativeProtocol(preset.protocol)) {
     if (!editApiProtocols.value.includes(preset.protocol)) {
       editApiProtocols.value = normalizeCnProtocols(
         [...editApiProtocols.value, preset.protocol],
@@ -4247,7 +4255,7 @@ const defaultBaseUrl = computed(() => {
   // 不能落到 anthropic 默认值（会被当 CC base 拼出错误端点）。
   if (props.account && isMultiProtocolApiKeyPlatform(props.account.platform)) {
     // FORK-ANCHOR: edit-cn-default-base-url-fallback (CN 平台默认 base_url 取兜底协议端点)
-    const protocol = isEditCNPlatform.value
+    const protocol = isEditCNProtocolUIPlatform.value
       ? (editFallbackProtocol.value || 'chat_completions')
       : editApiProtocol.value
     return defaultCNBaseUrl(props.account.platform, currentOpenCodeOrCNMode(), protocol as CnApiProtocol)
@@ -4645,7 +4653,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
         editApiProtocol.value = 'chat_completions'
       }
       // FORK-ANCHOR: edit-cn-protocol-backfill (按读取规则回填勾选协议与兜底协议)
-      if (isCNProviderPlatform(newAccount.platform)) {
+      // FORK-ANCHOR: edit-ag-hub-protocol-backfill (二开：聚合中转同样从 api_protocols/fallback_protocol 回填)
+      if (isCNProviderPlatform(newAccount.platform) || newAccount.platform === 'ag_hub') {
         const storedProtocols = normalizeCnProtocols(credentials.api_protocols, newAccount.platform)
         editApiProtocols.value = storedProtocols.length > 0
           ? storedProtocols
@@ -4723,14 +4732,14 @@ const syncFormFromAccount = (newAccount: Account | null) => {
               ? defaultCNBaseUrl(
                   newAccount.platform,
                   currentOpenCodeOrCNMode(),
-                  (isEditCNPlatform.value && editFallbackProtocol.value
+                  (isEditCNProtocolUIPlatform.value && editFallbackProtocol.value
                     ? editFallbackProtocol.value
                     : editApiProtocol.value) as CnApiProtocol
                 )
               : 'https://api.anthropic.com'
     // FORK-ANCHOR: edit-cn-backfill-base-url (CN 平台回填 base_url 取兜底协议端点)
     editBaseUrl.value = isCNApiKeyAccount.value && editApiProtocol.value === 'adaptive'
-      ? (isEditCNPlatform.value
+      ? (isEditCNProtocolUIPlatform.value
           ? (editAdaptiveBaseUrls.value[editFallbackProtocol.value as CnNativeApiProtocol] ||
               editAdaptiveBaseUrls.value.chat_completions)
           : editAdaptiveBaseUrls.value.chat_completions)
@@ -5477,7 +5486,7 @@ const handleSubmit = async () => {
         newCredentials.account_mode = currentOpenCodeOrCNMode()
         newCredentials.api_protocol = editApiProtocol.value
         // FORK-ANCHOR: edit-cn-protocol-credentials (按字段契约写入 api_protocols/fallback_protocol/api_base_urls/base_url)
-        if (isEditCNPlatform.value) {
+        if (isEditCNProtocolUIPlatform.value) {
           // 兜底：勾选集合为空（理论上不会发生）时回落到旧字段映射，保证 api_protocols 非空。
           const normalizedProtocols = normalizeCnProtocols(editApiProtocols.value, props.account.platform)
           const selectedProtocols = normalizedProtocols.length > 0

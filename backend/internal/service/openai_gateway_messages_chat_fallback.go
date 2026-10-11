@@ -169,6 +169,30 @@ func chatStreamProducedAssistantOutput(d *openAIChatSilentRefusalDetector) bool 
 	return d.sawContent || d.sawToolCall || d.sawFunctionCall || d.sawReasoning || d.sawError
 }
 
+// chatAnthropicResponseHasContent 报告非流式 Anthropic 响应里是否真有可交付内容。
+// 不能只看 len(resp.Content)：chatMessageToAnthropicBlocks 对空文本会补一个 Text 为空串的
+// text 块（reasoning-only 兜底也走同一条路），所以空回复的 Content 长度是 1 不是 0。
+func chatAnthropicResponseHasContent(resp *apicompat.AnthropicResponse) bool {
+	if resp == nil {
+		return false
+	}
+	for _, block := range resp.Content {
+		switch block.Type {
+		case "text":
+			if strings.TrimSpace(block.Text) != "" {
+				return true
+			}
+		case "thinking":
+			if strings.TrimSpace(block.Thinking) != "" {
+				return true
+			}
+		default:
+			return true
+		}
+	}
+	return false
+}
+
 func (s *OpenAIGatewayService) bufferChatCompletionsAsAnthropic(
 	c *gin.Context,
 	resp *http.Response,
@@ -187,8 +211,8 @@ func (s *OpenAIGatewayService) bufferChatCompletionsAsAnthropic(
 	}
 	anthropicResp := apicompat.ChatCompletionsResponseToAnthropic(ccResp, originalModel)
 	// FORK-ANCHOR: messages-cc-empty-completion-nonstream（二开：非流式分支，上游 200 但正文为空
-	// 同样按上游异常处理并换号；判据在 newChatStreamEmptyBodyDetector 上方注释里）
-	if len(anthropicResp.Content) == 0 {
+	// 同样按上游异常处理并换号；判据见 chatAnthropicResponseHasContent 上方注释）
+	if !chatAnthropicResponseHasContent(anthropicResp) {
 		return nil, newOpenAISilentRefusalFailoverError(c, account, requestID)
 	}
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import {
   BUILTIN_PLATFORM_CATALOG,
   resetPlatformCatalog,
@@ -60,6 +60,8 @@ vi.mock('vue-i18n', async () => {
 })
 
 import EditAccountModal from '../EditAccountModal.vue'
+// FORK-ANCHOR: test-edit-ag-hub-presets-absent (二开：断言聚合中转端点行不渲染预设组件)
+import CnBaseUrlPresets from '../CnBaseUrlPresets.vue'
 
 const BaseDialogStub = defineComponent({
   name: 'BaseDialog',
@@ -1927,5 +1929,74 @@ describe('EditAccountModal OpenAI 自动使用重置卡', () => {
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
     expect(updateAccountMock).not.toHaveBeenCalled()
     wrapper.unmount()
+  })
+})
+
+// FORK-ANCHOR: test-edit-ag-hub-cn-protocol-ui (二开：聚合中转在编辑页要和国产供应商同款 UI。
+// 原先只按 isCNProviderPlatform 判定，聚合中转被判成非 CN：既没有协议多选卡片（只剩旧的
+// 「自适应」单选），也看不到三个协议的分协议端点输入框，端点根本没地方改。)
+describe('EditAccountModal ag_hub protocol UI', () => {
+  function buildAgHubAccount() {
+    const account = buildAccount()
+    return {
+      ...account,
+      id: 3310,
+      name: 'sharellm站-免费',
+      platform: 'ag_hub',
+      credentials: {
+        api_key: 'sk-ag-hub',
+        base_url: 'https://relay.example.com/v1',
+        account_mode: 'payg',
+        api_protocol: 'chat_completions',
+        api_protocols: ['chat_completions', 'responses'],
+        fallback_protocol: 'chat_completions',
+        api_base_urls: {
+          anthropic: 'https://relay.example.com/v1',
+          chat_completions: 'https://relay.example.com/v1',
+          responses: 'https://relay.example.com/v1'
+        },
+        model_mapping: { 'deepseek-v4.1-flash': 'deepseek-v4.1-flash' }
+      }
+    } as any
+  }
+
+  it('renders the protocol multiselect, fallback select and per-protocol endpoints', async () => {
+    const wrapper = mountModal(buildAgHubAccount())
+    await flushPromises()
+
+    // 多选卡片在，旧的「自适应」单选不在
+    expect(wrapper.find('[data-testid="cn-api-protocol-chat_completions"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="cn-api-protocol-responses"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="cn-api-protocol-anthropic"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('apiProtocol.adaptive')
+    // 兜底转发协议下拉在
+    expect(wrapper.find('[data-testid="cn-fallback-protocol"]').exists()).toBe(true)
+    // 已勾选的两个协议各有一个可编辑的端点输入框
+    expect(wrapper.get<HTMLInputElement>('[data-testid="cn-adaptive-base-url-chat_completions"]').element.value)
+      .toBe('https://relay.example.com/v1')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="cn-adaptive-base-url-responses"]').element.value)
+      .toBe('https://relay.example.com/v1')
+    // 未勾选的 anthropic 不渲染输入框
+    expect(wrapper.find('[data-testid="cn-adaptive-base-url-anthropic"]').exists()).toBe(false)
+    // 聚合中转没有官方端点 → 端点行不显示「默认地址 / 快捷输入」预设
+    expect(wrapper.findAllComponents(CnBaseUrlPresets)).toHaveLength(0)
+  })
+
+  it('writes the edited endpoints back into api_base_urls on save', async () => {
+    const account = buildAgHubAccount()
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="cn-adaptive-base-url-responses"]').setValue('https://relay.example.com/resp')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const saved = updateAccountMock.mock.calls[0]?.[1]?.credentials
+    expect(saved.api_protocols).toEqual(['chat_completions', 'responses'])
+    expect(saved.fallback_protocol).toBe('chat_completions')
+    expect(saved.api_base_urls.responses).toBe('https://relay.example.com/resp')
+    expect(saved.base_url).toBe('https://relay.example.com/v1')
   })
 })

@@ -579,3 +579,41 @@ describe('AccountTestModal', () => {
     })
   })
 })
+
+// FORK-ANCHOR: test-test-modal-protocol-timing (二开：单账号测试也要显示「首字/完整」耗时，
+// 与批量测试同口径。后端协议矩阵早就把 first_byte_ms/total_ms 随 protocol_result 回传，
+// 单账号这条链路此前只是没渲染。)
+describe('AccountTestModal 协议耗时显示', () => {
+  it('在协议卡片与输出行上显示首字/完整耗时', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_result","protocol":"chat_completions","protocol_ok":true,"text":"chat-ok","first_byte_ms":120,"total_ms":1234}\n',
+        'data: {"type":"protocol_result","protocol":"anthropic","protocol_ok":false,"error":"boom","first_byte_ms":90,"total_ms":2500}\n',
+        'data: {"type":"protocol_result","protocol":"responses","protocol_ok":true,"text":"responses-ok"}\n',
+        'data: {"type":"test_complete","success":true}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({
+      id: 11,
+      name: 'DeepSeek',
+      platform: 'deepseek',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    ;(wrapper.vm as any).selectedModelId = 'deepseek-chat'
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+
+    // 卡片上：首字/完整
+    expect(wrapper.get('[data-testid="protocol-timing-chat_completions"]').text()).toBe('0.1s/1.2s')
+    expect(wrapper.get('[data-testid="protocol-timing-anthropic"]').text()).toBe('0.1s/2.5s')
+    // 没有耗时字段的协议不显示空标签
+    expect(wrapper.find('[data-testid="protocol-timing-responses"]').exists()).toBe(false)
+    // 输出行也带上同一份耗时
+    expect(wrapper.text()).toContain('chat-ok · 0.1s/1.2s')
+  })
+})
