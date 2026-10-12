@@ -1152,6 +1152,10 @@ export default {
       bedrockApiKeyLeaveEmpty: 'Leave empty to keep current key',
       apiKeyIsRequired: 'API Key is required',
       leaveEmptyToKeep: 'Leave empty to keep current key',
+      // FORK-ANCHOR: edit-api-key-reveal-i18n (二开：API Key 明文查看按钮文案)
+      apiKeyReveal: 'Show key',
+      apiKeyHide: 'Hide key',
+      apiKeyRevealFailed: 'Failed to load the API key',
       // Upstream type
       upstream: {
         baseUrl: 'Upstream Base URL',

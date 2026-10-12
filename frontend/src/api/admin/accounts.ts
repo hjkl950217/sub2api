@@ -178,6 +178,13 @@ export async function getById(id: number): Promise<Account> {
   return data
 }
 
+// FORK-ANCHOR: account-reveal-api-key-api (二开：编辑弹窗「眼睛」查看 API Key 明文。
+// 上游 GET /admin/accounts/:id 经 dto.RedactCredentials 剥掉 api_key，明文只能走这个二开接口)
+export async function revealApiKey(id: number): Promise<string> {
+  const { data } = await apiClient.get<{ api_key: string }>(`/admin/accounts/${id}/credentials/reveal`)
+  return data?.api_key ?? ''
+}
+
 /**
  * Create new account
  * @param accountData - Account data
@@ -1178,6 +1185,8 @@ export const accountsAPI = {
   listWithEtag,
   getUpstreamBillingRatesWithEtag,
   getById,
+  // FORK-ANCHOR: account-reveal-api-key-api-export (二开：导出 API Key 明文接口)
+  revealApiKey,
   create,
   duplicate,
   update,

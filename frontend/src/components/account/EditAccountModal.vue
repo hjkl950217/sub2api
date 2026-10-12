@@ -314,26 +314,40 @@
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.apiKey') }}</label>
-          <input
-            v-model="editApiKey"
-            type="password"
-            class="input font-mono"
-            autocomplete="new-password"
-            data-1p-ignore
-            data-lpignore="true"
-            data-bwignore="true"
-            :placeholder="
-              account.platform === 'openai'
-                ? 'sk-proj-...'
-                : account.platform === 'gemini'
-                  ? 'AIza...'
-                  : account.platform === 'antigravity'
-                    ? 'sk-...'
-                    : account.platform === 'grok'
-                      ? 'xai-...'
-                      : 'sk-ant-...'
-            "
-          />
+          <!-- FORK-ANCHOR: edit-api-key-reveal-input (二开：已配置时框里显示 ****，右侧眼睛按钮拉明文) -->
+          <div class="relative">
+            <input
+              v-model="editApiKey"
+              :type="apiKeyInputType"
+              class="input pr-10 font-mono"
+              autocomplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore="true"
+              @focus="clearApiKeyMask"
+              :placeholder="
+                account.platform === 'openai'
+                  ? 'sk-proj-...'
+                  : account.platform === 'gemini'
+                    ? 'AIza...'
+                    : account.platform === 'antigravity'
+                      ? 'sk-...'
+                      : account.platform === 'grok'
+                        ? 'xai-...'
+                        : 'sk-ant-...'
+              "
+            />
+            <button
+              type="button"
+              data-testid="api-key-reveal-toggle"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 disabled:opacity-50 dark:hover:text-gray-300"
+              :disabled="!apiKeyHasStored || apiKeyRevealLoading"
+              :title="apiKeyRevealed ? t('admin.accounts.apiKeyHide') : t('admin.accounts.apiKeyReveal')"
+              @click="toggleApiKeyReveal"
+            >
+              <Icon :name="apiKeyRevealed ? 'eyeOff' : 'eye'" size="md" />
+            </button>
+          </div>
           <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
         </div>
 
@@ -990,12 +1004,26 @@
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.upstream.apiKey') }}</label>
-          <input
-            v-model="editApiKey"
-            type="password"
-            class="input font-mono"
-            placeholder="sk-..."
-          />
+          <!-- FORK-ANCHOR: edit-api-key-reveal-input-upstream (二开：上游类型 API Key 同样支持掩码 + 眼睛看明文) -->
+          <div class="relative">
+            <input
+              v-model="editApiKey"
+              :type="apiKeyInputType"
+              class="input pr-10 font-mono"
+              placeholder="sk-..."
+              @focus="clearApiKeyMask"
+            />
+            <button
+              type="button"
+              data-testid="api-key-reveal-toggle"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 disabled:opacity-50 dark:hover:text-gray-300"
+              :disabled="!apiKeyHasStored || apiKeyRevealLoading"
+              :title="apiKeyRevealed ? t('admin.accounts.apiKeyHide') : t('admin.accounts.apiKeyReveal')"
+              @click="toggleApiKeyReveal"
+            >
+              <Icon :name="apiKeyRevealed ? 'eyeOff' : 'eye'" size="md" />
+            </button>
+          </div>
           <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
         </div>
       </div>
@@ -3475,6 +3503,65 @@ const submitting = ref(false)
 const editBaseUrl = ref('https://api.anthropic.com')
 const editApiKey = ref('')
 
+// FORK-ANCHOR: edit-api-key-reveal-state (二开：编辑弹窗查看 API Key 明文。
+// 上游 GET /accounts/:id 会把 api_key 脱敏掉，所以默认只显示掩码 ****，点眼睛才拉一次明文，
+// 再点回到掩码。掩码态点进输入框会自动清空，方便直接粘新 key；
+// 提交时把掩码和空串都当作「不修改」处理，见 edit-api-key-reveal-submit。)
+const API_KEY_MASK = '****'
+const apiKeyRevealed = ref(false)
+const apiKeyRevealLoading = ref(false)
+const apiKeyPlain = ref<string | null>(null)
+
+function hasStoredApiKey(account: Account | null | undefined): boolean {
+  if (!account) return false
+  return Boolean(account.credentials_status?.has_api_key ?? account.credentials?.api_key)
+}
+
+const apiKeyHasStored = computed(() => hasStoredApiKey(props.account))
+// 掩码态也要看得见 ****，所以不是 password 类型；用户自己输入的新 key 仍按密码框显示
+const apiKeyInputType = computed<'text' | 'password'>(() =>
+  apiKeyRevealed.value || editApiKey.value === API_KEY_MASK ? 'text' : 'password'
+)
+
+function clearApiKeyMask() {
+  if (editApiKey.value === API_KEY_MASK) {
+    editApiKey.value = ''
+  }
+}
+
+async function toggleApiKeyReveal() {
+  if (apiKeyRevealed.value) {
+    // 收起：只有还停在明文原值时才换回掩码，用户改过的内容不动
+    if (apiKeyPlain.value !== null && editApiKey.value === apiKeyPlain.value) {
+      editApiKey.value = API_KEY_MASK
+    }
+    apiKeyRevealed.value = false
+    return
+  }
+  const account = props.account
+  if (!account || !apiKeyHasStored.value) {
+    return
+  }
+  if (apiKeyPlain.value === null) {
+    apiKeyRevealLoading.value = true
+    try {
+      apiKeyPlain.value = await adminAPI.accounts.revealApiKey(account.id)
+    } catch (error) {
+      appStore.showError(extractApiErrorMessage(error, t('admin.accounts.apiKeyRevealFailed')))
+      return
+    } finally {
+      apiKeyRevealLoading.value = false
+    }
+  }
+  const plain = apiKeyPlain.value ?? ''
+  if (!plain) {
+    appStore.showError(t('admin.accounts.apiKeyRevealFailed'))
+    return
+  }
+  editApiKey.value = plain
+  apiKeyRevealed.value = true
+}
+
 // ── 国产供应商（Kimi / Zhipu / DeepSeek）account_mode / api_protocol 编辑 ──
 // account_mode 决定额度/余额监控路径，api_protocol 决定转发端点与格式；
 // 二者均可修正（早期创建的账号可能存错默认值），切换时重置 base_url 预置。
@@ -4831,7 +4918,10 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     customErrorCodesEnabled.value = false
     selectedErrorCodes.value = []
   }
-  editApiKey.value = ''
+  // FORK-ANCHOR: edit-api-key-reveal-reset (二开：每次打开弹窗回到掩码态，明文要重新点眼睛才拉)
+  apiKeyRevealed.value = false
+  apiKeyPlain.value = null
+  editApiKey.value = hasStoredApiKey(newAccount) ? API_KEY_MASK : ''
 }
 
 async function loadTLSProfiles() {
@@ -5545,8 +5635,10 @@ const handleSubmit = async () => {
       // 两者都无才报错。
       const hasExistingApiKey =
         props.account.credentials_status?.has_api_key ?? Boolean(currentCredentials.api_key)
-      if (editApiKey.value.trim()) {
-        newCredentials.api_key = editApiKey.value.trim()
+      // FORK-ANCHOR: edit-api-key-reveal-submit (二开：**** 是展示用的掩码，不能当新 key 写回)
+      const apiKeyInput = editApiKey.value.trim()
+      if (apiKeyInput && apiKeyInput !== API_KEY_MASK) {
+        newCredentials.api_key = apiKeyInput
       } else if (!hasExistingApiKey) {
         appStore.showError(t('admin.accounts.apiKeyIsRequired'))
         return
@@ -5624,8 +5716,10 @@ const handleSubmit = async () => {
 
       newCredentials.base_url = editBaseUrl.value.trim()
 
-      if (editApiKey.value.trim()) {
-        newCredentials.api_key = editApiKey.value.trim()
+      // FORK-ANCHOR: edit-api-key-reveal-submit-upstream (二开：上游类型同样跳过掩码值)
+      const upstreamApiKeyInput = editApiKey.value.trim()
+      if (upstreamApiKeyInput && upstreamApiKeyInput !== API_KEY_MASK) {
+        newCredentials.api_key = upstreamApiKeyInput
       }
 
       // Add intercept warmup requests setting

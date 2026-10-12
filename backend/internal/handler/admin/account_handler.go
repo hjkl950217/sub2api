@@ -967,6 +967,27 @@ func (h *AccountHandler) GetByID(c *gin.Context) {
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
 
+// FORK-ANCHOR: account-reveal-api-key-handler (二开：编辑账号弹窗的「眼睛」按钮查看 API Key 明文。
+// 上游 GET /accounts/:id 经 dto.RedactCredentials 剥掉 api_key，前端拿不到原文，故单开此入口。
+// 只回 api_key 一个键，其余敏感凭证（token / 私钥 / service_account_json 等）不外带。)
+// GET /api/v1/admin/accounts/:id/credentials/reveal
+func (h *AccountHandler) RevealAPIKey(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+
+	account, err := h.adminService.GetAccount(c.Request.Context(), accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	apiKey, _ := account.Credentials["api_key"].(string)
+	response.Success(c, gin.H{"api_key": apiKey})
+}
+
 // CheckMixedChannel handles checking mixed channel risk for account-group binding.
 // POST /api/v1/admin/accounts/check-mixed-channel
 func (h *AccountHandler) CheckMixedChannel(c *gin.Context) {

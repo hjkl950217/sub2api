@@ -46,7 +46,7 @@ git add -f CLAUDE.md
   `-c core.quotepath=false` 不能省：中文文件名的路径会被 git 转义成八进制，`grep -v '\.md:'` 就匹配不上，会多算。
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **393 个**），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **458 个** = 源码 443 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   其中 `.github/` 占 15 个，单独看：`git -c core.quotepath=false grep -o "FORK-ANCHOR:" -- .github | wc -l`。
 
 全量清单见 **`锚点清单.md`**：按文件分组列出每个锚点的名字，合并上游后照它逐条核对。
@@ -685,6 +685,42 @@ message item，输入项序列因此变长。`parseAssistantContent` 的返回�
 `..._AssistantThinkingBecomesReasoningItem` 与 `..._AssistantReasoningBecomesReasoningItem`）；
 `openai_gateway_grok_chat_bridge_test.go:484` 的断言改为验证 `input.1.type=reasoning` 与
 `input.1.summary.0.text`。
+
+### 2.20 编辑弹窗查看 API Key 明文（改上游文件，新增 14 个锚点）
+
+**背景**：编辑账号弹窗的 API Key 输入框是空的密码框，只能靠「留空 = 不修改」判断，想核对当前
+填的是哪把 key 得去翻数据库。长空 2026-10-12 要求：默认显示 `****`，右侧加眼睛按钮点开看明文。
+
+**为什么必须有后端配合**：上游 `GET /admin/accounts/:id` 的响应经 `dto.RedactCredentials`
+（`credentials_redact.go`）剥掉 `service.SensitiveCredentialKeys` 里的子键，只留一个
+`credentials_status.has_api_key` 布尔值，前端根本拿不到 `api_key` 原文。
+
+**改法**：
+
+| 层 | 文件 | 锚点 |
+|---|---|---|
+| 接口 | `backend/internal/handler/admin/account_handler.go` | `account-reveal-api-key-handler` |
+| 路由 | `backend/internal/server/routes/admin.go` | `account-reveal-api-key-route` |
+| 前端 API | `frontend/src/api/admin/accounts.ts` | `account-reveal-api-key-api` / `account-reveal-api-key-api-export` |
+| 输入框 | `frontend/src/components/account/EditAccountModal.vue` | `edit-api-key-reveal-input` / `edit-api-key-reveal-input-upstream` / `edit-api-key-reveal-state` / `edit-api-key-reveal-reset` / `edit-api-key-reveal-submit` / `edit-api-key-reveal-submit-upstream` |
+| 文案 | `frontend/src/i18n/locales/{zh,en}/admin/accounts.ts` | `edit-api-key-reveal-i18n`（两处同名） |
+| 用例 | `backend/internal/handler/admin/fork_account_reveal_api_key_test.go`<br>`frontend/src/components/account/__tests__/EditAccountModal.apiKeyReveal.spec.ts` | `account-reveal-api-key-test`<br>`test-edit-api-key-reveal` |
+
+**接口语义**：`GET /api/v1/admin/accounts/:id/credentials/reveal` → `{"api_key":"sk-…"}`。
+只回 `api_key` 一个键，token / 私钥 / `service_account_json` 等其他敏感凭证不外带；挂在管理端
+路由组，走已有的管理员鉴权，不额外加 step-up（与允许改凭据的 `PUT /accounts/:id` 同级）。
+现有 `GET /accounts/:id` 的脱敏逻辑一行未动。
+
+**前端语义**：
+
+- 打开弹窗时若 `credentials_status.has_api_key` 为真，输入框预置掩码 `****`；否则为空。
+- 点眼睛才发一次 reveal 请求（默认不请求），结果缓存到 `apiKeyPlain`，再点回到掩码、不重复请求。
+- 掩码态点进输入框会自动清空，方便直接粘新 key（避免出现 `****sk-new`）。
+- 提交时掩码与空串都当作「不修改」，不会把 `****` 写进 credentials。
+- 通用 API Key 字段与 upstream 类型的 API Key 字段共用同一套状态，都带眼睛。
+
+**测试**：`vue-tsc --noEmit` 退出码 0；`vitest run src/components/account/__tests__/`
+32 文件 507 用例全过（含本轮新增 5 条）。本机无 Go 工具链，后端用例由 push 后的 CI 跑。
 
 ## 3. 发版方式
 

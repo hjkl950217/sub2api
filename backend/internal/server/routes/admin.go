@@ -367,6 +367,8 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.GET("/opencode-go-usage/settings", h.Admin.Account.GetOpenCodeGoUsageSettings)
 		accounts.PUT("/opencode-go-usage/settings", h.Admin.Account.UpdateOpenCodeGoUsageSettings)
 		accounts.GET("/:id", h.Admin.Account.GetByID)
+		// FORK-ANCHOR: account-reveal-api-key-route (二开：编辑弹窗「眼睛」查看 API Key 明文，仅管理员可达)
+		accounts.GET("/:id/credentials/reveal", h.Admin.Account.RevealAPIKey)
 		accounts.GET("/:id/claude/reset-credits", h.Admin.Account.ClaudeResetCredits)
 		// Same protection as the Codex reset-quota route (admin auth, audit, compliance guard).
 		accounts.POST("/:id/claude/reset-credits/redeem", h.Admin.Account.RedeemClaudeResetCredit)
