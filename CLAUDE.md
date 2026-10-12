@@ -713,14 +713,16 @@ message item，输入项序列因此变长。`parseAssistantContent` 的返回�
 
 **前端语义**：
 
-- 打开弹窗时若 `credentials_status.has_api_key` 为真，输入框预置掩码 `****`；否则为空。
-- 点眼睛才发一次 reveal 请求（默认不请求），结果缓存到 `apiKeyPlain`，再点回到掩码、不重复请求。
-- 掩码态点进输入框会自动清空，方便直接粘新 key（避免出现 `****sk-new`）。
-- 提交时掩码与空串都当作「不修改」，不会把 `****` 写进 credentials。
+- 打开弹窗时若 `credentials_status.has_api_key` 为真，**立即**调一次 reveal（同步阶段先显示 `****`
+  占位），拿到明文长度后把框里画成**等长的星号掩码**——长空的 key 约 50 字符，就画约 50 个 `*`；
+  取不到就退化成 `****`。没有 key 的账号框里为空。
+- **眼睛按钮只负责显隐，不再发请求**：明文在打开弹窗时已经拿到并缓存在 `apiKeyPlain`。
+- 掩码态点进输入框会自动清空，方便直接粘新 key（避免出现 `***sk-new`）。
+- 提交时星号掩码与空串都当作「不修改」，不会把掩码写进 credentials。
 - 通用 API Key 字段与 upstream 类型的 API Key 字段共用同一套状态，都带眼睛。
 
 **测试**：`vue-tsc --noEmit` 退出码 0；`vitest run src/components/account/__tests__/`
-32 文件 507 用例全过（含本轮新增 5 条）。本机无 Go 工具链，后端用例由 push 后的 CI 跑。
+32 文件 508 用例全过（含本轮新增 6 条）。本机无 Go 工具链，后端用例由 push 后的 CI 跑。
 
 ## 3. 发版方式
 

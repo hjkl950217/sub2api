@@ -3504,13 +3504,14 @@ const editBaseUrl = ref('https://api.anthropic.com')
 const editApiKey = ref('')
 
 // FORK-ANCHOR: edit-api-key-reveal-state (二开：编辑弹窗查看 API Key 明文。
-// 上游 GET /accounts/:id 会把 api_key 脱敏掉，所以默认只显示掩码 ****，点眼睛才拉一次明文，
-// 再点回到掩码。掩码态点进输入框会自动清空，方便直接粘新 key；
+// 上游 GET /accounts/:id 会把 api_key 脱敏掉，明文只能走二开的 reveal 接口。
+// 打开弹窗就取一次（拿到长度才能按真实长度画星号掩码），眼睛按钮只负责显隐、不再发请求；
+// 掩码态点进输入框会自动清空，方便直接粘新 key；
 // 提交时把掩码和空串都当作「不修改」处理，见 edit-api-key-reveal-submit。)
-const API_KEY_MASK = '****'
+const API_KEY_MASK_FALLBACK = '****' // 明文长度还没回来（或取失败）时的占位
 const apiKeyRevealed = ref(false)
 const apiKeyRevealLoading = ref(false)
-const apiKeyPlain = ref<string | null>(null)
+const apiKeyPlain = ref<string | null>(null) // null = 还没拿到明文
 
 function hasStoredApiKey(account: Account | null | undefined): boolean {
   if (!account) return false
@@ -3518,14 +3519,62 @@ function hasStoredApiKey(account: Account | null | undefined): boolean {
 }
 
 const apiKeyHasStored = computed(() => hasStoredApiKey(props.account))
-// 掩码态也要看得见 ****，所以不是 password 类型；用户自己输入的新 key 仍按密码框显示
+// 掩码按明文长度画（长空的 key 约 50 个字符，就画 50 个星号）
+const apiKeyMask = computed(() => (apiKeyPlain.value ? '*'.repeat(apiKeyPlain.value.length) : ''))
+const apiKeyMaskForDisplay = computed(() =>
+  apiKeyHasStored.value ? apiKeyMask.value || API_KEY_MASK_FALLBACK : ''
+)
+
+function isApiKeyMaskValue(value: string): boolean {
+  return /^\*+$/.test(value.trim())
+}
+
+// 掩码态也要看得见星号，所以不是 password 类型；用户自己输入的新 key 仍按密码框显示
 const apiKeyInputType = computed<'text' | 'password'>(() =>
-  apiKeyRevealed.value || editApiKey.value === API_KEY_MASK ? 'text' : 'password'
+  apiKeyRevealed.value || isApiKeyMaskValue(editApiKey.value) ? 'text' : 'password'
 )
 
 function clearApiKeyMask() {
-  if (editApiKey.value === API_KEY_MASK) {
+  if (isApiKeyMaskValue(editApiKey.value)) {
     editApiKey.value = ''
+  }
+}
+
+// 取一次明文并缓存。拿不到（没配置 / 请求失败 / 弹窗已经换了账号）返回 null。
+async function loadApiKeyPlain(silent: boolean): Promise<string | null> {
+  const account = props.account
+  if (!account || !apiKeyHasStored.value) {
+    return null
+  }
+  if (apiKeyPlain.value !== null) {
+    return apiKeyPlain.value || null
+  }
+  apiKeyRevealLoading.value = true
+  try {
+    const plain = await adminAPI.accounts.revealApiKey(account.id)
+    if (props.account?.id !== account.id) {
+      return null // 弹窗已经切到别的账号，丢弃这次结果
+    }
+    apiKeyPlain.value = plain
+    return plain || null
+  } catch (error) {
+    if (!silent) {
+      appStore.showError(extractApiErrorMessage(error, t('admin.accounts.apiKeyRevealFailed')))
+    }
+    return null
+  } finally {
+    apiKeyRevealLoading.value = false
+  }
+}
+
+// 打开弹窗后把框里画成掩码；用户已经动过输入框就不覆盖
+async function fillApiKeyMaskOnOpen(accountId: number) {
+  await loadApiKeyPlain(true)
+  if (props.account?.id !== accountId || apiKeyRevealed.value) {
+    return
+  }
+  if (editApiKey.value === '' || editApiKey.value === API_KEY_MASK_FALLBACK) {
+    editApiKey.value = apiKeyMaskForDisplay.value
   }
 }
 
@@ -3533,29 +3582,13 @@ async function toggleApiKeyReveal() {
   if (apiKeyRevealed.value) {
     // 收起：只有还停在明文原值时才换回掩码，用户改过的内容不动
     if (apiKeyPlain.value !== null && editApiKey.value === apiKeyPlain.value) {
-      editApiKey.value = API_KEY_MASK
+      editApiKey.value = apiKeyMaskForDisplay.value
     }
     apiKeyRevealed.value = false
     return
   }
-  const account = props.account
-  if (!account || !apiKeyHasStored.value) {
-    return
-  }
-  if (apiKeyPlain.value === null) {
-    apiKeyRevealLoading.value = true
-    try {
-      apiKeyPlain.value = await adminAPI.accounts.revealApiKey(account.id)
-    } catch (error) {
-      appStore.showError(extractApiErrorMessage(error, t('admin.accounts.apiKeyRevealFailed')))
-      return
-    } finally {
-      apiKeyRevealLoading.value = false
-    }
-  }
-  const plain = apiKeyPlain.value ?? ''
+  const plain = await loadApiKeyPlain(false)
   if (!plain) {
-    appStore.showError(t('admin.accounts.apiKeyRevealFailed'))
     return
   }
   editApiKey.value = plain
@@ -4918,10 +4951,11 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     customErrorCodesEnabled.value = false
     selectedErrorCodes.value = []
   }
-  // FORK-ANCHOR: edit-api-key-reveal-reset (二开：每次打开弹窗回到掩码态，明文要重新点眼睛才拉)
+  // FORK-ANCHOR: edit-api-key-reveal-reset (二开：每次打开弹窗重置掩码态，再异步把掩码画成真实长度)
   apiKeyRevealed.value = false
   apiKeyPlain.value = null
-  editApiKey.value = hasStoredApiKey(newAccount) ? API_KEY_MASK : ''
+  editApiKey.value = hasStoredApiKey(newAccount) ? API_KEY_MASK_FALLBACK : ''
+  void fillApiKeyMaskOnOpen(newAccount.id)
 }
 
 async function loadTLSProfiles() {
@@ -5635,9 +5669,9 @@ const handleSubmit = async () => {
       // 两者都无才报错。
       const hasExistingApiKey =
         props.account.credentials_status?.has_api_key ?? Boolean(currentCredentials.api_key)
-      // FORK-ANCHOR: edit-api-key-reveal-submit (二开：**** 是展示用的掩码，不能当新 key 写回)
+      // FORK-ANCHOR: edit-api-key-reveal-submit (二开：星号掩码是展示值，不能当新 key 写回)
       const apiKeyInput = editApiKey.value.trim()
-      if (apiKeyInput && apiKeyInput !== API_KEY_MASK) {
+      if (apiKeyInput && !isApiKeyMaskValue(apiKeyInput)) {
         newCredentials.api_key = apiKeyInput
       } else if (!hasExistingApiKey) {
         appStore.showError(t('admin.accounts.apiKeyIsRequired'))
@@ -5718,7 +5752,7 @@ const handleSubmit = async () => {
 
       // FORK-ANCHOR: edit-api-key-reveal-submit-upstream (二开：上游类型同样跳过掩码值)
       const upstreamApiKeyInput = editApiKey.value.trim()
-      if (upstreamApiKeyInput && upstreamApiKeyInput !== API_KEY_MASK) {
+      if (upstreamApiKeyInput && !isApiKeyMaskValue(upstreamApiKeyInput)) {
         newCredentials.api_key = upstreamApiKeyInput
       }
 

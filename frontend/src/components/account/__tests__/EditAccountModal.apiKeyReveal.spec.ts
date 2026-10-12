@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 
 const { updateAccountMock, revealApiKeyMock, showErrorMock, authIsSimpleMode } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
@@ -98,29 +98,28 @@ describe('EditAccountModal API Key 明文查看', () => {
     revealApiKeyMock.mockResolvedValue('sk-fork-plain')
   })
 
-  it('已配置时默认显示 ****，点眼睛后拉明文并展示', async () => {
+  it('打开弹窗就取一次明文，掩码按真实长度画星号', async () => {
     const wrapper = mountModal()
-    expect((apiKeyInput(wrapper).element as HTMLInputElement).value).toBe('****')
-    // 默认不请求明文：只有点眼睛才拉
-    expect(revealApiKeyMock).not.toHaveBeenCalled()
-
-    await wrapper.get('[data-testid="api-key-reveal-toggle"]').trigger('click')
     await vi.waitFor(() => expect(revealApiKeyMock).toHaveBeenCalledWith(21))
+    // 'sk-fork-plain' 长 13，掩码就是 13 个星号
     await vi.waitFor(() =>
-      expect((apiKeyInput(wrapper).element as HTMLInputElement).value).toBe('sk-fork-plain')
+      expect((apiKeyInput(wrapper).element as HTMLInputElement).value).toBe('*'.repeat(13))
     )
     expect((apiKeyInput(wrapper).element as HTMLInputElement).type).toBe('text')
   })
 
-  it('再点眼睛回到掩码，不重复请求明文', async () => {
+  it('点眼睛显示明文，再点回到等长掩码且不重复请求', async () => {
     const wrapper = mountModal()
     const toggle = () => wrapper.get('[data-testid="api-key-reveal-toggle"]')
+    await vi.waitFor(() =>
+      expect((apiKeyInput(wrapper).element as HTMLInputElement).value).toBe('*'.repeat(13))
+    )
     await toggle().trigger('click')
     await vi.waitFor(() =>
       expect((apiKeyInput(wrapper).element as HTMLInputElement).value).toBe('sk-fork-plain')
     )
     await toggle().trigger('click')
-    expect((apiKeyInput(wrapper).element as HTMLInputElement).value).toBe('****')
+    expect((apiKeyInput(wrapper).element as HTMLInputElement).value).toBe('*'.repeat(13))
     expect(revealApiKeyMock).toHaveBeenCalledTimes(1)
   })
 
@@ -130,8 +129,19 @@ describe('EditAccountModal API Key 明文查看', () => {
     expect(wrapper.get('[data-testid="api-key-reveal-toggle"]').attributes('disabled')).toBeDefined()
   })
 
+  it('取不到明文时退化成 **** 占位', async () => {
+    revealApiKeyMock.mockRejectedValueOnce(new Error('boom'))
+    const wrapper = mountModal()
+    await vi.waitFor(() => expect(revealApiKeyMock).toHaveBeenCalled())
+    await flushPromises()
+    expect((apiKeyInput(wrapper).element as HTMLInputElement).value).toBe('****')
+  })
+
   it('提交时掩码不被当作新 key 写回', async () => {
     const wrapper = mountModal()
+    await vi.waitFor(() =>
+      expect((apiKeyInput(wrapper).element as HTMLInputElement).value).toBe('*'.repeat(13))
+    )
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
     await vi.waitFor(() => expect(updateAccountMock).toHaveBeenCalled())
     const payload = updateAccountMock.mock.calls[0][1] as { credentials: Record<string, unknown> }
