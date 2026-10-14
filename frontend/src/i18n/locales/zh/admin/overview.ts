@@ -50,6 +50,52 @@ export default {
       tokens: 'Token',
       cache: '缓存',
       recentUsage: '最近使用',
+      // FORK-ANCHOR: i18n-dashboard-chart-settings-zh (二开：图表设置文案)
+      chartSettings: {
+        title: '图表设置',
+        items: {
+          rangeSummary: {
+            name: '区间用量概览',
+            desc: '所选范围内的总 Token、请求次数、缓存率与实际花费，附日均'
+          },
+          tokenComposition: {
+            name: 'Token 构成占比',
+            desc: '输入 / 输出 / 缓存写 / 缓存读各占多少'
+          },
+          modelDistribution: {
+            name: '模型分布',
+            desc: '各模型的请求数 / Token / 实际消费占比，可切换用户消费榜'
+          },
+          tokenUsageTrend: {
+            name: 'Token 使用趋势',
+            desc: '按所选粒度展示 Token 消耗的堆叠柱状图'
+          },
+          recentUsage: {
+            name: '最近使用',
+            desc: '按用户维度的用量趋势，取前 12 名'
+          }
+        }
+      },
+      // FORK-ANCHOR: i18n-dashboard-range-summary-zh (二开：区间用量概览文案)
+      rangeSummary: {
+        title: '区间用量（所选范围）',
+        totalTokens: '总 Token',
+        requests: '请求次数',
+        cacheRate: '缓存率',
+        actualCost: '实际花费',
+        dailyTokens: '日均 {value}',
+        dailyRequests: '日均 {value} 次',
+        cacheSaved: '缓存省下 {value}',
+        standardCost: '标准 {value}'
+      },
+      // FORK-ANCHOR: i18n-dashboard-token-composition-zh (二开：Token 构成占比文案)
+      tokenComposition: {
+        title: 'Token 构成占比',
+        input: '输入',
+        output: '输出',
+        cacheCreation: '缓存写',
+        cacheRead: '缓存读'
+      },
       actualSpending: '实际消费 ($)',
       viewModelDistribution: '模型分布',
       viewSpendingRanking: '用户消费榜',

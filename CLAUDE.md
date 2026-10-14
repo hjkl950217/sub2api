@@ -46,7 +46,7 @@ git add -f CLAUDE.md
   `-c core.quotepath=false` 不能省：中文文件名的路径会被 git 转义成八进制，`grep -v '\.md:'` 就匹配不上，会多算。
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **460 个** = 源码 445 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **478 个** = 源码 463 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   其中 `.github/` 占 15 个，单独看：`git -c core.quotepath=false grep -o "FORK-ANCHOR:" -- .github | wc -l`。
 
 全量清单见 **`锚点清单.md`**：按文件分组列出每个锚点的名字，合并上游后照它逐条核对。
@@ -748,6 +748,70 @@ DeepSeek 不认。两者形态不同，HTTP 层看不出区别，所以探测会
 **已知边界**：探测只在账号创建/更新时跑（`scheduleOpenAIResponsesProbe`），**存量账号**的
 `openai_responses_supported=true` 不会自动纠正，需重新保存账号一次才落标。若要覆盖存量账号，
 需在转发路径再加一处 host 判定（本轮未做）。
+
+### 2.22 仪表盘「图表设置」：统计图表可开关（改上游文件，新增 11 个锚点）
+
+**需求**（长空 2026-10-14）：仪表盘 3 张统计图表加「图表设置」，用开关控制显隐；关掉的图表不渲染、
+也不请求对应统计接口；默认隐藏「Token 使用趋势」和「最近使用」。
+
+**改法**：
+
+- 图表清单固定 3 项（模型分布 / Token 使用趋势 / 最近使用），顺序即渲染顺序，不做拖拽排序。
+- 入口在「时间范围」卡片里、刷新按钮右侧，点开 `BaseDialog`；列表按行分割（`divide-y`），
+  开关在名字左边、名字下面是描述，不用表格。
+- 按需请求：`getSnapshotV2` 的 `include_trend` / `include_model_stats` 跟随开关；
+  「最近使用」关掉就不调 `getUserUsageTrend`，「模型分布」关掉就不调 `getUserSpendingRanking`。
+- 布局：`grid-cols-1 lg:grid-cols-2`。可见的半栏图表只剩一个时加 `lg:col-span-2` 撑满整行，
+  「最近使用」恒占整行。
+- 开关状态存 `localStorage['dashboard-visible-charts']`，**每浏览器**记忆，不跟账号同步。
+  存储格式后来改成了 `{id: 布尔}` 映射（见 2.23），这条当时是 id 数组。
+
+| 文件 | 锚点 |
+|---|---|
+| `frontend/src/views/admin/DashboardView.vue` | `dashboard-chart-settings-state`（图表清单与可见性）/ `dashboard-chart-settings-storage`（本地存储读写）/ `dashboard-chart-settings-toggle`（切换开关并重拉数据）/ `dashboard-chart-settings-requests`（按开关决定请求哪些接口）/ `dashboard-chart-settings-grid`（栅格与条件渲染）/ `dashboard-chart-settings-button`（入口按钮）/ `dashboard-chart-settings-dialog`（设置弹窗）/ `dashboard-chart-settings-recent-usage`（最近使用卡片） |
+| `frontend/src/i18n/locales/zh/admin/overview.ts`、`frontend/src/i18n/locales/en/admin/overview.ts` | `i18n-dashboard-chart-settings-zh` / `i18n-dashboard-chart-settings-en` |
+| `frontend/src/views/admin/__tests__/DashboardView.spec.ts` | `test-dashboard-chart-settings` |
+
+上游用例 `switches metrics and ignores a stale tokens response` 跟着改了：它原本默认「最近使用」可见，
+现在要先在设置弹窗里把图表打开。同时给外层 `beforeEach` 补了 `localStorage.clear()`，避免开关跨用例串味。
+
+**已知边界**：`localStorage` 每浏览器一份，换浏览器或清缓存会回到默认（只开「模型分布」）。
+
+### 2.23 仪表盘区间统计卡片 + Token 使用趋势改堆叠柱（改上游文件，新增 7 个锚点）
+
+**背景**（长空 2026-10-14）：仪表盘顶部那 8 张统计卡片来自 `GetDashboardStats(ctx)`，**不带日期参数**——
+`total_*` 是累计、`today_*` 是今日，所以「所选时间范围内一共用了多少 token / 缓存率多少 / 请求多少次」
+拿不到。另外原来的 Token 使用趋势是四条填充折线加一根右轴百分比线，两条轴互相压着，看不清楚。
+
+**改法**：
+
+- 新增两张卡片，都进「图表设置」列表、可开关：
+  - **区间用量概览**（整行）：总 Token / 请求次数 / 缓存率 / 实际花费。副标题依次是日均 Token、
+    日均请求、缓存省下的输入量、标准价。数字样式照抄顶部统计卡片（彩色图标 + 小标题 + 大数字 +
+    小字副标题），装在同一个框里。
+  - **Token 构成占比**（半栏）：输入 / 输出 / 缓存写 / 缓存读的横向堆叠条，下面跟一份按行分割的图例。
+- **不加后端接口**：区间合计由 `trend` 求和得到。`usage_log_repo_trend.go:544` 里
+  `total_tokens = input + output + cache_creation + cache_read`，所以四段能凑满 100%。
+- 缓存率口径与 `TokenUsageTrend.vue` 一致：`cache_read / (input + cache_read + cache_creation)`。
+- **Token 使用趋势**改成堆叠柱：新建 `TokenUsageStackedBar.vue` 只给仪表盘用，共享的
+  `TokenUsageTrend.vue` 原样保留（另外 3 个页面还在用折线）。堆叠柱去掉了右轴百分比线。
+- 排版规则改成：可见的半栏图表为**奇数**个时，最后一个撑满整行（原来是「只剩 1 个时撑满」）。
+- 开关存储改成 `{id: 布尔}` 映射，**没记录的走默认值**——以后再加图表时，早就存过设置的人也能
+  看到它，而不是被判成「关」。
+
+| 文件 | 锚点 |
+|---|---|
+| `frontend/src/views/admin/DashboardView.vue` | `dashboard-range-cards`（两张新卡片）/ `dashboard-range-days`（区间概览的日均分母）/ `dashboard-token-usage-stacked-bar`（折线换柱） |
+| `frontend/src/i18n/locales/zh/admin/overview.ts`、`frontend/src/i18n/locales/en/admin/overview.ts` | `i18n-dashboard-range-summary-zh` / `-en`、`i18n-dashboard-token-composition-zh` / `-en` |
+
+新增文件（带 `FORK:` 头，不算改上游）：`components/charts/RangeUsageSummary.vue`、
+`TokenCompositionBar.vue`、`TokenUsageStackedBar.vue`、`rangeTotals.ts`（求和 / 缓存率 / 格式化），各配一个 spec。
+
+**已知边界**：
+
+- 区间天数按粒度算：按小时粒度（区间 ≤1 天）记作 1 天，此时不显示日均——否则日均和总量是同一个数。
+- 「区间用量概览」和「Token 构成占比」都依赖 `trend`，所以这两张和趋势图只要有一张开着，
+  `include_trend` 就是 true。
 
 ## 3. 发版方式
 

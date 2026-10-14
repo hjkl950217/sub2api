@@ -50,6 +50,52 @@ export default {
       accountCost: 'Cost',
       noDataAvailable: 'No data available',
       recentUsage: 'Recent Usage',
+      // FORK-ANCHOR: i18n-dashboard-chart-settings-en (二开：图表设置文案)
+      chartSettings: {
+        title: 'Chart Settings',
+        items: {
+          rangeSummary: {
+            name: 'Range Usage',
+            desc: 'Total tokens, requests, cache rate and actual cost for the selected range, with daily averages'
+          },
+          tokenComposition: {
+            name: 'Token Composition',
+            desc: 'How the tokens split between input, output, cache write and cache read'
+          },
+          modelDistribution: {
+            name: 'Model Distribution',
+            desc: 'Requests / tokens / actual cost share per model, switchable to the spending ranking'
+          },
+          tokenUsageTrend: {
+            name: 'Token Usage Trend',
+            desc: 'Stacked bars of token usage at the selected granularity'
+          },
+          recentUsage: {
+            name: 'Recent Usage',
+            desc: 'Usage trend per user, top 12'
+          }
+        }
+      },
+      // FORK-ANCHOR: i18n-dashboard-range-summary-en (二开：区间用量概览文案)
+      rangeSummary: {
+        title: 'Range Usage (selected range)',
+        totalTokens: 'Total tokens',
+        requests: 'Requests',
+        cacheRate: 'Cache rate',
+        actualCost: 'Actual cost',
+        dailyTokens: 'Daily avg {value}',
+        dailyRequests: 'Daily avg {value}',
+        cacheSaved: 'Cache saved {value}',
+        standardCost: 'Standard {value}'
+      },
+      // FORK-ANCHOR: i18n-dashboard-token-composition-en (二开：Token 构成占比文案)
+      tokenComposition: {
+        title: 'Token Composition',
+        input: 'Input',
+        output: 'Output',
+        cacheCreation: 'Cache write',
+        cacheRead: 'Cache read'
+      },
       actualSpending: 'Actual spending ($)',
       viewModelDistribution: 'Model Distribution',
       viewSpendingRanking: 'User Spending Ranking',
