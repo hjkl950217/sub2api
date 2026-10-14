@@ -46,7 +46,7 @@ git add -f CLAUDE.md
   `-c core.quotepath=false` 不能省：中文文件名的路径会被 git 转义成八进制，`grep -v '\.md:'` 就匹配不上，会多算。
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **458 个** = 源码 443 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **460 个** = 源码 445 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   其中 `.github/` 占 15 个，单独看：`git -c core.quotepath=false grep -o "FORK-ANCHOR:" -- .github | wc -l`。
 
 全量清单见 **`锚点清单.md`**：按文件分组列出每个锚点的名字，合并上游后照它逐条核对。
@@ -723,6 +723,31 @@ message item，输入项序列因此变长。`parseAssistantContent` 的返回�
 
 **测试**：`vue-tsc --noEmit` 退出码 0；`vitest run src/components/account/__tests__/`
 32 文件 508 用例全过（含本轮新增 6 条）。本机无 Go 工具链，后端用例由 push 后的 CI 跑。
+
+### 2.21 DeepSeek 主机上的 openai 账号强制走 chat（改上游文件，新增 2 个锚点）
+
+**背景**（上游 issue #7285）：`platform=openai` + `base_url=https://api.deepseek.com` 的 API Key 账号，
+创建时被 `ProbeOpenAIAPIKeyResponsesSupport` 标记 `extra.openai_responses_supported=true`，
+之后 Codex（Responses Lite）的工具调用走原生 `/responses`——DeepSeek 端点返回 200 却**静默忽略**
+`input[].additional_tools` 里的工具声明，模型于是把调用当正文吐成 `<||DSML||tool_calls>…` 文本，工具不执行。
+
+探测判定不出这个差异：探测请求用的是**顶层 `tools`**，DeepSeek 认得；而 Codex 用的是 `input[].additional_tools`，
+DeepSeek 不认。两者形态不同，HTTP 层看不出区别，所以探测会误判为「支持」。
+
+**改法**：在探测函数里按**主机名**判定，`base_url` 主机为 `api.deepseek.com` 时直接落标
+`responses_supported=false` + `responses_mode=auto`，跳过网络探测，让网关走 `/v1/chat/completions`
+（DeepSeek 的 chat 路径本就有工具与 reasoning 适配）。只认官方主机名，避免误伤自建中转。
+
+| 文件 | 锚点 |
+|---|---|
+| `backend/internal/service/openai_apikey_responses_probe.go` | `probe-deepseek-host-check`（判定函数）/ `probe-deepseek-host-forces-chat`（探测落标分支） |
+
+新增测试文件 `backend/internal/service/fork_deepseek_responses_probe_test.go`（带 `FORK:` 头，不算改上游）：
+覆盖主机名判定（含后缀伪装、端口、大小写）、DeepSeek 主机不打上游且落标 false、非 DeepSeek 主机仍照常探测。
+
+**已知边界**：探测只在账号创建/更新时跑（`scheduleOpenAIResponsesProbe`），**存量账号**的
+`openai_responses_supported=true` 不会自动纠正，需重新保存账号一次才落标。若要覆盖存量账号，
+需在转发路径再加一处 host 判定（本轮未做）。
 
 ## 3. 发版方式
 

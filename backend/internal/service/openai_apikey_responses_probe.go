@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -104,6 +105,18 @@ func selectResponsesProbeModel(account *Account) string {
 	return candidates[0]
 }
 
+// isDeepSeekUnsafeResponsesHost 判断上游 base_url 是否为已知「原生 Responses 工具不可用」的 DeepSeek 主机。
+// 只认官方主机名，避免误伤自建中转（后者可能真的实现了 Responses 工具调用）。
+//
+// FORK-ANCHOR: probe-deepseek-host-check (二开：为 #7285 增加 DeepSeek 主机判定)
+func isDeepSeekUnsafeResponsesHost(baseURL string) bool {
+	u, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(u.Hostname(), "api.deepseek.com")
+}
+
 // ProbeOpenAIAPIKeyResponsesSupport 探测 OpenAI APIKey 账号上游是否支持
 // /v1/responses 端点，并将结果持久化到 accounts.extra.openai_responses_supported。
 //
@@ -162,6 +175,18 @@ func (s *AccountTestService) ProbeOpenAIAPIKeyResponsesSupport(ctx context.Conte
 	baseURL := account.GetOpenAIBaseURL()
 	if baseURL == "" {
 		baseURL = "https://api.openai.com"
+	}
+	// FORK-ANCHOR: probe-deepseek-host-forces-chat (二开：DeepSeek 主机直接落标「不支持原生 Responses」。
+	// DeepSeek 的 /responses 对探测请求返回 200、甚至认得顶层 tools，却会静默忽略 Codex(Responses Lite)
+	// 放在 input[].additional_tools 里的工具声明，工具调用因此退化成 DSML 文本（上游 issue #7285）。
+	// 探测无法区分这两种工具声明形态，故按主机名直接落标 false，让网关走 /v1/chat/completions——
+	// DeepSeek 的 chat 路径本就有工具与 reasoning 适配。)
+	if isDeepSeekUnsafeResponsesHost(baseURL) {
+		_ = s.accountRepo.UpdateExtra(ctx, accountID, map[string]any{
+			openai_compat.ExtraKeyResponsesMode:      string(openai_compat.ResponsesSupportModeAuto),
+			openai_compat.ExtraKeyResponsesSupported: false,
+		})
+		return
 	}
 	normalizedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
 	if err != nil {
