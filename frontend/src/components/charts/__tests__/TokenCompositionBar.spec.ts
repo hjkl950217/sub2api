@@ -38,26 +38,46 @@ describe('TokenCompositionBar', () => {
     expect(text).toContain('admin.dashboard.tokenComposition.cacheCreation')
     expect(text).toContain('admin.dashboard.tokenComposition.cacheRead')
 
-    expect(text).toContain('1.00M')
+    expect(text).toContain('100.00万')
     expect(text).toContain('71.4%')
     expect(text).toContain('14.3%')
   })
 
-  it('sizes every bar segment by its share of the total, in a fixed order', () => {
+  it('puts the biggest bucket first, sizing every segment by its share', () => {
     const segments = mountBar().findAll('[data-composition-segment]')
 
     expect(segments.map(segment => segment.attributes('data-composition-segment'))).toEqual([
-      'input',
+      'cacheRead',
       'output',
-      'cacheCreation',
-      'cacheRead'
+      'input',
+      'cacheCreation'
     ])
     expect(segments.map(segment => segment.element.style.width)).toEqual([
-      '7.1%',
+      '71.4%',
       '14.3%',
       '7.1%',
-      '71.4%'
+      '7.1%'
     ])
+  })
+
+  it('keeps equal buckets in their original order', () => {
+    const wrapper = mountBar({
+      totals: {
+        requests: 1,
+        inputTokens: 40,
+        outputTokens: 60,
+        cacheCreationTokens: 40,
+        cacheReadTokens: 60,
+        totalTokens: 200,
+        cost: 0,
+        actualCost: 0
+      }
+    })
+
+    // output 和 cacheRead 并列、input 和 cacheCreation 并列，按清单顺序稳定排
+    expect(
+      wrapper.findAll('[data-composition-segment]').map(s => s.attributes('data-composition-segment'))
+    ).toEqual(['output', 'cacheRead', 'input', 'cacheCreation'])
   })
 
   it('shows the empty state instead of a bar when nothing was used', () => {

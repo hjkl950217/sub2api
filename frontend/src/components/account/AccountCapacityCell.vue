@@ -41,6 +41,7 @@ import { useI18n } from 'vue-i18n'
 import type { Account } from '@/types'
 import CapacityBadge from '@/components/account/CapacityBadge.vue'
 import QuotaBadge from '@/components/account/QuotaBadge.vue'
+import { formatCost } from '@/utils/format'
 
 const props = defineProps<{
   account: Account
@@ -169,11 +170,6 @@ const rpmTooltip = computed(() => {
   }
 })
 
-// 格式化费用显示
-const formatCost = (value: number | null | undefined) => {
-  if (value === null || value === undefined) return '0'
-  return value.toFixed(2)
-}
 
 // ====== 配额 ======
 const isQuotaEligible = computed(() => props.account.type === 'apikey' || props.account.type === 'bedrock')

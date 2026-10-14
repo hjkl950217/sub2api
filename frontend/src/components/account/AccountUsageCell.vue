@@ -1614,7 +1614,7 @@ const handleOpenCodeGoUsageUpdated = (state: NonNullable<Account['opencode_go_us
 
 const formatKeyRequests = computed(() => {
   if (!props.todayStats) return ''
-  return formatCompactNumber(props.todayStats.requests, { allowBillions: false })
+  return formatCompactNumber(props.todayStats.requests)
 })
 
 const formatKeyTokens = computed(() => {

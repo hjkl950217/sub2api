@@ -327,8 +327,8 @@ describe('admin DashboardView', () => {
       const rows = wrapper.findAll('[data-chart-row]')
       expect(rows.map(row => row.attributes('data-chart-row'))).toEqual([
         'rangeSummary',
-        'tokenComposition',
         'modelDistribution',
+        'tokenComposition',
         'tokenUsageTrend',
         'recentUsage'
       ])

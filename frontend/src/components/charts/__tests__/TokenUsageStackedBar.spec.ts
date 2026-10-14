@@ -44,10 +44,10 @@ describe('TokenUsageStackedBar', () => {
 
     const datasets = bar.props('data').datasets
     expect(datasets.map((set: { label: string }) => set.label)).toEqual([
-      'Input',
-      'Output',
-      'Cache Creation',
-      'Cache Read'
+      'admin.dashboard.tokenComposition.input',
+      'admin.dashboard.tokenComposition.output',
+      'admin.dashboard.tokenComposition.cacheCreation',
+      'admin.dashboard.tokenComposition.cacheRead'
     ])
     expect(datasets[0].data).toEqual([10, 30])
     expect(datasets[3].data).toEqual([3, 6])

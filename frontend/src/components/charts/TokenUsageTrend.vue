@@ -35,6 +35,7 @@ import {
 import { Line } from 'vue-chartjs'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import type { TrendDataPoint } from '@/types'
+import { formatNumber, formatCost } from '@/utils/format'
 
 ChartJS.register(
   CategoryScale,
@@ -71,11 +72,12 @@ const chartColors = computed(() => ({
 const chartData = computed(() => {
   if (!props.trendData?.length) return null
 
+  // FORK-ANCHOR: token-usage-trend-cn-labels (二开：图例文案改中文，不再写死英文)
   return {
     labels: props.trendData.map((d) => d.date),
     datasets: [
       {
-        label: 'Input',
+        label: t('admin.dashboard.tokenComposition.input'),
         data: props.trendData.map((d) => d.input_tokens),
         borderColor: chartColors.value.input,
         backgroundColor: `${chartColors.value.input}20`,
@@ -83,7 +85,7 @@ const chartData = computed(() => {
         tension: 0.3
       },
       {
-        label: 'Output',
+        label: t('admin.dashboard.tokenComposition.output'),
         data: props.trendData.map((d) => d.output_tokens),
         borderColor: chartColors.value.output,
         backgroundColor: `${chartColors.value.output}20`,
@@ -91,7 +93,7 @@ const chartData = computed(() => {
         tension: 0.3
       },
       {
-        label: 'Cache Creation',
+        label: t('admin.dashboard.tokenComposition.cacheCreation'),
         data: props.trendData.map((d) => d.cache_creation_tokens),
         borderColor: chartColors.value.cacheCreation,
         backgroundColor: `${chartColors.value.cacheCreation}20`,
@@ -99,7 +101,7 @@ const chartData = computed(() => {
         tension: 0.3
       },
       {
-        label: 'Cache Read',
+        label: t('admin.dashboard.tokenComposition.cacheRead'),
         data: props.trendData.map((d) => d.cache_read_tokens),
         borderColor: chartColors.value.cacheRead,
         backgroundColor: `${chartColors.value.cacheRead}20`,
@@ -107,7 +109,7 @@ const chartData = computed(() => {
         tension: 0.3
       },
       {
-        label: 'Cache Hit Rate',
+        label: t('admin.dashboard.cacheHitRate'),
         data: props.trendData.map((d) => {
           const totalPromptTokens = d.input_tokens + d.cache_read_tokens + d.cache_creation_tokens
           return totalPromptTokens > 0 ? (d.cache_read_tokens / totalPromptTokens) * 100 : 0
@@ -149,7 +151,7 @@ const lineOptions = computed(() => ({
           if (context.dataset.yAxisID === 'yPercent') {
             return `${context.dataset.label}: ${context.raw.toFixed(1)}%`
           }
-          return `${context.dataset.label}: ${formatTokens(context.raw)}`
+          return `${context.dataset.label}: ${formatNumber(context.raw)}`
         },
         footer: (tooltipItems: any) => {
           const dataIndex = tooltipItems[0]?.dataIndex
@@ -183,7 +185,7 @@ const lineOptions = computed(() => ({
         font: {
           size: 10
         },
-        callback: (value: string | number) => formatTokens(Number(value))
+        callback: (value: string | number) => formatNumber(Number(value))
       }
     },
     yPercent: {
@@ -204,25 +206,5 @@ const lineOptions = computed(() => ({
   }
 }))
 
-const formatTokens = (value: number): string => {
-  if (value >= 1_000_000_000) {
-    return `${(value / 1_000_000_000).toFixed(2)}B`
-  } else if (value >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(2)}M`
-  } else if (value >= 1_000) {
-    return `${(value / 1_000).toFixed(2)}K`
-  }
-  return value.toLocaleString()
-}
 
-const formatCost = (value: number): string => {
-  if (value >= 1000) {
-    return (value / 1000).toFixed(2) + 'K'
-  } else if (value >= 1) {
-    return value.toFixed(2)
-  } else if (value >= 0.01) {
-    return value.toFixed(3)
-  }
-  return value.toFixed(4)
-}
 </script>

@@ -30,7 +30,7 @@ const totals: RangeTotals = {
 
 const mountSummary = (overrides: Record<string, unknown> = {}) =>
   mount(RangeUsageSummary, {
-    props: { totals, days: 7, rangeLabel: '2026-10-08 ~ 2026-10-14', ...overrides },
+    props: { totals, days: 7, ...overrides },
     global: { stubs: { Icon: true, LoadingSpinner: true } }
   })
 
@@ -44,21 +44,17 @@ describe('RangeUsageSummary', () => {
     expect(text).toContain('admin.dashboard.rangeSummary.cacheRate')
     expect(text).toContain('admin.dashboard.rangeSummary.actualCost')
 
-    expect(text).toContain('1.40M')
-    expect(text).toContain('1,842')
+    expect(text).toContain('140.00万')
+    expect(text).toContain('1842')
     expect(text).toContain('60.0%')
     expect(text).toContain('$4.21')
-  })
-
-  it('shows the range it summarises, so it is not confused with the all-time cards above', () => {
-    expect(mountSummary().text()).toContain('2026-10-08 ~ 2026-10-14')
   })
 
   it('divides by the number of days in the range', () => {
     const wrapper = mountSummary()
 
     expect(wrapper.text()).toContain('admin.dashboard.rangeSummary.dailyTokens')
-    expect(wrapper.text()).toContain('200.00K')
+    expect(wrapper.text()).toContain('20.00万')
     expect(wrapper.text()).toContain('admin.dashboard.rangeSummary.dailyRequests')
     expect(wrapper.text()).toContain('263')
   })
@@ -68,7 +64,7 @@ describe('RangeUsageSummary', () => {
 
     expect(text).not.toContain('admin.dashboard.rangeSummary.dailyTokens')
     expect(text).not.toContain('admin.dashboard.rangeSummary.dailyRequests')
-    expect(text).toContain('1.40M')
+    expect(text).toContain('140.00万')
   })
 
   it('shows what the cache saved and the standard price', () => {

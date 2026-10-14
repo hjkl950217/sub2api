@@ -25,6 +25,7 @@
 import { computed } from 'vue'
 import type { Component } from 'vue'
 import Icon from '@/components/icons/Icon.vue'
+import { formatNumber } from '@/utils/format'
 
 type ChangeType = 'up' | 'down' | 'neutral'
 type IconVariant = 'primary' | 'success' | 'warning' | 'danger'
@@ -49,7 +50,7 @@ const formattedValue = computed(() => {
     return props.formatValue(props.value)
   }
   if (typeof props.value === 'number') {
-    return props.value.toLocaleString()
+    return formatNumber(props.value)
   }
   return props.value
 })

@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { TrendDataPoint } from '@/types'
-import { cacheHitRate, formatRangeCost, formatRangeTokens, sumTrendTotals } from '../rangeTotals'
+import { cacheHitRate, sumTrendTotals } from '../rangeTotals'
 
 const point = (overrides: Partial<TrendDataPoint> = {}): TrendDataPoint => ({
   date: '2026-10-01',
@@ -87,21 +87,5 @@ describe('cacheHitRate', () => {
 
   it('is zero when no prompt tokens were spent', () => {
     expect(cacheHitRate(sumTrendTotals([]))).toBe(0)
-  })
-})
-
-describe('range formatting', () => {
-  it('shortens token counts the way the dashboard stat cards do', () => {
-    expect(formatRangeTokens(0)).toBe('0')
-    expect(formatRangeTokens(999)).toBe('999')
-    expect(formatRangeTokens(2_000)).toBe('2.00K')
-    expect(formatRangeTokens(1_500_000)).toBe('1.50M')
-    expect(formatRangeTokens(2_000_000_000)).toBe('2.00B')
-  })
-
-  it('keeps more decimals for fractions of a cent', () => {
-    expect(formatRangeCost(4.21)).toBe('$4.21')
-    expect(formatRangeCost(1234.5)).toBe('$1.23K')
-    expect(formatRangeCost(0.0012)).toBe('$0.0012')
   })
 })

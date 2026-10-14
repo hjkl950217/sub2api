@@ -46,7 +46,7 @@ git add -f CLAUDE.md
   `-c core.quotepath=false` 不能省：中文文件名的路径会被 git 转义成八进制，`grep -v '\.md:'` 就匹配不上，会多算。
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **478 个** = 源码 463 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **480 个** = 源码 465 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   其中 `.github/` 占 15 个，单独看：`git -c core.quotepath=false grep -o "FORK-ANCHOR:" -- .github | wc -l`。
 
 全量清单见 **`锚点清单.md`**：按文件分组列出每个锚点的名字，合并上游后照它逐条核对。
@@ -812,6 +812,49 @@ DeepSeek 不认。两者形态不同，HTTP 层看不出区别，所以探测会
 - 区间天数按粒度算：按小时粒度（区间 ≤1 天）记作 1 天，此时不显示日均——否则日均和总量是同一个数。
 - 「区间用量概览」和「Token 构成占比」都依赖 `trend`，所以这两张和趋势图只要有一张开着，
   `include_trend` 就是 true。
+
+### 2.24 仪表盘卡片调整 + 全站数字改中文习惯（改上游文件，新增 2 个锚点）
+
+**背景**（长空 2026-10-14，看完 2.23 的实测反馈）：
+
+1. 区间用量卡片不用重复显示所选时间范围（上方「时间范围」筛选器已经有了）
+2. 「Token 构成占比」改名「Token 构成」；图例按占比降序，一般「缓存读」排第一
+3. 模型分布排到 Token 构成前面
+4. 图表图例写死了英文（Input / Output / Cache Creation / Cache Read / Cache Hit Rate），改中文
+5. **全站数字改成中文习惯写法**
+
+**改法**：
+
+- 区间用量卡片去掉右上角的时间范围，连带删掉 `DashboardView` 里的 `rangeLabel` computed
+- `TokenCompositionBar` 的桶按 token 数降序排（`Array.sort` 是稳定排序，数值并列时保持清单顺序）
+- `DASHBOARD_CHART_IDS` 顺序改为 rangeSummary → modelDistribution → tokenComposition →
+  tokenUsageTrend → recentUsage，「图表设置」列表顺序同步变化
+- `TokenUsageTrend.vue` / `TokenUsageStackedBar.vue` 的图例改走 i18n，复用
+  `admin.dashboard.tokenComposition.*`，命中率用新增的 `admin.dashboard.cacheHitRate`
+
+**数字中文写法**（实现集中在 `utils/format.ts`，全站共用）：
+
+| 函数 | 用途 | 规则 |
+|---|---|---|
+| `formatNumber` | 计数（token、请求数、用户数…） | 1 万以下直接给数字；1 万～1 亿折成 `X.XX万`；过亿折成 `X.XX亿`，固定两位小数 |
+| `formatCost` | 金额（新增，不带货币符号） | 整数部分每 4 位一个逗号；小数位沿用原档位（≥1 两位、≥0.01 三位、更小四位） |
+| `formatCurrency` | 金额（带货币符号） | 用 `formatToParts` 关掉 Intl 自带分组，再按 4 位重组 |
+| `formatCompactNumber` | 旧名 | 改成 `formatNumber` 的别名；`allowBillions` 参数已去掉 |
+
+- **不再走 Intl 的 locale 分支**：界面切英文时数字也保持同一套写法，结果可预期
+- 样例：`1000→1000`、`12345→1.23万`、`12345678→1234.57万`、`123456789→1.23亿`；
+  `99999999→1.00亿`（万位会进位到 10000.00 万，这种写法直接进位成亿）
+- 原来散在 12 个组件里的本地 `formatTokens`、13 个本地 `formatCost` 全部删掉，改从
+  `utils/format` 引；顺手把 `UsageTable` / `StatCard` / `KeyUsageView` / `AffiliateView` 等处的
+  裸 `toLocaleString()` 计数一并换掉。**日期类的 `toLocaleString` 不在此列**，保持原样
+
+| 文件 | 锚点 |
+|---|---|
+| `frontend/src/utils/format.ts` | `chinese-number-grouping`（4 位分组 + 万/亿 的实现） |
+| `frontend/src/components/charts/TokenUsageTrend.vue` | `token-usage-trend-cn-labels`（图例改中文） |
+
+**风险**：这是全站显示口径的改动，涉及 30 多个文件。用量明细表（`UsageTable`）每行的 token
+也从精确值变成了 `1.23万` 这种缩写——如果你看明细时更需要精确位数，单独回退那个文件即可。
 
 ## 3. 发版方式
 

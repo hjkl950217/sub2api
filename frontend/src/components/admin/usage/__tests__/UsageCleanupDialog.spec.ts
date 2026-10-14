@@ -7,7 +7,11 @@ const { listCleanupTasks, showError } = vi.hoisted(() => ({ listCleanupTasks: vi
 vi.mock('@/components/admin/usage/UsageFilters.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/api/admin/usage', () => ({ adminUsageAPI: { listCleanupTasks } }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError }) }))
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('vue-i18n', async () => {
+  // 组件经 @/utils/format 会牵进真实的 i18n 实例，mock 必须保留其余导出
+  const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
+  return { ...actual, useI18n: () => ({ t: (key: string) => key }) }
+})
 enableAutoUnmount(afterEach)
 beforeEach(() => { vi.clearAllMocks(); vi.spyOn(console, 'error').mockImplementation(() => {}) })
 afterEach(() => { vi.restoreAllMocks() })

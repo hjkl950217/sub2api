@@ -1013,8 +1013,8 @@ describe('AccountUsageCell', () => {
 
 		await flushPromises()
 
-		expect(wrapper.text()).toContain('1.0M req')
-		expect(wrapper.text()).toContain('1.0B')
+		expect(wrapper.text()).toContain('100.00万 req')
+		expect(wrapper.text()).toContain('10.00亿')
 		expect(wrapper.text()).toContain('A $12.35')
 		expect(wrapper.text()).toContain('U $6.79')
 
@@ -1229,7 +1229,7 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).toContain('24h|75|admin.accounts.usageWindow.grokFreeQuota24hHint')
     expect(wrapper.text()).not.toContain('7d|')
     expect(wrapper.text()).not.toContain('200.0K')
-    expect(wrapper.text()).not.toContain('250.0K')
+    expect(wrapper.text()).not.toContain('25.00万')
   })
 
   it('Grok Free does not substitute today stats when rolling 24h usage is unavailable', async () => {
@@ -1271,8 +1271,8 @@ describe('AccountUsageCell', () => {
 
     expect(wrapper.findAll('.usage-bar')).toHaveLength(0)
     expect(wrapper.text()).not.toContain('24h|')
-    expect(wrapper.text()).not.toContain('1.0M')
-    expect(wrapper.text()).not.toContain('250.0K')
+    expect(wrapper.text()).not.toContain('100.00万')
+    expect(wrapper.text()).not.toContain('25.00万')
   })
 
   it('Grok JWT free tier shows 24h bar even when leftover Heavy billing metrics remain', async () => {

@@ -58,13 +58,13 @@ export default {
             name: '区间用量概览',
             desc: '所选范围内的总 Token、请求次数、缓存率与实际花费，附日均'
           },
-          tokenComposition: {
-            name: 'Token 构成占比',
-            desc: '输入 / 输出 / 缓存写 / 缓存读各占多少'
-          },
           modelDistribution: {
             name: '模型分布',
             desc: '各模型的请求数 / Token / 实际消费占比，可切换用户消费榜'
+          },
+          tokenComposition: {
+            name: 'Token 构成',
+            desc: '输入 / 输出 / 缓存读 / 缓存写各占多少，占比高的排前面'
           },
           tokenUsageTrend: {
             name: 'Token 使用趋势',
@@ -88,14 +88,15 @@ export default {
         cacheSaved: '缓存省下 {value}',
         standardCost: '标准 {value}'
       },
-      // FORK-ANCHOR: i18n-dashboard-token-composition-zh (二开：Token 构成占比文案)
+      // FORK-ANCHOR: i18n-dashboard-token-composition-zh (二开：Token 构成文案)
       tokenComposition: {
-        title: 'Token 构成占比',
+        title: 'Token 构成',
         input: '输入',
         output: '输出',
         cacheCreation: '缓存写',
         cacheRead: '缓存读'
       },
+      cacheHitRate: '缓存命中率',
       actualSpending: '实际消费 ($)',
       viewModelDistribution: '模型分布',
       viewSpendingRanking: '用户消费榜',

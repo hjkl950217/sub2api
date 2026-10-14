@@ -29,7 +29,7 @@
           >{{ t('admin.accounts.stats.tokens') }}:</span
         >
         <span class="font-medium text-gray-700 dark:text-gray-300">{{
-          formatTokens(props.stats.tokens)
+          formatNumber(props.stats.tokens)
         }}</span>
       </div>
       <!-- Cost (Account) -->
@@ -73,13 +73,4 @@ const props = withDefaults(
 
 const { t } = useI18n()
 
-// Format large token numbers (e.g., 1234567 -> 1.23M)
-const formatTokens = (tokens: number): string => {
-  if (tokens >= 1000000) {
-    return `${(tokens / 1000000).toFixed(2)}M`
-  } else if (tokens >= 1000) {
-    return `${(tokens / 1000).toFixed(1)}K`
-  }
-  return tokens.toString()
-}
 </script>

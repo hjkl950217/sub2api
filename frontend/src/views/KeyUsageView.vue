@@ -424,7 +424,7 @@ import { FeatureFlags, resolveFeatureFlag } from '@/utils/featureFlags'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { buildGatewayUrl } from '@/api/client'
-import { formatDateLocalInput } from '@/utils/format'
+import { formatDateLocalInput, formatNumber } from '@/utils/format'
 import { sanitizeUrl } from '@/utils/url'
 
 const { t, locale } = useI18n()
@@ -840,7 +840,7 @@ function usd(value: number | null | undefined): string {
 
 function fmtNum(val: number | null | undefined): string {
   if (val == null) return '-'
-  return val.toLocaleString()
+  return formatNumber(val)
 }
 
 function formatDate(iso: string | null | undefined): string {

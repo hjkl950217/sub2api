@@ -43,13 +43,13 @@ describe('monitorFormat accuracy', () => {
     expect(formatMonitorPercent(0.5)).toBe('50.0%')
   })
 
-  it('formats RPM/TPM throughput with K/M compact notation', () => {
+  it('formats RPM/TPM throughput with the Chinese compact notation', () => {
     expect(formatMonitorThroughput(12.56)).toBe('12.6')
     expect(formatMonitorThroughput(999)).toMatch(/999/)
-    expect(formatMonitorThroughput(1000)).toBe('1.0K')
-    expect(formatMonitorThroughput(1500)).toBe('1.5K')
-    expect(formatMonitorThroughput(1_000_000)).toBe('1.0M')
-    expect(formatMonitorThroughput(1_500_000)).toBe('1.5M')
+    expect(formatMonitorThroughput(1000)).toBe('1000')
+    expect(formatMonitorThroughput(1500)).toBe('1500')
+    expect(formatMonitorThroughput(1_000_000)).toBe('100.00万')
+    expect(formatMonitorThroughput(1_500_000)).toBe('150.00万')
     expect(formatMonitorThroughput(0)).toBe('0')
   })
 

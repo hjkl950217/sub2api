@@ -58,13 +58,13 @@ export default {
             name: 'Range Usage',
             desc: 'Total tokens, requests, cache rate and actual cost for the selected range, with daily averages'
           },
-          tokenComposition: {
-            name: 'Token Composition',
-            desc: 'How the tokens split between input, output, cache write and cache read'
-          },
           modelDistribution: {
             name: 'Model Distribution',
             desc: 'Requests / tokens / actual cost share per model, switchable to the spending ranking'
+          },
+          tokenComposition: {
+            name: 'Token Composition',
+            desc: 'How the tokens split between input, output, cache read and cache write, biggest first'
           },
           tokenUsageTrend: {
             name: 'Token Usage Trend',
@@ -96,6 +96,7 @@ export default {
         cacheCreation: 'Cache write',
         cacheRead: 'Cache read'
       },
+      cacheHitRate: 'Cache hit rate',
       actualSpending: 'Actual spending ($)',
       viewModelDistribution: 'Model Distribution',
       viewSpendingRanking: 'User Spending Ranking',

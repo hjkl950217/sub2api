@@ -52,7 +52,8 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
-import { formatRangeTokens, type RangeTotals } from './rangeTotals'
+import { formatNumber } from '@/utils/format'
+import { type RangeTotals } from './rangeTotals'
 
 const { t } = useI18n()
 
@@ -93,14 +94,18 @@ const segments = computed(() => {
     }
   ]
 
-  return buckets.map(bucket => {
-    const percent = total > 0 ? (bucket.tokens / total) * 100 : 0
-    return {
-      ...bucket,
-      width: `${percent.toFixed(1)}%`,
-      percent: `${percent.toFixed(1)}%`,
-      tokens: formatRangeTokens(bucket.tokens)
-    }
-  })
+  // 占比高的排前面；数值相等时保持清单顺序（Array.sort 是稳定排序）
+  return buckets
+    .slice()
+    .sort((a, b) => b.tokens - a.tokens)
+    .map(bucket => {
+      const percent = total > 0 ? (bucket.tokens / total) * 100 : 0
+      return {
+        ...bucket,
+        width: `${percent.toFixed(1)}%`,
+        percent: `${percent.toFixed(1)}%`,
+        tokens: formatNumber(bucket.tokens)
+      }
+    })
 })
 </script>

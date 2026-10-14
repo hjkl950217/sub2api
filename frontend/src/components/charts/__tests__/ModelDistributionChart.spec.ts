@@ -99,7 +99,7 @@ describe('ModelDistributionChart', () => {
       raw: 1000,
       dataset: { data: [1000, 500] },
     })
-    expect(label).toBe('model-a: 1.00K (66.7%)')
+    expect(label).toBe('model-a: 1000 (66.7%)')
   })
 
   it('uses actual_cost and reorders rows in actual cost mode', () => {

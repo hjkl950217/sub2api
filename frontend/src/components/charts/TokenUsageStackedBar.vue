@@ -37,6 +37,7 @@ import {
 import { Bar } from 'vue-chartjs'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import type { TrendDataPoint } from '@/types'
+import { formatNumber, formatCost } from '@/utils/format'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
@@ -66,25 +67,25 @@ const chartData = computed(() => {
     labels: props.trendData.map((item) => item.date),
     datasets: [
       {
-        label: 'Input',
+        label: t('admin.dashboard.tokenComposition.input'),
         data: props.trendData.map((item) => item.input_tokens),
         backgroundColor: chartColors.value.input,
         stack: 'tokens'
       },
       {
-        label: 'Output',
+        label: t('admin.dashboard.tokenComposition.output'),
         data: props.trendData.map((item) => item.output_tokens),
         backgroundColor: chartColors.value.output,
         stack: 'tokens'
       },
       {
-        label: 'Cache Creation',
+        label: t('admin.dashboard.tokenComposition.cacheCreation'),
         data: props.trendData.map((item) => item.cache_creation_tokens),
         backgroundColor: chartColors.value.cacheCreation,
         stack: 'tokens'
       },
       {
-        label: 'Cache Read',
+        label: t('admin.dashboard.tokenComposition.cacheRead'),
         data: props.trendData.map((item) => item.cache_read_tokens),
         backgroundColor: chartColors.value.cacheRead,
         stack: 'tokens'
@@ -115,7 +116,7 @@ const barOptions = computed(() => ({
     },
     tooltip: {
       callbacks: {
-        label: (context: any) => `${context.dataset.label}: ${formatTokens(Number(context.raw))}`,
+        label: (context: any) => `${context.dataset.label}: ${formatNumber(Number(context.raw))}`,
         footer: (tooltipItems: any) => {
           const dataIndex = tooltipItems[0]?.dataIndex
           if (dataIndex === undefined || !props.trendData[dataIndex]) return ''
@@ -137,23 +138,11 @@ const barOptions = computed(() => ({
       ticks: {
         color: chartColors.value.text,
         font: { size: 10 },
-        callback: (value: string | number) => formatTokens(Number(value))
+        callback: (value: string | number) => formatNumber(Number(value))
       }
     }
   }
 }))
 
-const formatTokens = (value: number): string => {
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`
-  if (value >= 1_000) return `${(value / 1_000).toFixed(2)}K`
-  return value.toLocaleString()
-}
 
-const formatCost = (value: number): string => {
-  if (value >= 1000) return (value / 1000).toFixed(2) + 'K'
-  if (value >= 1) return value.toFixed(2)
-  if (value >= 0.01) return value.toFixed(3)
-  return value.toFixed(4)
-}
 </script>

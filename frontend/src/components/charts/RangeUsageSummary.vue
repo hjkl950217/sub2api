@@ -3,12 +3,9 @@
      数字样式照抄顶部统计卡片（彩色图标 + 小标题 + 大数字 + 小字副标题），装在同一个框里。 -->
 <template>
   <div class="card p-4">
-    <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
-        {{ t('admin.dashboard.rangeSummary.title') }}
-      </h3>
-      <span class="text-xs text-gray-500 dark:text-gray-400">{{ rangeLabel }}</span>
-    </div>
+    <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+      {{ t('admin.dashboard.rangeSummary.title') }}
+    </h3>
 
     <div v-if="loading && !hasData" class="flex h-16 items-center justify-center">
       <LoadingSpinner />
@@ -34,8 +31,8 @@ import { useI18n } from 'vue-i18n'
 
 import Icon from '@/components/icons/Icon.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
-import { formatNumber } from '@/utils/format'
-import { cacheHitRate, formatRangeCost, formatRangeTokens, type RangeTotals } from './rangeTotals'
+import { formatCost, formatNumber } from '@/utils/format'
+import { cacheHitRate, type RangeTotals } from './rangeTotals'
 
 const { t } = useI18n()
 
@@ -43,8 +40,6 @@ const props = defineProps<{
   totals: RangeTotals
   /** 区间跨的天数，用来算日均；≤1 天时不显示日均（否则和总量是同一个数） */
   days: number
-  /** 区间说明，如 `2026-10-08 ~ 2026-10-14` */
-  rangeLabel: string
   loading?: boolean
 }>()
 
@@ -68,10 +63,10 @@ const items = computed<SummaryItem[]>(() => {
     {
       key: 'totalTokens',
       label: t('admin.dashboard.rangeSummary.totalTokens'),
-      value: formatRangeTokens(props.totals.totalTokens),
+      value: formatNumber(props.totals.totalTokens),
       sub: dailyMultiplier
         ? t('admin.dashboard.rangeSummary.dailyTokens', {
-            value: formatRangeTokens(props.totals.totalTokens / dailyMultiplier)
+            value: formatNumber(props.totals.totalTokens / dailyMultiplier)
           })
         : '',
       icon: 'cube',
@@ -96,7 +91,7 @@ const items = computed<SummaryItem[]>(() => {
       label: t('admin.dashboard.rangeSummary.cacheRate'),
       value: `${cacheHitRate(props.totals).toFixed(1)}%`,
       sub: t('admin.dashboard.rangeSummary.cacheSaved', {
-        value: formatRangeTokens(props.totals.cacheReadTokens)
+        value: formatNumber(props.totals.cacheReadTokens)
       }),
       icon: 'database',
       iconBg: 'bg-indigo-100 dark:bg-indigo-900/30',
@@ -105,9 +100,9 @@ const items = computed<SummaryItem[]>(() => {
     {
       key: 'actualCost',
       label: t('admin.dashboard.rangeSummary.actualCost'),
-      value: formatRangeCost(props.totals.actualCost),
+      value: `$${formatCost(props.totals.actualCost)}`,
       sub: t('admin.dashboard.rangeSummary.standardCost', {
-        value: formatRangeCost(props.totals.cost)
+        value: `$${formatCost(props.totals.cost)}`
       }),
       icon: 'clock',
       iconBg: 'bg-rose-100 dark:bg-rose-900/30',

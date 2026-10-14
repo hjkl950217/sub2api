@@ -52,23 +52,3 @@ export function cacheHitRate(totals: RangeTotals): number {
   if (promptTokens <= 0) return 0
   return (totals.cacheReadTokens / promptTokens) * 100
 }
-
-// 与仪表盘统计卡片的 formatTokens 同一套档位，保证两处数字长度一致
-export function formatRangeTokens(value: number | null | undefined): string {
-  const safe = Number(value)
-  if (!Number.isFinite(safe) || safe === 0) return '0'
-  if (safe >= 1_000_000_000) return `${(safe / 1_000_000_000).toFixed(2)}B`
-  if (safe >= 1_000_000) return `${(safe / 1_000_000).toFixed(2)}M`
-  if (safe >= 1_000) return `${(safe / 1_000).toFixed(2)}K`
-  return safe.toLocaleString()
-}
-
-// 同上，对应仪表盘的 formatCost
-export function formatRangeCost(value: number | null | undefined): string {
-  const safe = Number(value)
-  if (!Number.isFinite(safe)) return '$0.0000'
-  if (safe >= 1000) return `$${(safe / 1000).toFixed(2)}K`
-  if (safe >= 1) return `$${safe.toFixed(2)}`
-  if (safe >= 0.01) return `$${safe.toFixed(3)}`
-  return `$${safe.toFixed(4)}`
-}

@@ -223,7 +223,7 @@ const formatResetTime = computed(() => {
 // Window stats formatters
 const formatRequests = computed(() => {
   if (!props.windowStats) return ''
-  return formatCompactNumber(props.windowStats.requests, { allowBillions: false })
+  return formatCompactNumber(props.windowStats.requests)
 })
 
 const formatTokens = computed(() => {

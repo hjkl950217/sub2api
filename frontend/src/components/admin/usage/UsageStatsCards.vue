@@ -6,7 +6,7 @@
       </div>
       <div>
         <p class="text-xs font-medium text-gray-500">{{ t('usage.totalRequests') }}</p>
-        <p class="text-xl font-bold">{{ stats?.total_requests?.toLocaleString() || '0' }}</p>
+        <p class="text-xl font-bold">{{ formatNumber(stats?.total_requests) }}</p>
         <p class="text-xs text-gray-400">{{ t('usage.inSelectedRange') }}</p>
       </div>
     </div>
@@ -14,14 +14,14 @@
       <div class="rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30 text-amber-600"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" /></svg></div>
       <div>
         <p class="text-xs font-medium text-gray-500">{{ t('usage.totalTokens') }}</p>
-        <p class="text-xl font-bold">{{ formatTokens(stats?.total_tokens || 0) }}</p>
+        <p class="text-xl font-bold">{{ formatNumber(stats?.total_tokens || 0) }}</p>
         <p class="flex flex-wrap items-center gap-x-1 text-xs text-gray-500">
-          <span>{{ t('usage.in') }}: {{ formatTokens(stats?.total_input_tokens || 0) }}</span>
+          <span>{{ t('usage.in') }}: {{ formatNumber(stats?.total_input_tokens || 0) }}</span>
           <span>/</span>
-          <span>{{ t('usage.out') }}: {{ formatTokens(stats?.total_output_tokens || 0) }}</span>
+          <span>{{ t('usage.out') }}: {{ formatNumber(stats?.total_output_tokens || 0) }}</span>
           <span>/</span>
           <span class="group relative inline-flex cursor-help items-center gap-0.5" tabindex="0">
-            <span>{{ cacheLabel() }}: {{ formatTokens(stats?.total_cache_tokens || 0) }}</span>
+            <span>{{ cacheLabel() }}: {{ formatNumber(stats?.total_cache_tokens || 0) }}</span>
             <svg
               class="h-3.5 w-3.5 text-gray-400"
               fill="none"
@@ -44,13 +44,13 @@
               <span class="flex items-center justify-between gap-3">
                 <span>{{ t('usage.cacheCreationTokensLabel') }}</span>
                 <span class="tabular-nums">
-                  {{ formatTokens(stats?.total_cache_creation_tokens || 0) }}
+                  {{ formatNumber(stats?.total_cache_creation_tokens || 0) }}
                 </span>
               </span>
               <span class="mt-1 flex items-center justify-between gap-3">
                 <span>{{ t('usage.cacheReadTokensLabel') }}</span>
                 <span class="tabular-nums">
-                  {{ formatTokens(stats?.total_cache_read_tokens || 0) }}
+                  {{ formatNumber(stats?.total_cache_read_tokens || 0) }}
                 </span>
               </span>
             </span>
@@ -94,6 +94,7 @@ import { useI18n } from 'vue-i18n'
 import type { AdminUsageStatsResponse } from '@/api/admin/usage'
 import type { UsageStatsResponse } from '@/types'
 import Icon from '@/components/icons/Icon.vue'
+import { formatNumber } from '@/utils/format'
 
 const props = withDefaults(defineProps<{
   stats: (AdminUsageStatsResponse | UsageStatsResponse) | null
@@ -116,12 +117,6 @@ const strikeStandardCost = computed(() => props.strikeStandardCost)
 const formatDuration = (ms: number) =>
   ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms / 1000).toFixed(2)}s`
 
-const formatTokens = (value: number) => {
-  if (value >= 1e9) return (value / 1e9).toFixed(2) + 'B'
-  if (value >= 1e6) return (value / 1e6).toFixed(2) + 'M'
-  if (value >= 1e3) return (value / 1e3).toFixed(2) + 'K'
-  return value.toLocaleString()
-}
 
 const cacheLabel = () => t('usage.cacheTotal')
 const cacheDetailLabel = () => t('usage.cacheBreakdown')

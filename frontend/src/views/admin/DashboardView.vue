@@ -108,7 +108,7 @@
                   {{ t('admin.dashboard.todayTokens') }}
                 </p>
                 <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  {{ formatTokens(stats.today_tokens) }}
+                  {{ formatNumber(stats.today_tokens) }}
                 </p>
                 <p class="text-xs">
                   <span
@@ -144,7 +144,7 @@
                   {{ t('admin.dashboard.totalTokens') }}
                 </p>
                 <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  {{ formatTokens(stats.total_tokens) }}
+                  {{ formatNumber(stats.total_tokens) }}
                 </p>
                 <p class="text-xs">
                   <span
@@ -181,13 +181,13 @@
                 </p>
                 <div class="flex items-baseline gap-2">
                   <p class="text-xl font-bold text-gray-900 dark:text-white">
-                    {{ formatTokens(stats.rpm) }}
+                    {{ formatNumber(stats.rpm) }}
                   </p>
                   <span class="text-xs text-gray-500 dark:text-gray-400">RPM</span>
                 </div>
                 <div class="flex items-baseline gap-2">
                   <p class="text-sm font-semibold text-violet-600 dark:text-violet-400">
-                    {{ formatTokens(stats.tpm) }}
+                    {{ formatNumber(stats.tpm) }}
                   </p>
                   <span class="text-xs text-gray-500 dark:text-gray-400">TPM</span>
                 </div>
@@ -304,19 +304,12 @@
           <!-- Charts Grid -->
           <!-- FORK-ANCHOR: dashboard-chart-settings-grid (二开：图表可开关，只渲染开启的图表) -->
           <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <!-- FORK-ANCHOR: dashboard-range-cards (二开：区间用量概览 + Token 构成占比) -->
+            <!-- FORK-ANCHOR: dashboard-range-cards (二开：区间用量概览 + Token 构成) -->
             <RangeUsageSummary
               v-if="isChartVisible('rangeSummary')"
               :class="chartSpanClass('rangeSummary')"
               :totals="rangeTotals"
               :days="rangeDays"
-              :range-label="rangeLabel"
-              :loading="chartsLoading"
-            />
-            <TokenCompositionBar
-              v-if="isChartVisible('tokenComposition')"
-              :class="chartSpanClass('tokenComposition')"
-              :totals="rangeTotals"
               :loading="chartsLoading"
             />
             <ModelDistributionChart
@@ -334,6 +327,12 @@
               :start-date="startDate"
               :end-date="endDate"
               @ranking-click="goToUserUsage"
+            />
+            <TokenCompositionBar
+              v-if="isChartVisible('tokenComposition')"
+              :class="chartSpanClass('tokenComposition')"
+              :totals="rangeTotals"
+              :loading="chartsLoading"
             />
             <!-- FORK-ANCHOR: dashboard-token-usage-stacked-bar (二开：折线改堆叠柱，去掉双轴) -->
             <TokenUsageStackedBar
@@ -450,6 +449,7 @@ import {
   Filler
 } from 'chart.js'
 import { Line } from 'vue-chartjs'
+import { formatNumber, formatCost } from '@/utils/format'
 
 // Register Chart.js components
 ChartJS.register(
@@ -497,8 +497,8 @@ type DashboardChartId =
 
 const DASHBOARD_CHART_IDS: DashboardChartId[] = [
   'rangeSummary',
-  'tokenComposition',
   'modelDistribution',
+  'tokenComposition',
   'tokenUsageTrend',
   'recentUsage'
 ]
@@ -599,8 +599,6 @@ const rangeDays = computed(() => {
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 1
   return Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1)
 })
-
-const rangeLabel = computed(() => `${startDate.value} ~ ${endDate.value}`)
 
 // Dark mode detection
 const isDarkMode = computed(() => {
@@ -738,40 +736,7 @@ const userTrendChartData = computed(() => {
 
 // Format helpers
 const formatUserTrendValue = (value: number): string =>
-  userTrendMetric.value === 'tokens' ? formatTokens(value) : `$${formatCost(value)}`
-
-const formatTokens = (value: number | undefined): string => {
-  if (value === undefined || value === null) return '0'
-  if (value >= 1_000_000_000) {
-    return `${(value / 1_000_000_000).toFixed(2)}B`
-  } else if (value >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(2)}M`
-  } else if (value >= 1_000) {
-    return `${(value / 1_000).toFixed(2)}K`
-  }
-  return value.toLocaleString()
-}
-
-const toFiniteNumber = (value: unknown): number => {
-  const numberValue = Number(value)
-  return Number.isFinite(numberValue) ? numberValue : 0
-}
-
-const formatNumber = (value: number | null | undefined): string => {
-  return toFiniteNumber(value).toLocaleString()
-}
-
-const formatCost = (value: number | null | undefined): string => {
-  const safeValue = toFiniteNumber(value)
-  if (safeValue >= 1000) {
-    return (safeValue / 1000).toFixed(2) + 'K'
-  } else if (safeValue >= 1) {
-    return safeValue.toFixed(2)
-  } else if (safeValue >= 0.01) {
-    return safeValue.toFixed(3)
-  }
-  return safeValue.toFixed(4)
-}
+  userTrendMetric.value === 'tokens' ? formatNumber(value) : `$${formatCost(value)}`
 
 const formatDuration = (ms: number): string => {
   if (ms >= 1000) {

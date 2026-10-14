@@ -77,8 +77,8 @@
         </div>
         <div>
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.todayTokens') }}</p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatTokens(stats?.today_tokens || 0) }}</p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.input') }}: {{ formatTokens(stats?.today_input_tokens || 0) }} / {{ t('dashboard.output') }}: {{ formatTokens(stats?.today_output_tokens || 0) }} / {{ t('dashboard.cache') }}: {{ formatTokens((stats?.today_cache_creation_tokens || 0) + (stats?.today_cache_read_tokens || 0)) }}</p>
+          <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatNumber(stats?.today_tokens || 0) }}</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.input') }}: {{ formatNumber(stats?.today_input_tokens || 0) }} / {{ t('dashboard.output') }}: {{ formatNumber(stats?.today_output_tokens || 0) }} / {{ t('dashboard.cache') }}: {{ formatNumber((stats?.today_cache_creation_tokens || 0) + (stats?.today_cache_read_tokens || 0)) }}</p>
         </div>
       </div>
     </div>
@@ -91,8 +91,8 @@
         </div>
         <div>
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.totalTokens') }}</p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatTokens(stats?.total_tokens || 0) }}</p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.input') }}: {{ formatTokens(stats?.total_input_tokens || 0) }} / {{ t('dashboard.output') }}: {{ formatTokens(stats?.total_output_tokens || 0) }} / {{ t('dashboard.cache') }}: {{ formatTokens((stats?.total_cache_creation_tokens || 0) + (stats?.total_cache_read_tokens || 0)) }}</p>
+          <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatNumber(stats?.total_tokens || 0) }}</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.input') }}: {{ formatNumber(stats?.total_input_tokens || 0) }} / {{ t('dashboard.output') }}: {{ formatNumber(stats?.total_output_tokens || 0) }} / {{ t('dashboard.cache') }}: {{ formatNumber((stats?.total_cache_creation_tokens || 0) + (stats?.total_cache_read_tokens || 0)) }}</p>
         </div>
       </div>
     </div>
@@ -106,11 +106,11 @@
         <div class="flex-1">
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.performance') }}</p>
           <div class="flex items-baseline gap-2">
-            <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatTokens(stats?.rpm || 0) }}</p>
+            <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatNumber(stats?.rpm || 0) }}</p>
             <span class="text-xs text-gray-500 dark:text-gray-400">RPM</span>
           </div>
           <div class="flex items-baseline gap-2">
-            <p class="text-sm font-semibold text-violet-600 dark:text-violet-400">{{ formatTokens(stats?.tpm || 0) }}</p>
+            <p class="text-sm font-semibold text-violet-600 dark:text-violet-400">{{ formatNumber(stats?.tpm || 0) }}</p>
             <span class="text-xs text-gray-500 dark:text-gray-400">TPM</span>
           </div>
         </div>
@@ -175,7 +175,7 @@
           <div class="flex items-center justify-between">
             <span class="text-gray-500 dark:text-gray-400">{{ t('dashboard.tokens') }}</span>
             <span class="font-mono text-gray-700 dark:text-gray-300">
-              {{ item.total_tokens > 0 ? formatTokens(item.total_tokens) : '-' }}
+              {{ item.total_tokens > 0 ? formatNumber(item.total_tokens) : '-' }}
             </span>
           </div>
         </div>
@@ -230,6 +230,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import type { PlatformDashboardStats, UserDashboardStats as UserStatsType } from '@/api/usage'
 import type { PlatformQuotaItem } from '@/types'
+import { formatNumber, formatCost } from '@/utils/format'
 
 interface FusedPlatformCard {
   platform: string
@@ -391,12 +392,5 @@ const formatBalance = (b: number) =>
     maximumFractionDigits: 2
   }).format(b)
 
-const formatNumber = (n: number) => n.toLocaleString()
-const formatCost = (c: number) => c.toFixed(4)
-const formatTokens = (t: number) => {
-  if (t >= 1_000_000) return `${(t / 1_000_000).toFixed(1)}M`
-  if (t >= 1000) return `${(t / 1000).toFixed(1)}K`
-  return t.toString()
-}
 const formatDuration = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms.toFixed(0)}ms`
 </script>

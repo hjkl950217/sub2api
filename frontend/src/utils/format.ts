@@ -31,25 +31,62 @@ export function formatRelativeTime(date: string | Date | null | undefined): stri
   return i18n.global.t('common.time.justNow')
 }
 
+// FORK-ANCHOR: chinese-number-grouping (二开：数字改中文习惯，按 4 位分组、万 / 亿 两级)
+// 整数部分每 4 位加一个逗号。中文读法以「万」为进位单位，不是「千」。
+function groupByFour(digits: string): string {
+  return digits.replace(/\B(?=(\d{4})+$)/g, ',')
+}
+
 /**
- * 格式化数字（支持 K/M/B 单位）
- * @param num 数字
- * @returns 格式化后的字符串，如 "1.2K", "3.5M"
+ * 格式化计数（token、请求数、用户数等），中文习惯：
+ * 一万以下按 4 位分组，一万到一亿折成「万」，过亿折成「亿」，都保留两位小数。
+ * 不走 Intl 的 locale 分支——界面切英文时数字也保持同一套写法。
+ * @returns 如 "1234"、"1.23万"、"12.35亿"
  */
 export function formatNumber(num: number | null | undefined): string {
-  if (num === null || num === undefined) return '0'
+  const n = Number(num)
+  if (!Number.isFinite(n)) return '0'
 
-  const locale = getLocale()
-  const absNum = Math.abs(num)
+  const sign = n < 0 ? '-' : ''
+  const abs = Math.abs(n)
 
-  // Use Intl.NumberFormat for compact notation if supported and needed
-  // Note: Compact notation in 'zh' uses '万/亿', which is appropriate for Chinese
-  const formatter = new Intl.NumberFormat(locale, {
-    notation: absNum >= 10000 ? 'compact' : 'standard',
-    maximumFractionDigits: 1
-  })
+  if (abs >= 100_000_000) return `${sign}${(abs / 100_000_000).toFixed(2)}亿`
 
-  return formatter.format(num)
+  if (abs >= 10_000) {
+    const wan = Number((abs / 10_000).toFixed(2))
+    // 9999.9999万 会进位到 10000.00 万，读起来别扭，直接进位成亿
+    if (wan >= 10_000) return `${sign}${(abs / 100_000_000).toFixed(2)}亿`
+    return `${sign}${wan.toFixed(2)}万`
+  }
+
+  const [intPart, decimalPart] = abs.toString().split('.')
+  const grouped = groupByFour(intPart ?? '0')
+  return `${sign}${decimalPart ? `${grouped}.${decimalPart}` : grouped}`
+}
+
+/**
+ * 金额的中文习惯写法：整数部分每 4 位加逗号，不做 K 缩写。
+ * 小数位数沿用原来的档位——一元以上 2 位、一分以上 3 位、更小的 4 位，
+ * 免得把 $0.0012 这种单次成本压成 0.00。
+ */
+export function formatCost(value: number | null | undefined): string {
+  const safe = Number(value)
+  if (!Number.isFinite(safe)) return '0.0000'
+
+  const sign = safe < 0 ? '-' : ''
+  const abs = Math.abs(safe)
+  const digits = abs >= 1 ? 2 : abs >= 0.01 ? 3 : 4
+  const [intPart, decimalPart] = abs.toFixed(digits).split('.')
+  const grouped = groupByFour(intPart ?? '0')
+  return `${sign}${decimalPart ? `${grouped}.${decimalPart}` : grouped}`
+}
+
+/**
+ * 格式化数字（旧名，行为已与 formatNumber 一致）
+ * @deprecated 直接用 formatNumber
+ */
+export function formatCompactNumber(num: number | null | undefined): string {
+  return formatNumber(num)
 }
 
 /**
@@ -66,12 +103,17 @@ export function formatCurrency(amount: number | null | undefined, currency: stri
   // For very small amounts, show more decimals
   const fractionDigits = amount > 0 && amount < 0.01 ? 6 : 2
 
+  // 先关掉 Intl 自己的分组，再按中文的 4 位重新分组，避免中英分组基数混用
   return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency: currency,
     minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits
-  }).format(amount)
+    maximumFractionDigits: fractionDigits,
+    useGrouping: false
+  })
+    .formatToParts(amount)
+    .map(part => (part.type === 'integer' ? groupByFour(part.value) : part.value))
+    .join('')
 }
 
 /**
@@ -364,25 +406,6 @@ export function formatTokensK(tokens: number): string {
   return tokens.toString()
 }
 
-/**
- * 格式化大数字（K/M/B，保留 1 位小数）
- * @param num 数字
- * @param options allowBillions=false 时最高只显示到 M
- */
-export function formatCompactNumber(
-  num: number | null | undefined,
-  options?: { allowBillions?: boolean }
-): string {
-  if (num === null || num === undefined) return '0'
-
-  const abs = Math.abs(num)
-  const allowBillions = options?.allowBillions !== false
-
-  if (allowBillions && abs >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(1)}B`
-  if (abs >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`
-  if (abs >= 1_000) return `${(num / 1_000).toFixed(1)}K`
-  return num.toString()
-}
 
 /**
  * 格式化倒计时（从现在到目标时间的剩余时间）

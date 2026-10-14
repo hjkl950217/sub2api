@@ -192,7 +192,7 @@
                   t('admin.accounts.stats.tokens')
                 }}</span>
                 <span class="text-sm font-semibold text-gray-900 dark:text-white">{{
-                  formatTokens(stats.summary.today?.tokens || 0)
+                  formatNumber(stats.summary.today?.tokens || 0)
                 }}</span>
               </div>
             </div>
@@ -305,7 +305,7 @@
                   t('admin.accounts.stats.totalTokens')
                 }}</span>
                 <span class="text-sm font-semibold text-gray-900 dark:text-white">{{
-                  formatTokens(stats.summary.total_tokens)
+                  formatNumber(stats.summary.total_tokens)
                 }}</span>
               </div>
               <div class="flex items-center justify-between">
@@ -313,7 +313,7 @@
                   t('admin.accounts.stats.dailyAvgTokens')
                 }}</span>
                 <span class="text-sm font-semibold text-gray-900 dark:text-white">{{
-                  formatTokens(Math.round(stats.summary.avg_daily_tokens))
+                  formatNumber(Math.round(stats.summary.avg_daily_tokens))
                 }}</span>
               </div>
             </div>
@@ -377,7 +377,7 @@
                   t('admin.accounts.stats.todayTokens')
                 }}</span>
                 <span class="text-sm font-semibold text-gray-900 dark:text-white">{{
-                  formatTokens(stats.summary.today?.tokens || 0)
+                  formatNumber(stats.summary.today?.tokens || 0)
                 }}</span>
               </div>
               <div class="flex items-center justify-between">
@@ -469,6 +469,7 @@ import EndpointDistributionChart from '@/components/charts/EndpointDistributionC
 import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api/admin'
 import type { Account, AccountUsageStatsResponse } from '@/types'
+import { formatNumber, formatCost } from '@/utils/format'
 
 ChartJS.register(
   CategoryScale,
@@ -672,37 +673,8 @@ const handleClose = () => {
   emit('close')
 }
 
-// Format helpers
-const formatCost = (value: number): string => {
-  if (value >= 1000) {
-    return (value / 1000).toFixed(2) + 'K'
-  } else if (value >= 1) {
-    return value.toFixed(2)
-  } else if (value >= 0.01) {
-    return value.toFixed(3)
-  }
-  return value.toFixed(4)
-}
 
-const formatNumber = (value: number): string => {
-  if (value >= 1_000_000) {
-    return (value / 1_000_000).toFixed(2) + 'M'
-  } else if (value >= 1_000) {
-    return (value / 1_000).toFixed(2) + 'K'
-  }
-  return value.toLocaleString()
-}
 
-const formatTokens = (value: number): string => {
-  if (value >= 1_000_000_000) {
-    return `${(value / 1_000_000_000).toFixed(2)}B`
-  } else if (value >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(2)}M`
-  } else if (value >= 1_000) {
-    return `${(value / 1_000).toFixed(2)}K`
-  }
-  return value.toLocaleString()
-}
 
 const formatDuration = (ms: number): string => {
   if (ms >= 1000) {

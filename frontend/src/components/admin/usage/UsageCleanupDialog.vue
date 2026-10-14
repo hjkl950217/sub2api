@@ -58,7 +58,7 @@
               </div>
               <div class="flex flex-wrap items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
                 <span>{{ t('admin.usage.cleanup.range') }}: {{ formatRange(task) }}</span>
-                <span>{{ t('admin.usage.cleanup.deletedRows') }}: {{ task.deleted_rows.toLocaleString() }}</span>
+                <span>{{ t('admin.usage.cleanup.deletedRows') }}: {{ formatNumber(task.deleted_rows) }}</span>
               </div>
               <div v-if="task.error_message" class="text-xs text-rose-500">
                 {{ task.error_message }}
@@ -126,6 +126,7 @@ import UsageFilters from '@/components/admin/usage/UsageFilters.vue'
 import { adminUsageAPI } from '@/api/admin/usage'
 import type { AdminUsageQueryParams, UsageCleanupTask, CreateUsageCleanupTaskRequest } from '@/api/admin/usage'
 import { requestTypeToLegacyStream } from '@/utils/usageRequestType'
+import { formatNumber } from '@/utils/format'
 
 interface Props {
   show: boolean
