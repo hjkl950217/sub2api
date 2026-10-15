@@ -964,6 +964,21 @@ DeepSeek 不认。两者形态不同，HTTP 层看不出区别，所以探测会
 表现为「点了没反应」的假失败。断言 `(el as HTMLElement).style.display !== 'none'`，
 这才是 `v-show` 真正控制的东西（锚点 `test-edit-account-tabs`）。
 
+**吸顶那条缝（2026-10-15 真机实测发现并修掉）**：`.modal-body` 自带
+`padding-top`（12px / `sm:` 16px），吸顶的 tab 条盖不住那一条，滚过去的内容会从缝里
+露出来。实测 tab 条停在 y=148，内容出现在 y=140。修法是给 `.edit-account-tabs`
+加一个同底色的 `::before` 盖住那 12/16px（同一个 `edit-account-tabs-style` 锚点内）。
+
+排查时注意：`elementFromPoint` **会跳过 `pointer-events: none` 的元素**，
+拿它当探针会得出「没盖住」的错误结论；这条缝要靠截图或
+`getComputedStyle(el, '::before')` 确认。
+
+**真机验证记录（playwright-cli + headed Edge，2026-10-15）**：
+tab 文案 `["基础信息","临时调度"]`、默认 `basic=shown / temp=hidden`、
+切过去 `basic=hidden / temp=shown`、`aria-selected` 正确、`position: sticky` 生效、
+基础信息面板里不含「临时不可调度」。测试账号 `#3354 临时鸡蛋1`（聚合中转 Key）
+已经有 8 条以上临时不可调度规则 —— 正好是拆 tab 要解决的场景。
+
 **i18n**：`admin.accounts.editTabs.basic` / `.tempScheduling`，
 zh/en 各一个锚点（`i18n-edit-account-tabs-zh` / `-en`）。i18n 完整性测试卡着，两边都要加。
 
