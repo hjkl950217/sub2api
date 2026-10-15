@@ -1,4 +1,6 @@
 <script setup lang="ts">
+// FORK-ANCHOR: platform-display-name-views-admin-ops-components-OpsConcurrencyCard (二开：平台名走平台清单，不显示原始 id)
+import { platformLabel } from '@/utils/platformColors'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { opsAPI, type OpsAccountAvailabilityStatsResponse, type OpsConcurrencyStatsResponse, type OpsUserConcurrencyStatsResponse } from '@/api/admin/ops'
@@ -451,7 +453,7 @@ watch(
                 {{ row.name }}
               </div>
               <span v-if="displayDimension === 'group' && row.platform" class="text-[10px] text-gray-400 dark:text-gray-500">
-                {{ row.platform.toUpperCase() }}
+                {{ platformLabel(row.platform).toUpperCase() }}
               </span>
             </div>
             <div class="flex shrink-0 items-center gap-2 text-[10px]">

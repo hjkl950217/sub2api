@@ -1,4 +1,6 @@
 <script setup lang="ts">
+// FORK-ANCHOR: platform-display-name-views-admin-ops-components-OpsRequestDetailsModal (二开：平台名走平台清单，不显示原始 id)
+import { platformLabel } from '@/utils/platformColors'
 import { computed, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
@@ -232,7 +234,7 @@ function accountLabel(row: OpsRequestDetail): string {
                     <span class="rounded-full px-2 py-1 text-[10px] font-bold" :class="kindBadgeClass(row.kind)">
                       {{ row.kind === 'error' ? t('admin.ops.requestDetails.kind.error') : t('admin.ops.requestDetails.kind.success') }}
                     </span>
-                    <span class="text-xs font-medium text-gray-700 dark:text-gray-200">{{ (row.platform || 'unknown').toUpperCase() }}</span>
+                    <span class="text-xs font-medium text-gray-700 dark:text-gray-200">{{ platformLabel(row.platform || 'unknown').toUpperCase() }}</span>
                     <span class="ml-auto text-[11px] text-gray-500 dark:text-gray-400">{{ formatDateTime(row.created_at) }}</span>
                   </div>
                   <div class="break-all text-xs text-gray-600 dark:text-gray-300">{{ row.model || '-' }}</div>
@@ -306,7 +308,7 @@ function accountLabel(row: OpsRequestDetail): string {
                     </span>
                   </td>
                   <td class="whitespace-nowrap px-4 py-3 text-xs font-medium text-gray-700 dark:text-gray-200">
-                    {{ (row.platform || 'unknown').toUpperCase() }}
+                    {{ platformLabel(row.platform || 'unknown').toUpperCase() }}
                   </td>
                   <td class="max-w-[240px] truncate px-4 py-3 text-xs text-gray-600 dark:text-gray-300" :title="row.model || ''">
                     {{ row.model || '-' }}

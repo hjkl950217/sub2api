@@ -97,7 +97,7 @@
           <div class="border-b border-gray-100 px-4 py-3 dark:border-dark-700">
             <h2 class="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
               {{ group.name }}
-              <span class="badge badge-gray">{{ group.platform || t('groupModelAccounts.unlabeled') }}</span>
+              <span class="badge badge-gray">{{ platformLabel(group.platform) || t('groupModelAccounts.unlabeled') }}</span>
             </h2>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
               {{ t('groupModelAccounts.groupMeta', { id: group.id }) }}
@@ -155,6 +155,8 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api/admin'
 import type { AccountListItem, AdminGroup } from '@/types'
+// FORK-ANCHOR: platform-display-name-views-admin-GroupModelAccountsView (二开：平台名走平台清单，不显示原始 id)
+import { platformLabel } from '@/utils/platformColors'
 
 interface AccountEntry {
   id: number

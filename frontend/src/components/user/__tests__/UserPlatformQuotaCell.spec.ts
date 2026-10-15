@@ -51,7 +51,7 @@ describe('UserPlatformQuotaCell', () => {
       },
     })
     const html = w.html()
-    expect(html).toContain('anthropic')
+    expect(html).toContain('Anthropic')
     expect(html).toContain('30/100')
     expect(html).toContain('0/—')
     expect(html).toContain('90.5/2000')
@@ -69,8 +69,8 @@ describe('UserPlatformQuotaCell', () => {
       },
     })
     const text = w.text()
-    expect(text.indexOf('anthropic')).toBeLessThan(text.indexOf('gemini'))
-    expect(text.indexOf('gemini')).toBeLessThan(text.indexOf('typesafe'))
-    expect(text).not.toContain('openai')
+    expect(text.indexOf('Anthropic')).toBeLessThan(text.indexOf('Gemini'))
+    expect(text.indexOf('Gemini')).toBeLessThan(text.indexOf('TypeSafe / Jev'))
+    expect(text).not.toContain('OpenAI')
   })
 })

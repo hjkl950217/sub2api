@@ -46,7 +46,7 @@
         <!-- Platform -->
         <div>
           <span class="font-medium text-gray-500 dark:text-dark-400">{{ t('usage.errors.platform') }}</span>
-          <p class="mt-0.5 text-gray-900 dark:text-dark-100">{{ detail.platform || '-' }}</p>
+          <p class="mt-0.5 text-gray-900 dark:text-dark-100">{{ platformLabel(detail.platform) || '-' }}</p>
         </div>
         <!-- Upstream status code -->
         <div v-if="detail.upstream_status_code != null">
@@ -71,6 +71,8 @@
 </template>
 
 <script setup lang="ts">
+// FORK-ANCHOR: platform-display-name-components-user-UserErrorDetailModal (二开：平台名走平台清单，不显示原始 id)
+import { platformLabel } from '@/utils/platformColors'
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'

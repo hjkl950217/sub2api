@@ -66,7 +66,7 @@
                   <div class="mt-1.5 flex items-center gap-3 text-sm">
                     <span class="inline-flex items-center gap-1 text-gray-500 dark:text-gray-400">
                       <PlatformIcon :platform="config.platform" size="xs" />
-                      <span>{{ config.platform }}</span>
+                      <span>{{ platformLabel(config.platform) }}</span>
                     </span>
                     <span class="text-gray-300 dark:text-dark-500">•</span>
                     <span class="text-gray-500 dark:text-gray-400">
@@ -146,7 +146,7 @@
                   <div class="mt-1.5 flex items-center gap-3 text-sm">
                     <span class="inline-flex items-center gap-1 text-gray-500 dark:text-gray-400">
                       <PlatformIcon :platform="config.platform" size="xs" />
-                      <span>{{ config.platform }}</span>
+                      <span>{{ platformLabel(config.platform) }}</span>
                     </span>
                     <span class="text-gray-300 dark:text-dark-500">•</span>
                     <span class="text-gray-500 dark:text-gray-400">
@@ -201,6 +201,8 @@
 </template>
 
 <script setup lang="ts">
+// FORK-ANCHOR: platform-display-name-components-admin-user-UserAllowedGroupsModal (二开：平台名走平台清单，不显示原始 id)
+import { platformLabel } from '@/utils/platformColors'
 import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'

@@ -45,7 +45,7 @@
           </div>
           <div class="flex-1">
             <span class="font-medium text-gray-900 dark:text-white">{{ group.name }}</span>
-            <span class="ml-2 text-xs text-gray-400">{{ group.platform }}</span>
+            <span class="ml-2 text-xs text-gray-400">{{ platformLabel(group.platform) }}</span>
           </div>
         </label>
       </div>
@@ -76,6 +76,8 @@
 </template>
 
 <script setup lang="ts">
+// FORK-ANCHOR: platform-display-name-components-admin-user-GroupReplaceModal (二开：平台名走平台清单，不显示原始 id)
+import { platformLabel } from '@/utils/platformColors'
 import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'

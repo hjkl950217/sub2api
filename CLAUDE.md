@@ -46,7 +46,7 @@ git add -f CLAUDE.md
   `-c core.quotepath=false` 不能省：中文文件名的路径会被 git 转义成八进制，`grep -v '\.md:'` 就匹配不上，会多算。
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **495 个** = 源码 480 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **516 个** = 源码 501 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   其中 `.github/` 占 15 个，单独看：`git -c core.quotepath=false grep -o "FORK-ANCHOR:" -- .github | wc -l`。
 
 全量清单见 **`锚点清单.md`**：按文件分组列出每个锚点的名字，合并上游后照它逐条核对。
@@ -905,10 +905,14 @@ DeepSeek 不认。两者形态不同，HTTP 层看不出区别，所以探测会
 | `.../account/__tests__/AccountTestModal.spec.ts` | `test-test-modal-fingerprint` |
 | `.../account/__tests__/AccountBatchTestModal.spec.ts` | `test-batch-test-fingerprint` |
 
-### 2.26 平台显示名统一走平台清单（改上游文件，新增 4 个锚点、删 1 个）
+### 2.26 平台显示名统一走平台清单（改上游文件，新增 24 个锚点、删 1 个）
 
 **问题**（长空 2026-10-15 反馈）：二开新增的平台 `ag_hub` 在若干位置显示成原始 id `ag_hub`，
-而不是「聚合中转」。根因两类：
+而不是「聚合中转」。
+
+**长空定的规矩**：**所有 web 上显示的地方都要显示平台名，原始 id 只允许留在代码里。**
+
+根因两类，都已修完：
 
 **（1）本地硬编码的平台名 map 覆盖了 catalog 驱动的 helper** —— 这类最隐蔽，新增平台必然漏。
 已删掉本地 map，改从 `@/utils/platformColors` 引 `platformLabel`
@@ -920,36 +924,25 @@ DeepSeek 不认。两者形态不同，HTTP 层看不出区别，所以探测会
 | `frontend/src/components/user/dashboard/UserDashboardStats.vue` | `user-dashboard-stats-display-name` |
 | `frontend/src/features/channel-monitor-v2/MonitorSettingsPanel.vue` | `monitor-settings-display-name` |
 
-**（2）直接渲染原始 platform id** —— 本次只修了长空点名的批量测试弹窗分组头
-（`batch-test-platform-display-name`），改成
+**（2）直接渲染原始 platform id** —— 批量测试弹窗分组头（`batch-test-platform-display-name`）
+加 20 个文件（锚点 `platform-display-name-<文件路径去 .vue>`，逐个见 `锚点清单.md`），
+统一改成 `platformLabel(x)`；账号/分组语境用
 `t('admin.accounts.platforms.' + p, platformLabel(p))`。
 
-**还没修的同症状位置**（2026-10-15 全站排查结果，按语义分三类）：
+**防回归守卫**：新增 `frontend/src/utils/__tests__/platformDisplayGuard.spec.ts`
+（锚点 `test-platform-display-name-guard`）——扫全部 `.vue` 模板的 `{{ }}` 插值，
+凡是把 platform 字段直接当文本渲染的就报错。以后谁再写裸插值会立刻红。
+它**覆盖不到**：script 里拼模板字符串当 label 的、`:title` / `:label` 属性绑定、
+以及 `getDimensionString(row, 'platform')` 这种按字符串取字段的——这些只能靠人眼。
 
-- 账号/分组语义，用户可见，**建议修**：
-  `views/user/ChannelStatusV2View.vue:313,373,594,609`、
-  `components/channels/AvailableChannelsTable.vue:75,211`、
-  `components/channels/SupportedModelChip.vue:26,53`、
-  `views/admin/GroupModelAccountsView.vue:100`、
-  `features/prompt-audit/components/PolicyPanel.vue:35`、
-  `views/admin/RiskControlView.vue:763,1490`、
-  `views/admin/orders/PlanEditDialog.vue:139`、
-  `components/admin/user/GroupReplaceModal.vue:48`、
-  `components/admin/user/UserAllowedGroupsModal.vue:69,149`、
-  `components/account/SyncFromCrsModal.vue:91,133`、
-  `components/admin/ErrorPassthroughRulesModal.vue:120`、
-  `components/user/UserErrorRequestsTable.vue:78`、
-  `components/user/UserErrorDetailModal.vue:49`
-- 配额键 / 运维台，**大概率故意显示原始 id**，改前需确认：
-  `components/user/UserPlatformQuotaCell.vue:12`、
-  `components/admin/user/UserPlatformQuotaModal.vue:32`、
-  `views/admin/SettingsView.vue:5066`、
-  `views/admin/ops/components/` 下的 `OpsErrorLogTable` / `OpsErrorDetailModal` /
-  `OpsRequestDetailsModal` / `OpsThroughputTrendChart` / `OpsConcurrencyCard` /
-  `OpsAlertEventsCard` / `OpsSystemLogTable`
+**故意没改的两处**：`OpsSystemLogTable.vue:156` 和 `OpsAlertEventsCard.vue:196` 里的
+`platform=<id>` 是**和后端日志做对应的关联串**，不是给人看的显示名。
+改成中文会让前端拼出的 `platform=聚合中转` 对不上后端的 `platform=ag_hub`，属于功能回归。
+长空如果仍要改，说一声。
 
 **一个共性风险**：`platformLabel` 依赖平台清单，若清单在首屏渲染前还没加载完，
 所有调用点都会短暂回落成原始 id。本次没有验证首屏时序。
+
 
 ## 3. 发版方式
 

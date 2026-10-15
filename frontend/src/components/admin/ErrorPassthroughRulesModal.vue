@@ -117,7 +117,7 @@
                     :key="platform"
                     class="badge badge-primary text-xs"
                   >
-                    {{ platform }}
+                    {{ platformLabel(platform) }}
                   </span>
                   <span v-if="rule.platforms.length > 2" class="text-xs text-gray-500">
                     +{{ rule.platforms.length - 2 }}
@@ -430,6 +430,8 @@
 </template>
 
 <script setup lang="ts">
+// FORK-ANCHOR: platform-display-name-components-admin-ErrorPassthroughRulesModal (二开：平台名走平台清单，不显示原始 id)
+import { platformLabel } from '@/utils/platformColors'
 import { ref, reactive, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'

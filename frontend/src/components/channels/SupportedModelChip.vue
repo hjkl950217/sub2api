@@ -23,7 +23,7 @@
         v-if="showPlatform && model.platform"
         class="rounded bg-gray-200/60 px-1 text-[10px] uppercase text-gray-600 dark:bg-dark-700 dark:text-gray-400"
       >
-        {{ model.platform }}
+        {{ platformLabel(model.platform) }}
       </span>
       {{ model.name }}
     </span>
@@ -50,7 +50,7 @@
             v-if="model.platform"
             class="flex-shrink-0 rounded bg-white/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wide dark:bg-dark-900/60"
           >
-            {{ model.platform }}
+            {{ platformLabel(model.platform) }}
           </span>
         </div>
 
@@ -173,6 +173,7 @@
 </template>
 
 <script setup lang="ts">
+// FORK-ANCHOR: platform-display-name-components-channels-SupportedModelChip (二开：平台名走平台清单，不显示原始 id)
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PricingRow from './PricingRow.vue'
@@ -188,7 +189,7 @@ import {
 import type { UserPricingInterval, UserSupportedModel, UserSupportedModelPricing } from '@/api/channels'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import type { GroupPlatform } from '@/types'
-import { platformBadgeClass, platformBorderClass, platformBadgeLightClass } from '@/utils/platformColors'
+import { platformBadgeClass, platformBorderClass, platformBadgeLightClass, platformLabel } from '@/utils/platformColors'
 
 const props = withDefaults(
   defineProps<{

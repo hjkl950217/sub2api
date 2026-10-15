@@ -1,4 +1,6 @@
 <script setup lang="ts">
+// FORK-ANCHOR: platform-display-name-views-admin-ops-components-OpsThroughputTrendChart (二开：平台名走平台清单，不显示原始 id)
+import { platformLabel } from '@/utils/platformColors'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Chart as ChartJS, CategoryScale, Filler, Legend, LineElement, LinearScale, PointElement, Title, Tooltip } from 'chart.js'
@@ -245,7 +247,7 @@ function downloadChart() {
         class="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-200 dark:hover:bg-dark-800"
         @click="emit('selectPlatform', p.platform)"
       >
-        <span class="uppercase">{{ p.platform }}</span>
+        <span class="uppercase">{{ platformLabel(p.platform) }}</span>
         <span class="text-gray-400 dark:text-gray-500">{{ formatNumber(p.request_count) }}</span>
       </button>
     </div>

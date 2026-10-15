@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+// 表格里的平台列现在显示平台清单里的显示名，按显示名定位行
+import { platformLabel } from '@/utils/platformColors'
 
 const apiMocks = vi.hoisted(() => ({
   showError: vi.fn(),
@@ -105,8 +107,8 @@ describe('UserPlatformQuotaModal', () => {
     const w = await mountAndOpen()
     const rows = w.findAll('tbody tr')
     expect(rows.map(row => row.find('td').text())).toEqual([
-      'anthropic', 'openai', 'gemini', 'antigravity', 'grok',
-      'kimi', 'zhipu', 'deepseek', 'minimax', 'opencode_go', 'typesafe', 'ag_hub', 'command_code', 'cline',
+      'Anthropic', 'OpenAI', 'Gemini', 'Antigravity', 'Grok',
+      'Kimi', 'Zhipu GLM', 'DeepSeek', 'MiniMax', 'OpenCode', 'TypeSafe / Jev', '聚合中转', 'Command Code', 'Cline',
     ])
     for (const row of rows) {
       const inputs = row.findAll('input[type=number]')
@@ -126,7 +128,7 @@ describe('UserPlatformQuotaModal', () => {
       ]
       apiMocks.getPlatformQuotas.mockResolvedValueOnce({ platform_quotas: existing })
       const w = await mountAndOpen()
-      const row = w.findAll('tbody tr').find(r => r.find('td').text() === platform)!
+      const row = w.findAll('tbody tr').find(r => r.find('td').text() === platformLabel(platform))!
       const inputs = row.findAll('input[type=number]')
       expect(inputs.map(input => input.element.value)).toEqual(['0', '', '50'])
       await inputs[1].setValue('12.5')

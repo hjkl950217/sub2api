@@ -75,7 +75,7 @@
         </template>
 
         <template #cell-platform="{ row }">
-          <span class="text-sm text-gray-900 dark:text-white">{{ row.platform || '-' }}</span>
+          <span class="text-sm text-gray-900 dark:text-white">{{ platformLabel(row.platform) || '-' }}</span>
         </template>
 
         <template #cell-client_ip="{ row }">
@@ -121,6 +121,8 @@
 </template>
 
 <script setup lang="ts">
+// FORK-ANCHOR: platform-display-name-components-user-UserErrorRequestsTable (二开：平台名走平台清单，不显示原始 id)
+import { platformLabel } from '@/utils/platformColors'
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import DataTable from '@/components/common/DataTable.vue'

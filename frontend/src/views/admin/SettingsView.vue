@@ -5063,7 +5063,7 @@
                         <label
                           class="font-mono text-sm font-medium text-gray-900 dark:text-white"
                         >
-                          {{ platform }}
+                          {{ platformLabel(platform) }}
                         </label>
                         <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                           {{
@@ -8975,6 +8975,8 @@
 </template>
 
 <script setup lang="ts">
+// FORK-ANCHOR: platform-display-name-views-admin-SettingsView (二开：平台名走平台清单，不显示原始 id)
+import { platformLabel } from '@/utils/platformColors'
 import { ref, reactive, computed, onMounted, watch } from "vue";
 import { listPlatformIds } from "@/constants/platformCatalog";
 import { useI18n } from "vue-i18n";

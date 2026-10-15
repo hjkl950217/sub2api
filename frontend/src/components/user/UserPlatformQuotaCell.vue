@@ -9,7 +9,7 @@
       :key="row.platform"
       class="flex items-center gap-2 whitespace-nowrap"
     >
-      <span class="w-20 shrink-0 font-mono text-gray-700 dark:text-gray-300">{{ row.platform }}</span>
+      <span class="w-20 shrink-0 font-mono text-gray-700 dark:text-gray-300">{{ platformLabel(row.platform) }}</span>
       <span class="text-gray-500 dark:text-gray-400">
         {{ t('admin.users.platformQuota.windowDaily') }}
         <span class="text-gray-900 dark:text-white">{{ fmtUsd(row.daily_usage_usd) }}/{{ fmtLimit(row.daily_limit_usd) }}</span>
@@ -27,6 +27,8 @@
 </template>
 
 <script setup lang="ts">
+// FORK-ANCHOR: platform-display-name-components-user-UserPlatformQuotaCell (二开：平台名走平台清单，不显示原始 id)
+import { platformLabel } from '@/utils/platformColors'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { PlatformQuotaItem } from '@/api/admin/users'
