@@ -241,6 +241,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyPluginManagementEnabled,
 		SettingKeyAffiliateEnabled,
 		SettingKeyRiskControlEnabled,
+		// FORK-ANCHOR: public-keys-fingerprint (二开：模型指纹检测开关进公开设置)
+		SettingKeyFingerprintEnabled,
 		SettingKeyAllowUserViewErrorRequests,
 	}
 
@@ -375,6 +377,9 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		AffiliateEnabled: settings[SettingKeyAffiliateEnabled] == "true",
 
 		RiskControlEnabled: settings[SettingKeyRiskControlEnabled] == "true",
+
+		// FORK-ANCHOR: public-read-fingerprint (二开：默认开启，缺失/空值也视为开启)
+		FingerprintEnabled: !isFalseSettingValue(settings[SettingKeyFingerprintEnabled]),
 
 		AllowUserViewErrorRequests: settings[SettingKeyAllowUserViewErrorRequests] == "true",
 	}, nil
@@ -642,7 +647,9 @@ type PublicSettingsInjectionPayload struct {
 	PluginManagementEnabled       bool `json:"plugin_management_enabled"`
 	AffiliateEnabled              bool `json:"affiliate_enabled"`
 	RiskControlEnabled            bool `json:"risk_control_enabled"`
-	AllowUserViewErrorRequests    bool `json:"allow_user_view_error_requests"`
+	// FORK-ANCHOR: injection-struct-fingerprint (二开：模型指纹检测开关)
+	FingerprintEnabled         bool `json:"fingerprint_enabled"`
+	AllowUserViewErrorRequests bool `json:"allow_user_view_error_requests"`
 }
 
 // GetPublicSettingsForInjection returns public settings in a format suitable for HTML injection.
@@ -726,7 +733,9 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		PluginManagementEnabled:              settings.PluginManagementEnabled,
 		AffiliateEnabled:                     settings.AffiliateEnabled,
 		RiskControlEnabled:                   settings.RiskControlEnabled,
-		AllowUserViewErrorRequests:           settings.AllowUserViewErrorRequests,
+		// FORK-ANCHOR: injection-payload-fingerprint (二开：SSR 注入必须带上，否则刷新时指纹区块会闪没)
+		FingerprintEnabled:         settings.FingerprintEnabled,
+		AllowUserViewErrorRequests: settings.AllowUserViewErrorRequests,
 	}, nil
 }
 

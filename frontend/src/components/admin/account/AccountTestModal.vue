@@ -350,8 +350,9 @@
       <!-- FORK-ANCHOR: test-modal-fingerprint-section (二开：模型指纹检测)
            一行样式对齐上面的协议行：图标 + 名称 + 状态 + 耗时，最右侧是独立按钮。
            它默认不跑，也不随「开始测试」触发，必须点这一行的「开始检测」。
-           行下的框放检测结论（最像的模型、候选排行、证据、免责、原始返回）。 -->
-      <div class="space-y-1.5" data-testid="fingerprint-section">
+           行下的框放检测结论（最像的模型、候选排行、证据、免责、原始返回）。
+           v-if 跟着后台「模型检测」开关走：关掉时连区块都不渲染。 -->
+      <div v-if="fingerprintEnabled" class="space-y-1.5" data-testid="fingerprint-section">
         <div class="text-xs font-medium text-gray-600 dark:text-gray-300">
           {{ t('admin.accounts.fingerprint.title') }}
         </div>
@@ -564,8 +565,10 @@ import { ADMIN_UI_REQUEST_HEADER } from '@/api/adminUIRequest'
 import { adminAPI } from '@/api/admin'
 import { useAppStore } from '@/stores/app'
 import type { Account, ClaudeModel } from '@/types'
-// FORK: 模型指纹检测的 mock 调用与类型（接后端时只换 runFingerprintMock 的实现）
-import { runFingerprintMock, type FingerprintReport } from './fingerprintMock'
+// FORK: 模型指纹检测（二开：走真实后端接口，不再是 mock）。
+// 调用走 adminAPI.accounts，与同文件其它账号接口一致，测试里也是同一个 mock 点。
+import type { FingerprintReport } from '@/api/admin/accounts'
+import { FeatureFlags, resolveFeatureFlag } from '@/utils/featureFlags'
 
 const { t } = useI18n()
 const { copyToClipboard } = useClipboard()
@@ -696,6 +699,12 @@ const protocolShortLabel = (protocol: string): string => {
 // FORK-ANCHOR: test-modal-fingerprint-state (二开：模型指纹检测状态)
 // 默认不跑：必须点行上的「开始检测」，也不随「开始测试」重置或触发。
 // 检测期间只能转圈 + 计时——fpd 只在结束时吐一次 JSON，中途拿不到进度。
+//
+// FORK-ANCHOR: test-modal-fingerprint-gate (二开：后台「模型检测」开关关掉时整块不显示)
+// 用 opt-out 解析：设置还没加载完时按「开启」处理，避免刷新瞬间区块闪一下又出现。
+const fingerprintEnabled = computed(() =>
+  resolveFeatureFlag(appStore.cachedPublicSettings, FeatureFlags.fingerprint)
+)
 const fingerprintStatus = ref<'idle' | 'running' | 'done' | 'error'>('idle')
 const fingerprintReport = ref<FingerprintReport | null>(null)
 const fingerprintError = ref('')
@@ -784,8 +793,9 @@ const runFingerprint = async () => {
     fingerprintElapsedMs.value = Date.now() - started
   }, 100)
   try {
-    // 目前是 mock（固定 3 秒延迟）。接后端时换成真实请求，其余不用动。
-    const report = await runFingerprintMock()
+    // 真实检测：后端 exec lm-detector CLI，一次约 30-180 秒。
+    // 模型优先用当前下拉选中的那个 —— 那正是要验证「上游是不是真在提供它」的对象。
+    const report = await adminAPI.accounts.runFingerprint(props.account.id, selectedModelId.value || undefined)
     if (runId !== fingerprintRunId) return
     fingerprintReport.value = report
     fingerprintStatus.value = 'done'

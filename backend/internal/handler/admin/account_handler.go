@@ -69,6 +69,13 @@ type AccountHandler struct {
 	ollamaCloudUsage        *service.OllamaCloudUsageService
 	cfg                     *config.Config
 	opencodeGoUsage         *service.OpenCodeGoUsageService
+	// FORK: 模型指纹检测（二开新增，可选依赖，经 SetFingerprintService 注入）
+	fingerprintService *service.FingerprintService
+}
+
+// FORK-ANCHOR: set-fingerprint-service (二开：注入模型指纹检测服务)
+func (h *AccountHandler) SetFingerprintService(fingerprintService *service.FingerprintService) {
+	h.fingerprintService = fingerprintService
 }
 
 // SetUpstreamBillingProbeService attaches the optional remote billing probe service.
@@ -1425,6 +1432,45 @@ func (h *AccountHandler) BatchTest(c *gin.Context) {
 	// Per-account failures are reported over the stream, so only a transport-level
 	// error is worth surfacing here.
 	_ = h.accountTestService.RunAccountBatchTest(c, service.BatchTestRunOptions{Targets: req.Targets})
+}
+
+// FORK-ANCHOR: fork-fingerprint-request (二开：模型指纹检测请求体)
+type FingerprintTestRequest struct {
+	// ModelID 是要拿去问上游的模型名。留空时后端从账号的 model_mapping 里挑一个。
+	ModelID string `json:"model_id"`
+}
+
+// Fingerprint runs one real model-fingerprint detection against the account's
+// upstream using the lm-detector CLI, and returns the trimmed report.
+//
+// 非流式：一次检测约 30-180 秒（fpd 默认三个样本并发，单请求超时 120 秒）。
+// 批量场景由前端按行并发调用本接口，服务端另有信号量限制同时运行的进程数。
+//
+// FORK-ANCHOR: fork-fingerprint-handler (二开：模型指纹检测)
+// POST /api/v1/admin/accounts/:id/fingerprint
+func (h *AccountHandler) Fingerprint(c *gin.Context) {
+	if h.fingerprintService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "模型指纹检测服务未启用")
+		return
+	}
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+
+	var req FingerprintTestRequest
+	// 允许空 body：不带 model_id 时后端自己挑一个。
+	_ = c.ShouldBindJSON(&req)
+
+	report, err := h.fingerprintService.DetectWithTimeout(c.Request.Context(), accountID, req.ModelID)
+	if err != nil {
+		// 这里的错误都是给管理员看的可读原因（账号不支持 / 没有可用模型 / 上游不通），
+		// 原样透出，前端直接显示在指纹行的错误区。
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, report)
 }
 
 // RecoverState handles unified recovery of recoverable account runtime state.

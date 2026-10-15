@@ -656,6 +656,86 @@ export async function getBatchTestPlan(accountIds: number[]): Promise<BatchTestP
   return data
 }
 
+// FORK-ANCHOR: fingerprint-api (二开：模型指纹检测接口)
+//
+// 字段与后端 FingerprintReport（internal/service/fingerprint_service.go）一一对应，
+// 也就是 lm-detector CLI 输出报告的裁剪版：去掉了 rounds / challenges / outputs
+// 三段（单次 60 KB，UI 用不到），只留渲染需要的部分。
+//
+// 两个和直觉相反的事实（UI 必须按这个来）：
+// 1. evidence.insufficient 在**成功**检测时也是 true —— 它表达「证据不足以证明身份」，
+//    不是「检测失败」，绝不能渲染成错误态。
+// 2. results 是参考库**全部**模型的完整排行（本次 59 条），不是 top-N，UI 要自己截断。
+export interface FingerprintCandidate {
+  model: string
+  display_name: string
+  family: string
+  family_name: string
+  score: number
+  probability: number
+}
+
+export interface FingerprintDiagnostic {
+  index: number
+  parsed_numbers: number
+  minimum_numbers: number
+  accepted: boolean
+  raw_out_of_range_count: number
+}
+
+export interface FingerprintEvidence {
+  insufficient: boolean
+  label: string
+  reason: string
+  threshold: number | null
+  method: string
+}
+
+export interface FingerprintAnalysis {
+  prediction: string
+  prediction_name: string
+  family_prediction: string
+  family_prediction_name: string
+  probability: number
+  probability_status: string
+  probability_scope: string
+  ranking_score: number
+  used_outputs: number
+  method: string
+  model_version: Record<string, unknown>
+  calibration: Record<string, unknown>
+  results: FingerprintCandidate[]
+  diagnostics: FingerprintDiagnostic[]
+  evidence: FingerprintEvidence
+}
+
+export interface FingerprintReport {
+  schema: string
+  created_at: string
+  request: Record<string, unknown>
+  bank: { reference_sha256: string; models: number }
+  requested_rounds: number
+  completed_rounds: number
+  scored_rounds: number
+  analysis: FingerprintAnalysis
+}
+
+/**
+ * Run one real model-fingerprint detection against the account's upstream.
+ *
+ * 非流式，一次约 30-180 秒（后端 exec lm-detector CLI，真实向上游发 3 个请求）。
+ * 批量场景由调用方按行并发发起，服务端有信号量限制同时运行的进程数。
+ *
+ * @param id - Account ID
+ * @param modelId - 要检测的模型名；留空时后端从账号 model_mapping 里挑一个
+ */
+export async function runFingerprint(id: number, modelId?: string): Promise<FingerprintReport> {
+  const { data } = await apiClient.post<FingerprintReport>(`/admin/accounts/${id}/fingerprint`, {
+    model_id: modelId ?? ''
+  })
+  return data
+}
+
 export interface SyncUpstreamModelsResult {
   models: string[]
   metadata?: Record<string, UpstreamModelMetadata>
@@ -1214,6 +1294,7 @@ export const accountsAPI = {
   setSchedulable,
   getAvailableModels,
   getBatchTestPlan,
+  runFingerprint,
   syncUpstreamModels,
   syncUpstreamModelsPreview,
   generateAuthUrl,

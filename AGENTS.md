@@ -986,6 +986,81 @@ zh/en 各一个锚点（`i18n-edit-account-tabs-zh` / `-en`）。i18n 完整性�
 和 `锚点清单.md` 一并更新；改名后该文件不再被上游 `.gitignore:122` 命中，不用再 `git add -f`。
 
 
+### 2.28 模型指纹检测接后端（新增目录 + 改上游文件，新增 43 个锚点）
+
+承接 §2.25：那一轮只做了前端 + mock，这一轮把后端真正接上 —— 后端 exec
+[lm-detector](https://github.com/Ikaleio/lm-detector) 的 CLI 对账号发起真实检测，
+并在「系统设置 → 功能开关」里加开关与样本库更新时间点。**长空 2026-10-15 定：CLI
+版本钉死、构建期烘焙进镜像、样本库照常更新（不受检测开关影响）。**
+
+#### 新增文件（都是 `FORK:` 头，不改上游）
+
+| 文件 | 作用 |
+|---|---|
+| `backend/internal/service/fingerprint_service.go` | exec CLI、解析报告、base_url 规范化、协议映射、并发信号量 |
+| `backend/internal/service/fingerprint_bank_service.go` | cron 定时更新样本库：下载 → 自检 → 整目录原子替换 |
+| `backend/internal/service/fingerprint_settings.go` | 时间点规范化 / 校验 / cron 换算（纯函数） |
+| `backend/internal/service/fingerprint_settings_test.go` | 上面那些纯函数的单测（`-tags=unit`） |
+
+#### 实测结论（2026-10-15 本机验证，改这块前必读）
+
+1. **不用 Bun，用 alpine 自带 Node 22**。`lmfpd` 的 engines 是 `node>=22`，
+   alpine 3.21 的 `nodejs` 包正好是 22.23.2-r0。§2.25 里「Node 要拖 libstdc++
+   所以选 Bun」的结论作废。
+2. **`fpd.js` 顶层静态 import `ink` / `react` / `react/jsx-runtime` / `terminal-link`**。
+   加 `--json` 跳 TUI 也绕不开，缺依赖直接崩。`npm install` 后 42 个包、19 MB、
+   **零原生模块**（纯 JS，可跨平台烘焙）。
+3. **网络失败时 fpd 仍输出合法 JSON**，退出码 1，**stderr 为空**。错误在
+   `rounds[].samples[].error`，顶层 `scored_rounds` 是 0。所以**不能只看退出码**，
+   必须解析 JSON 看 `scored_rounds`。
+4. **`fpd --input <报告> --bank <库>` 可以离线自检样本库**，约 1 秒、不发网络请求。
+   库与检测器不配套时（如截断 `shared_detector.bin`）退出码 1 且 stderr 给出
+   `fpd retrain` 提示。样本库更新用它当准入门槛 —— 不合格的库不替换线上的。
+   自检报告是**临时合成**的（`buildFingerprintSelfCheckProbe`），不随镜像烘焙。
+5. 输出是**多行格式化 JSON**（约 1196 行 / 60 KB），按整段解析，别按行切。
+6. `fpd.js` 用 `import.meta.url` 定位 `../data`，依赖靠 Node 向上找 `node_modules`，
+   所以**保持包的原样布局**即可，不用单独拷 bin/data。
+
+#### 挂载点
+
+- 接口：`POST /api/v1/admin/accounts/:id/fingerprint`（非流式，一次 30-180 秒）。
+  批量由前端按行并发调用，服务端信号量限 3 个并发进程。
+- 路由：`backend/internal/server/routes/admin.go`；handler：
+  `admin.AccountHandler.Fingerprint`（依赖经 `SetFingerprintService` 注入，
+  和 `SetUpstreamBillingProbeService` 同一套写法）。
+- 设置项走的是 `channel_monitor_enabled` 那套完整链路（DB key-value，无迁移）：
+  `domain_constants` → `setting_parse` 默认值 + 解析 → `settings_view` 两个结构体
+  → `setting_public` 读取 + SSR 注入 → `setting_update` 写库 → `dto/settings.go`
+  → 三个 handler → 审计 diff。**`public_settings_injection_schema_test.go` 和
+  `api_contract_test.go` 会卡住漏改**，两处 JSONEq 期望也要补字段。
+- 样本库更新时间点在管理员保存设置后立即生效：`set-fingerprint-bank-service` +
+  `update-reload-fingerprint-bank` 调 `FingerprintBankService.Reload(ctx)`
+  （照 `OpsCleanupService` 的可 Reload 模式，不用 `sync.Once`）。
+- 开关关闭时只影响「能不能发起检测」：前端 `featureFlags.ts` 的
+  `fingerprint` flag（**opt-out**，默认开）控制指纹区块与批量按钮的渲染，
+  后端 `GetFingerprintRuntime` 拒绝执行。**样本库照常更新。**
+
+#### 镜像
+
+`Dockerfile.goreleaser` 新增一个 `node:22-alpine` 构建阶段装 `lmfpd`（版本由
+`ARG FINGERPRINT_CLI_VERSION` 钉死），整棵 `node_modules` 拷到
+`/app/lm-detector/node_modules`；运行镜像 `apk add nodejs`（**必须构建期装**：
+compose 带 `no-new-privileges`，运行期不能 apk add）。
+**没有改 `release_matrix.py`** —— 构建上下文只多了一个 Dockerfile 里的 `COPY --from`。
+
+运行期下载的样本库落在 `/app/data/lm-detector/bank/`（`--bank` 指过去）；
+目录不存在或两个文件不齐时自动退回镜像里的内置库，所以更新失败不会中断检测。
+
+#### 没做 / 已知边界
+
+- 只支持 API Key 账号：OAuth、Bedrock/Vertex 云签名类账号没有 CLI 认得的
+  base_url + key 组合，后端直接返回可读的拒绝理由。
+- 一次检测真实向上游发 3 个请求（`--count 3`，少了没有置信度），**是要花钱的**。
+- 残留风险：运行期样本库版本可能领先镜像里烘焙的 CLI 很多。自检能挡住
+  「库读不出来」，挡不住「库的语义变了」。真出问题的回退动作是删掉
+  `/app/data/lm-detector/bank/`，检测会退回内置库。
+
+
 ## 3. 发版方式
 
 版本号与上游保持一致，**不追加第四段**。

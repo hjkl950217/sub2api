@@ -131,6 +131,8 @@ func provideCleanup(
 	openAIAutoReset *service.OpenAIQuotaAutoResetService,
 	promptAudit *securityaudit.PromptService,
 	pluginManager *service.PluginManager,
+	// FORK-ANCHOR: cleanup-fingerprint-bank (二开：模型指纹样本库定时更新服务)
+	fingerprintBank *service.FingerprintBankService,
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -146,6 +148,13 @@ func provideCleanup(
 			{"PluginManager", func() error {
 				if pluginManager != nil {
 					pluginManager.Stop()
+				}
+				return nil
+			}},
+			// FORK-ANCHOR: cleanup-fingerprint-bank-step (二开：停掉样本库更新的 cron)
+			{"FingerprintBankService", func() error {
+				if fingerprintBank != nil {
+					fingerprintBank.Stop()
 				}
 				return nil
 			}},

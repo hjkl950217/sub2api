@@ -1,69 +1,26 @@
-// FORK: lm-detector 模型指纹检测——类型定义、示例数据与 mock 调用
+// FORK: lm-detector 模型指纹检测——示例报告（二开新增文件）。
 //
-// 结构取自一次真实检测（sub2api 账号 3285「云枢」/ https://yunshu.best /
-// 请求模型 claude-opus-5-5 / 协议 message），完整原始返回见
-// 临时文件/lm-detector-sample-output.json。
+// 只放一份**真实检测**的样例数据，供组件测试当夹具用（后端接上之后，运行时
+// 不再有 mock）。结构取自一次真实检测（sub2api 账号 3285「云枢」/
+// https://yunshu.best / 请求模型 claude-opus-5-5 / 协议 message），
+// 完整原始返回见 `临时文件/lm-detector-sample-output.json`，已确认不含任何密钥。
 //
-// 接后端时只需要把 runFingerprintMock 换成真实请求，类型和 UI 都不用动。
+// 类型定义和真实请求都在 `@/api/admin/accounts`，这里只做转出，避免两处各写一份。
 //
-// 两个和直觉相反的实测事实：
+// 两个和直觉相反的实测事实（渲染这块时要记得）：
 // 1. evidence.insufficient 在成功检测时也是 true —— 它表达「证据不足以证明身份」，
 //    不是「检测失败」，UI 不能把它渲染成错误态。
 // 2. results 是参考库全部模型的完整排行（本次 59 条），不是 top-N，UI 要自己截断。
 
-export interface FingerprintCandidate {
-  model: string
-  display_name: string
-  family: string
-  family_name: string
-  score: number
-  probability: number
-}
+import type { FingerprintReport } from '@/api/admin/accounts'
 
-export interface FingerprintDiagnostic {
-  index: number
-  parsed_numbers: number
-  minimum_numbers: number
-  accepted: boolean
-  raw_out_of_range_count: number
-}
-
-export interface FingerprintEvidence {
-  insufficient: boolean
-  label: string
-  reason: string
-  threshold: number | null
-  method: string
-}
-
-export interface FingerprintAnalysis {
-  prediction: string
-  prediction_name: string
-  family_prediction: string
-  family_prediction_name: string
-  probability: number
-  probability_status: string
-  probability_scope: string
-  ranking_score: number
-  used_outputs: number
-  method: string
-  model_version: Record<string, unknown>
-  calibration: Record<string, unknown>
-  results: FingerprintCandidate[]
-  diagnostics: FingerprintDiagnostic[]
-  evidence: FingerprintEvidence
-}
-
-export interface FingerprintReport {
-  schema: string
-  created_at: string
-  request: Record<string, unknown>
-  bank: { reference_sha256: string; models: number }
-  requested_rounds: number
-  completed_rounds: number
-  scored_rounds: number
-  analysis: FingerprintAnalysis
-}
+export type {
+  FingerprintAnalysis,
+  FingerprintCandidate,
+  FingerprintDiagnostic,
+  FingerprintEvidence,
+  FingerprintReport
+} from '@/api/admin/accounts'
 
 export const FINGERPRINT_SAMPLE: FingerprintReport = {
   "schema": "fpd-detection-v1",
@@ -617,12 +574,3 @@ export const FINGERPRINT_SAMPLE: FingerprintReport = {
   }
 }
 
-/** mock 延迟：3 秒，用来预览「检测中」和「检测完成」两种样式 */
-export const FINGERPRINT_MOCK_DELAY_MS = 3000
-
-/** mock 调用：延迟 3 秒后返回示例报告。接后端时把这个函数体换成真实请求即可。 */
-export function runFingerprintMock(): Promise<FingerprintReport> {
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(JSON.parse(JSON.stringify(FINGERPRINT_SAMPLE)) as FingerprintReport), FINGERPRINT_MOCK_DELAY_MS)
-  })
-}

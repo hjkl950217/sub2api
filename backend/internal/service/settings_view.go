@@ -171,6 +171,9 @@ type SystemSettings struct {
 	CyberSessionBlockEnabled     bool
 	CyberPolicyUserAllowlist     string
 	CyberSessionBlockTTLSeconds  int
+	// FORK-ANCHOR: settings-view-fingerprint (二开：模型指纹检测开关与样本库更新时间点)
+	FingerprintEnabled        bool
+	FingerprintBankUpdateTime string
 	AffiliateEnabled             bool
 	AffiliateRebateRate          float64
 	AffiliateRebateFreezeHours   int
@@ -417,6 +420,10 @@ type PublicSettings struct {
 
 	// 风控中心功能开关
 	RiskControlEnabled bool `json:"risk_control_enabled"`
+
+	// FORK-ANCHOR: public-settings-fingerprint (二开：模型指纹检测开关，前端据此决定是否渲染指纹区块)
+	// 只注入开关；更新时间点属于运维参数，不进公开设置。
+	FingerprintEnabled bool `json:"fingerprint_enabled"`
 
 	// 允许终端用户在用量页查看自己的失败请求
 	AllowUserViewErrorRequests bool `json:"allow_user_view_error_requests"`

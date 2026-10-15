@@ -461,6 +461,10 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyMinClaudeCodeVersion] = settings.MinClaudeCodeVersion
 	updates[SettingKeyMaxClaudeCodeVersion] = settings.MaxClaudeCodeVersion
 
+	// FORK-ANCHOR: update-fingerprint-settings (二开：模型指纹检测开关 + 样本库更新时间点)
+	updates[SettingKeyFingerprintEnabled] = strconv.FormatBool(settings.FingerprintEnabled)
+	updates[SettingKeyFingerprintBankUpdateTime] = normalizeFingerprintBankUpdateTime(settings.FingerprintBankUpdateTime)
+
 	// 分组隔离
 	updates[SettingKeyAllowUngroupedKeyScheduling] = strconv.FormatBool(settings.AllowUngroupedKeyScheduling)
 

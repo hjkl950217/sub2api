@@ -612,6 +612,13 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.CyberSessionBlockTTLSeconds != after.CyberSessionBlockTTLSeconds {
 		changed = append(changed, "cyber_session_block_ttl_seconds")
 	}
+	// FORK-ANCHOR: audit-fingerprint (二开：模型指纹检测设置变更进审计)
+	if before.FingerprintEnabled != after.FingerprintEnabled {
+		changed = append(changed, service.SettingKeyFingerprintEnabled)
+	}
+	if before.FingerprintBankUpdateTime != after.FingerprintBankUpdateTime {
+		changed = append(changed, service.SettingKeyFingerprintBankUpdateTime)
+	}
 	// Default platform quotas（JSON map，整体比较）
 	if !equalPlatformQuotaSettings(before.DefaultPlatformQuotas, after.DefaultPlatformQuotas) {
 		changed = append(changed, service.SettingKeyDefaultPlatformQuotas)

@@ -7500,6 +7500,48 @@
           </div>
         </div>
 
+        <!-- FORK-ANCHOR: settings-card-fingerprint (二开：模型指纹检测开关 + 样本库更新时间点)
+             时间点故意不放在开关的 v-if 里：样本库更新不受开关影响（长空 2026-10-15 定），
+             开关关掉后仍然按这个时间点更新。 -->
+        <div class="card">
+          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.settings.features.fingerprint.title') }}
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.settings.features.fingerprint.description') }}
+            </p>
+          </div>
+          <div class="space-y-5 p-6">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.features.fingerprint.enabled') }}
+                </label>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.features.fingerprint.enabledHint') }}
+                </p>
+              </div>
+              <Toggle v-model="form.fingerprint_enabled" />
+            </div>
+
+            <div>
+              <label class="input-label">
+                {{ t('admin.settings.features.fingerprint.bankUpdateTime') }}
+              </label>
+              <input
+                v-model="form.fingerprint_bank_update_time"
+                type="time"
+                class="input max-w-xs"
+                data-testid="fingerprint-bank-update-time"
+              />
+              <p class="mt-1 text-xs text-gray-400">
+                {{ t('admin.settings.features.fingerprint.bankUpdateTimeHint') }}
+              </p>
+            </div>
+          </div>
+        </div>
+
         <!-- Affiliate (邀请返利) feature card -->
         <div class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
@@ -9823,6 +9865,9 @@ const form = reactive<SettingsForm>({
   cyber_policy_user_allowlist: "",
   cyber_session_block_enabled: false,
   cyber_session_block_ttl_seconds: 3600,
+  // FORK: 模型指纹检测（二开）。开关默认开；时间点与后端默认值保持一致。
+  fingerprint_enabled: true,
+  fingerprint_bank_update_time: "03:00",
   payment_min_amount: 1,
   payment_max_amount: 10000,
   payment_daily_limit: 50000,
@@ -11707,6 +11752,10 @@ async function saveSettings() {
       cyber_session_block_enabled: form.cyber_session_block_enabled,
       cyber_session_block_ttl_seconds:
         Number(form.cyber_session_block_ttl_seconds) || 3600,
+      // FORK: 模型指纹检测（二开）。<input type="time"> 在未填时给空串，
+      // 空串后端会当作「恢复默认 03:00」处理。
+      fingerprint_enabled: form.fingerprint_enabled,
+      fingerprint_bank_update_time: form.fingerprint_bank_update_time,
       payment_min_amount: Number(form.payment_min_amount) || 0,
       payment_max_amount: Number(form.payment_max_amount) || 0,
       payment_daily_limit: Number(form.payment_daily_limit) || 0,

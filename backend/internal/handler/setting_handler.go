@@ -122,6 +122,9 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 
 		RiskControlEnabled: settings.RiskControlEnabled,
 
+		// FORK-ANCHOR: handler-public-fingerprint (二开：模型指纹检测开关)
+		FingerprintEnabled: settings.FingerprintEnabled,
+
 		AllowUserViewErrorRequests: settings.AllowUserViewErrorRequests,
 	})
 }

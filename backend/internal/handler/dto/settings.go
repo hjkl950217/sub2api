@@ -343,6 +343,10 @@ type SystemSettings struct {
 	CyberPolicyUserAllowlist    string `json:"cyber_policy_user_allowlist"`
 	CyberSessionBlockTTLSeconds int    `json:"cyber_session_block_ttl_seconds"`
 
+	// FORK-ANCHOR: dto-system-fingerprint (二开：模型指纹检测开关 + 样本库更新时间点)
+	FingerprintEnabled        bool   `json:"fingerprint_enabled"`
+	FingerprintBankUpdateTime string `json:"fingerprint_bank_update_time"`
+
 	// Affiliate (邀请返利) feature switch
 	AffiliateEnabled bool `json:"affiliate_enabled"`
 
@@ -448,6 +452,9 @@ type PublicSettings struct {
 	AffiliateEnabled bool `json:"affiliate_enabled"`
 
 	RiskControlEnabled bool `json:"risk_control_enabled"`
+
+	// FORK-ANCHOR: dto-public-fingerprint (二开：模型指纹检测开关，前端据此决定是否渲染指纹区块)
+	FingerprintEnabled bool `json:"fingerprint_enabled"`
 
 	AllowUserViewErrorRequests bool `json:"allow_user_view_error_requests"`
 }

@@ -2,24 +2,19 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountBatchTestModal from '../AccountBatchTestModal.vue'
 // FORK: 批量指纹检测的断言用真实示例数据
-import { FINGERPRINT_SAMPLE } from '../fingerprintMock'
+import { FINGERPRINT_SAMPLE } from '../fingerprintSample'
 
-const { getBatchTestPlan, updateProbedProtocols, setSchedulable, showSuccess, showError, runFingerprintMock } = vi.hoisted(() => ({
+const { getBatchTestPlan, updateProbedProtocols, setSchedulable, showSuccess, showError, runFingerprint } = vi.hoisted(() => ({
   getBatchTestPlan: vi.fn(),
   updateProbedProtocols: vi.fn(),
   setSchedulable: vi.fn(),
   showSuccess: vi.fn(),
   showError: vi.fn(),
-  runFingerprintMock: vi.fn()
+  runFingerprint: vi.fn()
 }))
 
-// FORK: 指纹检测现在是 mock（固定 3 秒延迟）。这里换成可控的 promise，
+// FORK: 指纹检测走真实后端接口（adminAPI.accounts.runFingerprint），这里换成可控的 promise，
 // 好在「检测中」和「已完成」两个状态上做精确断言。
-vi.mock('../fingerprintMock', async () => {
-  const actual = await vi.importActual<typeof import('../fingerprintMock')>('../fingerprintMock')
-  return { ...actual, runFingerprintMock }
-})
-
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ showSuccess, showError })
 }))
@@ -29,7 +24,8 @@ vi.mock('@/api/admin', () => ({
     accounts: {
       getBatchTestPlan,
       updateProbedProtocols,
-      setSchedulable
+      setSchedulable,
+      runFingerprint
     }
   }
 }))
@@ -597,7 +593,7 @@ describe('AccountBatchTestModal 批量指纹检测', () => {
     expect(wrapper.get('[data-testid="batch-fingerprint-2"]').text()).toContain('admin.accounts.fingerprint.idle')
     // 还没跑，所以没有结果文本
     expect(wrapper.find('[data-testid="batch-fingerprint-result-1"]').exists()).toBe(false)
-    expect(runFingerprintMock).not.toHaveBeenCalled()
+    expect(runFingerprint).not.toHaveBeenCalled()
   })
 
   it('分组头显示平台名而不是代码标识', async () => {
@@ -624,7 +620,7 @@ describe('AccountBatchTestModal 批量指纹检测', () => {
 
   it('点批量指纹按钮：每个可测账号各跑一次，回来后逐行显示最像的模型', async () => {
     const pending: Array<(value: typeof FINGERPRINT_SAMPLE) => void> = []
-    runFingerprintMock.mockImplementation(
+    runFingerprint.mockImplementation(
       () => new Promise((resolve) => { pending.push(resolve) })
     )
     const wrapper = mountModal({ show: false, accountIds: [1, 2] })
@@ -635,7 +631,7 @@ describe('AccountBatchTestModal 批量指纹检测', () => {
     await flushPromises()
 
     // 两个可测账号各一次；不可测的 grok 账号（id 3）不参与
-    expect(runFingerprintMock).toHaveBeenCalledTimes(2)
+    expect(runFingerprint).toHaveBeenCalledTimes(2)
     expect(wrapper.get('[data-testid="batch-fingerprint-1"]').text()).toContain(
       'admin.accounts.fingerprint.running'
     )

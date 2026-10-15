@@ -88,6 +88,18 @@ export default {
           riskControlUserAllowlistHint: '输入任意邮箱关键词进行模糊搜索。 白名单中的用户不会触发封号或本地屏蔽，但仍然无法突破上游拦截。该功能通常用于可信的下游中转站。',
           cyberSessionBlockTTL: '屏蔽时长(秒)',
         },
+        // FORK-ANCHOR: i18n-fingerprint-settings-zh (二开：模型指纹检测设置)
+        fingerprint: {
+          title: '模型指纹检测',
+          description:
+            '在账号测试弹窗里对单个或多个账号发起模型指纹检测，判断上游是否真在提供它声称的模型。默认开启。',
+          enabled: '启用模型指纹检测',
+          enabledHint:
+            '关闭后账号测试弹窗里的「模型指纹测试」区块与批量检测按钮一并隐藏，后端也会拒绝发起检测。',
+          bankUpdateTime: '样本库更新时间点',
+          bankUpdateTimeHint:
+            '每天到这个时间点自动检查一次上游样本库，有新版就下载替换，不用重新部署。参考库越新，判定越准。此项与上面的开关无关：开关关掉后样本库仍照常更新。',
+        },
         affiliate: {
           title: '邀请返利',
           description: '老用户邀请新用户注册，新用户充值后老用户按比例获得返利额度。默认关闭。',

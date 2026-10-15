@@ -62,6 +62,13 @@ type SettingHandler struct {
 	notificationEmailService *service.NotificationEmailService
 	totpService              *service.TotpService
 	userService              *service.UserService
+	// FORK: 模型指纹样本库定时更新（二开新增，可选依赖，经 SetFingerprintBankService 注入）
+	fingerprintBankService *service.FingerprintBankService
+}
+
+// FORK-ANCHOR: set-fingerprint-bank-service (二开：时间点改了要能立刻重建定时任务)
+func (h *SettingHandler) SetFingerprintBankService(fingerprintBankService *service.FingerprintBankService) {
+	h.fingerprintBankService = fingerprintBankService
 }
 
 // NewSettingHandler 创建系统设置处理器
@@ -267,6 +274,9 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		CyberSessionBlockEnabled:                               settings.CyberSessionBlockEnabled,
 		CyberPolicyUserAllowlist:                               settings.CyberPolicyUserAllowlist,
 		CyberSessionBlockTTLSeconds:                            settings.CyberSessionBlockTTLSeconds,
+		// FORK-ANCHOR: admin-handler-fingerprint (二开：模型指纹检测开关 + 样本库更新时间点)
+		FingerprintEnabled:        settings.FingerprintEnabled,
+		FingerprintBankUpdateTime: settings.FingerprintBankUpdateTime,
 		AffiliateRebateRate:                                    settings.AffiliateRebateRate,
 		AffiliateRebateFreezeHours:                             settings.AffiliateRebateFreezeHours,
 		AffiliateRebateDurationDays:                            settings.AffiliateRebateDurationDays,

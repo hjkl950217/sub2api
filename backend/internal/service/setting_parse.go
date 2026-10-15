@@ -224,6 +224,10 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyCyberPolicyUserAllowlist:    "",
 		SettingKeyCyberSessionBlockTTLSeconds: "3600",
 
+		// FORK-ANCHOR: default-fingerprint-settings (二开：模型指纹检测默认开启，样本库每日 03:00 更新)
+		SettingKeyFingerprintEnabled:        "true",
+		SettingKeyFingerprintBankUpdateTime: "03:00",
+
 		// Claude Code version check (default: empty = disabled)
 		SettingKeyMinClaudeCodeVersion: "",
 		SettingKeyMaxClaudeCodeVersion: "",
@@ -855,6 +859,11 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// Claude Code version check
 	result.MinClaudeCodeVersion = settings[SettingKeyMinClaudeCodeVersion]
 	result.MaxClaudeCodeVersion = settings[SettingKeyMaxClaudeCodeVersion]
+	// FORK-ANCHOR: parse-fingerprint-settings (二开：模型指纹检测，默认开启；样本库更新时间点默认 03:00)
+	result.FingerprintEnabled = !isFalseSettingValue(settings[SettingKeyFingerprintEnabled])
+	result.FingerprintBankUpdateTime = normalizeFingerprintBankUpdateTime(
+		settings[SettingKeyFingerprintBankUpdateTime],
+	)
 
 	// 分组隔离
 	result.AllowUngroupedKeyScheduling = settings[SettingKeyAllowUngroupedKeyScheduling] == "true"

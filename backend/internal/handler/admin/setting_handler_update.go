@@ -372,6 +372,10 @@ type UpdateSettingsRequest struct {
 	CyberPolicyUserAllowlist    *string `json:"cyber_policy_user_allowlist"`
 	CyberSessionBlockTTLSeconds *int    `json:"cyber_session_block_ttl_seconds"`
 
+	// FORK-ANCHOR: update-req-fingerprint (二开：模型指纹检测开关 + 样本库更新时间点，未提供则保留原值)
+	FingerprintEnabled        *bool   `json:"fingerprint_enabled"`
+	FingerprintBankUpdateTime *string `json:"fingerprint_bank_update_time"`
+
 	// OpenAI fast/flex policy (optional, only updated when provided)
 	OpenAIFastPolicySettings *dto.OpenAIFastPolicySettings `json:"openai_fast_policy_settings,omitempty"`
 
@@ -1521,6 +1525,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 
+	// FORK-ANCHOR: update-validate-fingerprint-time (二开：样本库更新时间点必须是 HH:mm)
+	if req.FingerprintBankUpdateTime != nil {
+		if err := service.ValidateFingerprintBankUpdateTime(*req.FingerprintBankUpdateTime); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+	}
+
 	settings := &service.SystemSettings{
 		// 系统全局 platform quota 默认值（整体替换语义）
 		DefaultPlatformQuotas:       req.DefaultPlatformQuotas,
@@ -2038,6 +2050,19 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.CyberSessionBlockTTLSeconds
 		}(),
+		// FORK-ANCHOR: update-merge-fingerprint (二开：未提供则保留原值)
+		FingerprintEnabled: func() bool {
+			if req.FingerprintEnabled != nil {
+				return *req.FingerprintEnabled
+			}
+			return previousSettings.FingerprintEnabled
+		}(),
+		FingerprintBankUpdateTime: func() string {
+			if req.FingerprintBankUpdateTime != nil {
+				return *req.FingerprintBankUpdateTime
+			}
+			return previousSettings.FingerprintBankUpdateTime
+		}(),
 	}
 
 	// req.AuthSourceXxxPlatformQuotas 为 nil 表示本次请求未包含该 source 的 quota 配置（保留 previousAuthSourceDefaults 中的值）；
@@ -2159,6 +2184,16 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	h.auditSettingsUpdate(c, previousSettings, settings, previousAuthSourceDefaults, authSourceDefaults, auditReq)
+
+	// FORK-ANCHOR: update-reload-fingerprint-bank (二开：样本库更新时间点改了，立刻按新时间重建定时任务)
+	// 只在时间点确实变了时重建，避免每次保存设置都惊动定时器。
+	// 重建失败不影响设置保存本身——保存已经落库，重启后新时间点照样生效。
+	if h.fingerprintBankService != nil &&
+		previousSettings.FingerprintBankUpdateTime != settings.FingerprintBankUpdateTime {
+		if err := h.fingerprintBankService.Reload(c.Request.Context()); err != nil {
+			slog.Error("fingerprint_bank_reload_failed", "error", err)
+		}
+	}
 
 	// 重新获取设置返回
 	updatedSettings, err := h.settingService.GetAllSettings(c.Request.Context())
@@ -2455,6 +2490,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		CyberSessionBlockEnabled:    updatedSettings.CyberSessionBlockEnabled,
 		CyberPolicyUserAllowlist:    updatedSettings.CyberPolicyUserAllowlist,
 		CyberSessionBlockTTLSeconds: updatedSettings.CyberSessionBlockTTLSeconds,
+		// FORK-ANCHOR: update-response-fingerprint (二开：回显模型指纹检测设置)
+		FingerprintEnabled:          updatedSettings.FingerprintEnabled,
+		FingerprintBankUpdateTime:   updatedSettings.FingerprintBankUpdateTime,
 		AccountSchedulingThresholds: updatedSettings.AccountSchedulingThresholds,
 		AllowUserViewErrorRequests:  updatedSettings.AllowUserViewErrorRequests,
 	}

@@ -665,6 +665,10 @@ export interface SystemSettings {
   cyber_session_block_enabled: boolean;
   cyber_session_block_ttl_seconds: number;
 
+  // FORK-ANCHOR: api-system-fingerprint (二开：模型指纹检测开关 + 样本库更新时间点)
+  fingerprint_enabled: boolean;
+  fingerprint_bank_update_time: string;
+
   payment_min_amount: number;
   payment_max_amount: number;
   payment_daily_limit: number;
@@ -988,6 +992,10 @@ export interface UpdateSettingsRequest {
   cyber_policy_user_allowlist?: string;
   cyber_session_block_enabled?: boolean;
   cyber_session_block_ttl_seconds?: number;
+
+  // FORK-ANCHOR: api-update-fingerprint (二开：未提供则保留原值)
+  fingerprint_enabled?: boolean;
+  fingerprint_bank_update_time?: string;
 
   payment_min_amount?: number;
   payment_max_amount?: number;

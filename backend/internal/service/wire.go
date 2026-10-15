@@ -918,6 +918,9 @@ var ProviderSet = wire.NewSet(
 	ProvideOllamaCloudUsageService,
 	ProvideOpenCodeGoUsageService,
 	ProvideSettingService,
+	// FORK-ANCHOR: wire-fingerprint-services (二开：模型指纹检测与样本库定时更新)
+	ProvideFingerprintService,
+	ProvideFingerprintBankService,
 	NewDataManagementService,
 	ProvideBackupService,
 	ProvideOpsSystemLogSink,

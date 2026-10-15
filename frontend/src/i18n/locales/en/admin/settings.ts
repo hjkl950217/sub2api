@@ -88,6 +88,18 @@ export default {
           riskControlUserAllowlistHint: 'Enter any email keyword to search for matching users. Allowlisted users will not trigger account bans or local blocking, but upstream restrictions still apply. This feature is typically used for trusted downstream relays.',
           cyberSessionBlockTTL: 'Block TTL (seconds)',
         },
+        // FORK-ANCHOR: i18n-fingerprint-settings-en (二开：模型指纹检测设置)
+        fingerprint: {
+          title: 'Model Fingerprint Detection',
+          description:
+            'Run a model-fingerprint check on one or many accounts from the account test dialog, to judge whether an upstream really serves the model it claims. Enabled by default.',
+          enabled: 'Enable model fingerprint detection',
+          enabledHint:
+            'When off, the fingerprint section in the account test dialog and the batch detection button are hidden, and the backend refuses to start a detection.',
+          bankUpdateTime: 'Reference bank update time',
+          bankUpdateTimeHint:
+            'Once a day at this time the upstream reference bank is checked and replaced if a newer version exists, with no redeploy needed. A fresher bank means sharper verdicts. This is independent of the switch above: the bank keeps updating even when detection is off.',
+        },
         affiliate: {
           title: 'Affiliate (Invite Rebate)',
           description: 'Existing users invite new ones; the inviter earns a percentage rebate on the invitee’s recharges. Disabled by default.',

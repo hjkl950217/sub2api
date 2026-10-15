@@ -428,6 +428,8 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		// FORK-ANCHOR: fork-batch-test-routes (二开：批量账号测试与候选查询)
 		accounts.POST("/batch-test-models", h.Admin.Account.BatchTestModels)
 		accounts.POST("/batch-test", h.Admin.Account.BatchTest)
+		// FORK-ANCHOR: fork-fingerprint-route (二开：模型指纹检测，一次一个账号，非流式)
+		accounts.POST("/:id/fingerprint", h.Admin.Account.Fingerprint)
 
 		// Antigravity 默认模型映射
 		accounts.GET("/antigravity/default-model-mapping", h.Admin.Account.GetAntigravityDefaultModelMapping)

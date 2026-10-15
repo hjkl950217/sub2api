@@ -286,6 +286,9 @@ export interface PublicSettings {
   plugin_management_enabled: boolean
   service_quota_enabled: boolean
   affiliate_enabled: boolean
+  // FORK: 模型指纹检测开关（二开新增）。默认开启；关掉时账号测试弹窗里
+  // 不渲染「模型指纹测试」区块。样本库定时更新不受这个开关影响。
+  fingerprint_enabled?: boolean
   allow_user_view_error_requests?: boolean
 }
 

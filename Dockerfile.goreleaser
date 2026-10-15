@@ -7,8 +7,32 @@
 
 ARG ALPINE_IMAGE=alpine:3.21
 ARG POSTGRES_IMAGE=postgres:18-alpine
+# FORK-ANCHOR: dockerfile-node-build-image (二开：烘焙 lm-detector CLI 的构建阶段)
+ARG NODE_IMAGE=node:22-alpine
 
 FROM ${POSTGRES_IMAGE} AS pg-client
+
+# FORK-ANCHOR: dockerfile-lm-detector-stage (二开：模型指纹检测的 CLI)
+#
+# 在官方 node 镜像里把 lmfpd 连同它的外置依赖装成一棵固定的依赖树，再整目录搬进
+# 运行镜像。lmfpd 的 bin/fpd.js 顶层静态 import ink / react / react/jsx-runtime /
+# terminal-link（实测 42 个包、零原生模块），加 --json 跳 TUI 也绕不开，所以这几个
+# 依赖必须一起带上。
+#
+# 用独立构建阶段而不是在 alpine 里连网装：依赖解析只发生在构建期一次，
+# 最终镜像只多一个 nodejs 包，运行镜像里不留 npm 缓存与构建工具。
+# 版本钉死（长空 2026-10-15 定）：上游升版时手动改，保证同一提交产出同一镜像。
+ARG FINGERPRINT_CLI_VERSION=0.0.1791910275841
+FROM ${NODE_IMAGE} AS lm-detector
+ARG FINGERPRINT_CLI_VERSION
+WORKDIR /build
+RUN npm install --no-audit --no-fund --omit=dev "lmfpd@${FINGERPRINT_CLI_VERSION}" \
+    && test -f /build/node_modules/lmfpd/bin/fpd.js \
+    && test -s /build/node_modules/lmfpd/data/unified_bank.json \
+    && test -s /build/node_modules/lmfpd/data/shared_detector.bin \
+    && test -d /build/node_modules/ink \
+    && test -d /build/node_modules/react \
+    && test -d /build/node_modules/terminal-link
 
 FROM ${ALPINE_IMAGE}
 
@@ -17,6 +41,9 @@ LABEL description="Sub2API - AI API Gateway Platform"
 LABEL org.opencontainers.image.source="https://github.com/Wei-Shaw/sub2api"
 
 # Install runtime dependencies
+# FORK-ANCHOR: dockerfile-runtime-nodejs (二开：模型指纹检测需要 node 跑 lm-detector CLI)
+# alpine:3.21 自带的 nodejs 是 22.x，满足 lmfpd 的 engines 要求（node >= 22）。
+# 必须构建期装：compose 带 no-new-privileges，运行期不能 apk add。
 RUN apk add --no-cache \
     ca-certificates \
     tzdata \
@@ -28,6 +55,7 @@ RUN apk add --no-cache \
     krb5-libs \
     libldap \
     libedit \
+    nodejs \
     && rm -rf /var/cache/apk/*
 
 # Copy pg_dump and psql from a version-matched PostgreSQL image so backup and
@@ -45,6 +73,15 @@ WORKDIR /app
 # Copy the pre-built binary and runtime fallback resources from GoReleaser
 COPY sub2api /app/sub2api
 COPY --chown=sub2api:sub2api backend/resources /app/resources
+
+# FORK-ANCHOR: dockerfile-bake-lm-detector (二开：把模型指纹 CLI 与内置样本库烘焙进镜像)
+# 路径与后端默认值对应（backend/internal/service/fingerprint_service.go 的
+# fingerprintCLIDirDefault、fingerprint_bank_service.go 的 fingerprintBankDirDefault）。
+# 保持包的原样布局：fpd.js 靠 import.meta.url 定位 ../data，依赖靠 Node 的
+# node_modules 向上查找，两者都不用额外处理。
+# 运行期下载的新样本库落在 /app/data/lm-detector/bank/，检测时 --bank 指过去；
+# 那个目录不存在或自检不过时会自动退回这里的内置库，所以更新失败不会中断检测。
+COPY --from=lm-detector --chown=sub2api:sub2api /build/node_modules /app/lm-detector/node_modules
 
 # Create data directory
 RUN mkdir -p /app/data && chown -R sub2api:sub2api /app

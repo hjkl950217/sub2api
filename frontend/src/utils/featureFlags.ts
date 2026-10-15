@@ -134,6 +134,14 @@ export const FeatureFlags = {
     mode: 'opt-in',
     label: 'Affiliate',
   }),
+  // FORK-ANCHOR: flag-fingerprint (二开：模型指纹检测，默认开启)
+  // opt-out：随机站点上线即开，后端没下发或设置没加载完时按「开」处理，
+  // 避免刷新瞬间指纹区块闪一下又出现。
+  fingerprint: defineFlag({
+    key: 'fingerprint_enabled',
+    mode: 'opt-out',
+    label: 'Model Fingerprint Detection',
+  }),
 } as const
 
 export type RegisteredFeatureFlag = keyof typeof FeatureFlags

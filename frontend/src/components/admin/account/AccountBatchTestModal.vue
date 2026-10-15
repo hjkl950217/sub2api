@@ -159,9 +159,10 @@
 
             <!-- FORK-ANCHOR: batch-test-fingerprint-line (二开：模型指纹检测结果行)
                  与协议行同构：标签 + 状态 + 结果。可测账号**默认就显示这一行**（状态「未检测」），
-                 由底部的「开始指纹检测」按钮触发，不占位置的行只在不可测账号上不出现。 -->
+                 由底部的「开始指纹检测」按钮触发，不占位置的行只在不可测账号上不出现。
+                 后台「模型检测」开关关掉时这一行也不显示。 -->
             <div
-              v-if="row.eligible"
+              v-if="row.eligible && fingerprintEnabled"
               class="flex items-center gap-1 border-t border-gray-100 bg-gray-50 px-3 py-2 font-mono text-xs dark:border-dark-600 dark:bg-gray-900"
               :data-testid="`batch-fingerprint-${row.id}`"
             >
@@ -225,8 +226,10 @@
           <span>{{ t('admin.accounts.batchTest.updateProtocolsCount', { count: probedRows.length }) }}</span>
         </button>
         <!-- FORK: 批量指纹检测。常显，没有可测的行时置灰；
-             和后端协议测试是两条独立链路，跑指纹不写回账号协议。 -->
+             和后端协议测试是两条独立链路，跑指纹不写回账号协议。
+             后台「模型检测」开关关掉时按钮一并隐藏。 -->
         <button
+          v-if="fingerprintEnabled"
           type="button"
           data-testid="batch-fingerprint-button"
           :disabled="fingerprintRunning || !fingerprintTargets.length"
@@ -287,8 +290,9 @@ import { useAppStore } from '@/stores/app'
 import type { BatchTestAccountGroup } from '@/api/admin/accounts'
 // FORK: 平台显示名走平台清单（catalog 驱动），ag_hub 这类二开平台也能拿到中文名
 import { platformLabel } from '@/utils/platformColors'
-// FORK: 模型指纹检测的 mock 调用（接后端时只换 runFingerprintMock 的实现）
-import { runFingerprintMock } from './fingerprintMock'
+// FORK: 模型指纹检测（二开：走真实后端接口，不再是 mock）。
+// 调用走 adminAPI.accounts，与同文件其它账号接口一致，测试里也是同一个 mock 点。
+import { FeatureFlags, resolveFeatureFlag } from '@/utils/featureFlags'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -389,8 +393,13 @@ const canStart = computed(
 )
 
 // FORK-ANCHOR: batch-test-fingerprint-run (二开：批量指纹检测)
-// 每行各自跑一次（现在是 mock 的 3 秒延迟，并发发起），互不阻塞；
+// 每行各自跑一次（真实接口，并发发起），互不阻塞；单行的成败不影响其它行。
 // 和后端的协议测试是两条独立的链路，按钮也分开。
+//
+// FORK-ANCHOR: batch-test-fingerprint-gate (二开：后台「模型检测」开关关掉时整块不显示)
+const fingerprintEnabled = computed(() =>
+  resolveFeatureFlag(appStore.cachedPublicSettings, FeatureFlags.fingerprint)
+)
 const fingerprintRunning = ref(false)
 const fingerprintTargets = computed(() => rows.value.filter((row) => row.eligible))
 let fingerprintRunId = 0
@@ -429,7 +438,9 @@ const startFingerprint = async () => {
   await Promise.all(
     targets.map(async (row) => {
       try {
-        const report = await runFingerprintMock()
+        // 真实检测：后端 exec lm-detector CLI。模型用该分组当前选中的那个；
+        // 没选就交给后端从账号 model_mapping 里挑。
+        const report = await adminAPI.accounts.runFingerprint(row.id, selectedModels.value[row.platform] || undefined)
         if (runId !== fingerprintRunId) return
         row.fingerprint = {
           status: 'done',
