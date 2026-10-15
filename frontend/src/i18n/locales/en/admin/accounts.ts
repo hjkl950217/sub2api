@@ -131,6 +131,30 @@ export default {
       protocolProbing: 'Testing the {protocol} endpoint…',
       protocolProbePassed: 'Available',
       protocolProbeFailed: 'Unavailable',
+      // FORK-ANCHOR: i18n-fingerprint-en (fork: model fingerprint test copy)
+      fingerprint: {
+        title: 'Model fingerprint test',
+        rowLabel: 'Model fingerprint test',
+        tag: 'FP',
+        start: 'Run',
+        rerun: 'Re-run',
+        running: 'Running',
+        done: 'Done',
+        failed: 'Failed',
+        idle: 'Not run',
+        mostLikely: 'Closest match',
+        family: 'Family',
+        showAll: 'Show all {count}',
+        collapse: 'Collapse',
+        samplesUsed: 'Valid samples {used}/{total}',
+        bankModels: 'Reference bank: {count} models',
+        evidenceLabel: 'Verdict: ',
+        disclaimer: 'The result is a closed-set ranking within the reference bank. A model outside the bank still gets a "closest" candidate — it is not proof of identity.',
+        rawJson: 'Raw response',
+        batchStart: 'Run fingerprint test',
+        batchRunning: 'Fingerprint running',
+        batchHint: 'Sends 3 requests per account, each generating about 300 numbers, and consumes account quota.'
+      },
       // FORK-ANCHOR: i18n-protocol-probe-error-en (fork: prefix for a failed protocol's full error)
       protocolProbeErrorLabel: 'Failure reason: ',
       // FORK-ANCHOR: i18n-protocol-probe-pending-en (fork: placeholder state before a protocol is tested)

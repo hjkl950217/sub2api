@@ -1,14 +1,24 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountTestModal from '../AccountTestModal.vue'
+// FORK: 模型指纹测试区块的真实示例数据从 mock 模块取，断言落在真实结构上，不自己造一份假的
+import { FINGERPRINT_MOCK_DELAY_MS, FINGERPRINT_SAMPLE } from '../fingerprintMock'
 
-const { getAvailableModels, updateProbedProtocols, copyToClipboard, showSuccess, showError } = vi.hoisted(() => ({
+const { getAvailableModels, updateProbedProtocols, copyToClipboard, showSuccess, showError, runFingerprintMock } = vi.hoisted(() => ({
   getAvailableModels: vi.fn(),
   updateProbedProtocols: vi.fn(),
   copyToClipboard: vi.fn(),
   showSuccess: vi.fn(),
-  showError: vi.fn()
+  showError: vi.fn(),
+  runFingerprintMock: vi.fn()
 }))
+
+// FORK: 指纹检测现在是 mock（固定 3 秒延迟）。这里换成可控的 promise，
+// 好在「检测中」和「已完成」两个状态上做精确断言；延迟本身另有断言。
+vi.mock('../fingerprintMock', async () => {
+  const actual = await vi.importActual<typeof import('../fingerprintMock')>('../fingerprintMock')
+  return { ...actual, runFingerprintMock }
+})
 
 // FORK: 测试弹窗「更新支持协议」按钮依赖 app store 的提示能力
 vi.mock('@/stores/app', () => ({
@@ -617,5 +627,122 @@ describe('AccountTestModal 协议耗时显示', () => {
     expect(wrapper.text()).toContain('[chat]0.1s/1.2s chat-ok')
     // 没有耗时的协议，正文行仍是 [协议名]正文，不多空格
     expect(wrapper.text()).toContain('[responses]responses-ok')
+  })
+})
+
+// FORK-ANCHOR: test-test-modal-fingerprint (二开：模型指纹测试区块)
+// 核心约定：默认不跑、不随「开始测试」触发或清除、必须单独点「开始检测」。
+describe('AccountTestModal 模型指纹测试', () => {
+  beforeEach(() => {
+    getAvailableModels.mockResolvedValue([{ id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5' }])
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse(['data: {"type":"test_complete","success":true}\n'])
+    ) as any
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: {
+        getItem: vi.fn((key: string) => (key === 'auth_token' ? 'test-token' : null)),
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+        clear: vi.fn()
+      },
+      configurable: true
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const open = async () => {
+    const wrapper = mountModal({
+      id: 3285,
+      name: '云枢',
+      platform: 'anthropic',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('mock 延迟是 3 秒', () => {
+    expect(FINGERPRINT_MOCK_DELAY_MS).toBe(3000)
+  })
+
+  it('默认不跑：行是「未检测」，没有结论框', async () => {
+    const wrapper = await open()
+
+    expect(wrapper.find('[data-testid="fingerprint-section"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="fingerprint-status"]').text()).toBe('admin.accounts.fingerprint.idle')
+    expect(wrapper.find('[data-testid="fingerprint-conclusion"]').exists()).toBe(false)
+    expect(runFingerprintMock).not.toHaveBeenCalled()
+  })
+
+  it('点「开始检测」先进入检测中，结果回来后渲染结论', async () => {
+    let resolveRun!: (value: typeof FINGERPRINT_SAMPLE) => void
+    runFingerprintMock.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveRun = resolve })
+    )
+    const wrapper = await open()
+
+    await wrapper.get('[data-testid="fingerprint-run-button"]').trigger('click')
+    await flushPromises()
+
+    expect(runFingerprintMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-testid="fingerprint-status"]').text()).toBe('admin.accounts.fingerprint.running')
+    expect(wrapper.find('[data-testid="fingerprint-conclusion"]').exists()).toBe(false)
+
+    resolveRun(FINGERPRINT_SAMPLE)
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="fingerprint-status"]').text()).toBe('admin.accounts.fingerprint.done')
+    expect(wrapper.get('[data-testid="fingerprint-prediction"]').text()).toBe('mimo-v2.5')
+    expect(wrapper.find('[data-testid="fingerprint-conclusion"]').exists()).toBe(true)
+  })
+
+  it('候选默认只显示 5 个，展开后是参考库全部 59 个', async () => {
+    runFingerprintMock.mockResolvedValue(FINGERPRINT_SAMPLE)
+    const wrapper = await open()
+    await wrapper.get('[data-testid="fingerprint-run-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-testid^="fingerprint-candidate-"]')).toHaveLength(5)
+
+    await wrapper.get('[data-testid="fingerprint-toggle-all"]').trigger('click')
+
+    expect(wrapper.findAll('[data-testid^="fingerprint-candidate-"]')).toHaveLength(
+      FINGERPRINT_SAMPLE.analysis.results.length
+    )
+    expect(FINGERPRINT_SAMPLE.analysis.results.length).toBe(59)
+  })
+
+  it('点「开始测试」不触发指纹检测，也不清掉已有结论', async () => {
+    runFingerprintMock.mockResolvedValue(FINGERPRINT_SAMPLE)
+    const wrapper = await open()
+    await wrapper.get('[data-testid="fingerprint-run-button"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="fingerprint-conclusion"]').exists()).toBe(true)
+
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+
+    expect(runFingerprintMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="fingerprint-conclusion"]').exists()).toBe(true)
+  })
+
+  it('关掉再打开弹窗，指纹退回未检测', async () => {
+    runFingerprintMock.mockResolvedValue(FINGERPRINT_SAMPLE)
+    const wrapper = await open()
+    await wrapper.get('[data-testid="fingerprint-run-button"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="fingerprint-conclusion"]').exists()).toBe(true)
+
+    await wrapper.setProps({ show: false })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="fingerprint-conclusion"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="fingerprint-status"]').text()).toBe('admin.accounts.fingerprint.idle')
   })
 })

@@ -347,6 +347,141 @@
         </Transition>
       </Teleport>
 
+      <!-- FORK-ANCHOR: test-modal-fingerprint-section (二开：模型指纹检测)
+           一行样式对齐上面的协议行：图标 + 名称 + 状态 + 耗时，最右侧是独立按钮。
+           它默认不跑，也不随「开始测试」触发，必须点这一行的「开始检测」。
+           行下的框放检测结论（最像的模型、候选排行、证据、免责、原始返回）。 -->
+      <div class="space-y-1.5" data-testid="fingerprint-section">
+        <div class="text-xs font-medium text-gray-600 dark:text-gray-300">
+          {{ t('admin.accounts.fingerprint.title') }}
+        </div>
+        <div class="space-y-1">
+          <div
+            class="rounded-lg border px-2.5 py-1.5 text-xs"
+            :class="fingerprintCardClass"
+            data-testid="fingerprint-row"
+          >
+            <div class="flex items-center gap-2">
+              <Icon
+                :name="fingerprintIcon"
+                size="sm"
+                :stroke-width="2"
+                :class="fingerprintStatus === 'running' ? 'animate-spin' : ''"
+              />
+              <span class="font-medium">{{ t('admin.accounts.fingerprint.rowLabel') }}</span>
+              <span
+                class="ml-auto"
+                :class="fingerprintStatus === 'running' ? 'text-amber-600 dark:text-amber-400' : ''"
+                data-testid="fingerprint-status"
+              >
+                {{ fingerprintStatusLabel }}
+              </span>
+              <!-- 检测中途拿不到进度（fpd 只在结束时吐一次 JSON），只显示已用时长 -->
+              <span
+                v-if="fingerprintElapsedLabel"
+                class="shrink-0 text-[11px] text-gray-400"
+                data-testid="fingerprint-elapsed"
+              >
+                {{ fingerprintElapsedLabel }}
+              </span>
+              <button
+                type="button"
+                class="shrink-0 rounded px-2 py-0.5 text-[11px] font-medium transition-colors"
+                :class="
+                  fingerprintStatus === 'running'
+                    ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-dark-600 dark:text-gray-500'
+                    : 'bg-primary-500 text-white hover:bg-primary-600'
+                "
+                :disabled="fingerprintStatus === 'running' || !account"
+                data-testid="fingerprint-run-button"
+                @click="runFingerprint"
+              >
+                {{ fingerprintStatus === 'idle' ? t('admin.accounts.fingerprint.start') : t('admin.accounts.fingerprint.rerun') }}
+              </button>
+            </div>
+
+            <div
+              v-if="fingerprintStatus === 'error' && fingerprintError"
+              class="mt-1 whitespace-pre-wrap break-all border-t border-red-200/70 pt-1 font-mono text-[11px] leading-relaxed text-red-600 dark:border-red-500/30 dark:text-red-300"
+              data-testid="fingerprint-error"
+            >
+              {{ fingerprintError }}
+            </div>
+
+            <div
+              v-if="fingerprintReport"
+              class="mt-1.5 space-y-2 border-t border-gray-200/70 pt-1.5 dark:border-dark-500"
+              data-testid="fingerprint-conclusion"
+            >
+              <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span class="text-[11px] text-gray-500 dark:text-gray-400">{{ t('admin.accounts.fingerprint.mostLikely') }}</span>
+                <span class="text-sm font-semibold text-gray-900 dark:text-gray-100" data-testid="fingerprint-prediction">
+                  {{ fingerprintReport.analysis.prediction_name }}
+                </span>
+                <span class="rounded bg-primary-50 px-1.5 py-0.5 text-[11px] font-medium text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">
+                  {{ formatFingerprintPercent(fingerprintReport.analysis.probability) }}
+                </span>
+                <span class="text-[11px] text-gray-500 dark:text-gray-400">
+                  {{ t('admin.accounts.fingerprint.family') }} {{ fingerprintReport.analysis.family_prediction_name }}
+                </span>
+              </div>
+
+              <!-- 概率条按第一名归一化，否则长尾候选全是零宽看不见 -->
+              <div class="space-y-0.5">
+                <div
+                  v-for="candidate in fingerprintVisibleCandidates"
+                  :key="candidate.model"
+                  class="flex items-center gap-2"
+                  :data-testid="`fingerprint-candidate-${candidate.model}`"
+                >
+                  <span class="w-36 shrink-0 truncate text-gray-700 dark:text-gray-200" :title="candidate.display_name">
+                    {{ candidate.display_name }}
+                  </span>
+                  <span class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-600">
+                    <span class="block h-full rounded-full bg-primary-500" :style="{ width: fingerprintBarWidth(candidate.probability) }"></span>
+                  </span>
+                  <span class="w-12 shrink-0 text-right text-[11px] text-gray-500 dark:text-gray-400">
+                    {{ formatFingerprintPercent(candidate.probability) }}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                v-if="fingerprintReport.analysis.results.length > FINGERPRINT_TOP_N"
+                type="button"
+                class="text-[11px] text-primary-600 hover:text-primary-700 dark:text-primary-300"
+                data-testid="fingerprint-toggle-all"
+                @click="fingerprintShowAll = !fingerprintShowAll"
+              >
+                {{
+                  fingerprintShowAll
+                    ? t('admin.accounts.fingerprint.collapse')
+                    : t('admin.accounts.fingerprint.showAll', { count: fingerprintReport.analysis.results.length })
+                }}
+              </button>
+
+              <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-gray-500 dark:text-gray-400" data-testid="fingerprint-evidence">
+                <span>{{ t('admin.accounts.fingerprint.samplesUsed', { used: fingerprintReport.analysis.used_outputs, total: fingerprintReport.analysis.diagnostics.length }) }}</span>
+                <span>{{ t('admin.accounts.fingerprint.bankModels', { count: fingerprintReport.bank.models }) }}</span>
+                <span>{{ t('admin.accounts.fingerprint.evidenceLabel') }}{{ fingerprintReport.analysis.evidence.label }}</span>
+              </div>
+
+              <div
+                class="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
+                data-testid="fingerprint-disclaimer"
+              >
+                {{ t('admin.accounts.fingerprint.disclaimer') }}
+              </div>
+
+              <details class="text-[11px]">
+                <summary class="cursor-pointer text-gray-500 dark:text-gray-400">{{ t('admin.accounts.fingerprint.rawJson') }}</summary>
+                <pre class="mt-1 max-h-[240px] overflow-auto rounded bg-gray-50 p-2 font-mono text-[10px] leading-relaxed text-gray-700 dark:bg-gray-900 dark:text-gray-300">{{ fingerprintRawJson }}</pre>
+              </details>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Test Info -->
       <div class="flex items-center justify-between px-1 text-xs text-gray-500 dark:text-gray-400">
         <div class="flex items-center gap-3">
@@ -427,7 +562,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, nextTick } from 'vue'
+import { computed, onUnmounted, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
@@ -439,6 +574,8 @@ import { ADMIN_UI_REQUEST_HEADER } from '@/api/adminUIRequest'
 import { adminAPI } from '@/api/admin'
 import { useAppStore } from '@/stores/app'
 import type { Account, ClaudeModel } from '@/types'
+// FORK: 模型指纹检测的 mock 调用与类型（接后端时只换 runFingerprintMock 的实现）
+import { runFingerprintMock, type FingerprintReport } from './fingerprintMock'
 
 const { t } = useI18n()
 const { copyToClipboard } = useClipboard()
@@ -564,6 +701,114 @@ const protocolShortLabel = (protocol: string): string => {
   if (protocol === 'anthropic') return 'anthropic'
   if (protocol === 'responses') return 'responses'
   return 'chat'
+}
+
+// FORK-ANCHOR: test-modal-fingerprint-state (二开：模型指纹检测状态)
+// 默认不跑：必须点行上的「开始检测」，也不随「开始测试」重置或触发。
+// 检测期间只能转圈 + 计时——fpd 只在结束时吐一次 JSON，中途拿不到进度。
+const fingerprintStatus = ref<'idle' | 'running' | 'done' | 'error'>('idle')
+const fingerprintReport = ref<FingerprintReport | null>(null)
+const fingerprintError = ref('')
+const fingerprintElapsedMs = ref(0)
+const fingerprintShowAll = ref(false)
+const FINGERPRINT_TOP_N = 5
+let fingerprintTimer: ReturnType<typeof setInterval> | null = null
+// 用递增的 runId 作废掉上一次未完成的检测，避免连点两次后旧结果覆盖新结果
+let fingerprintRunId = 0
+
+const fingerprintVisibleCandidates = computed(() => {
+  const results = fingerprintReport.value?.analysis.results ?? []
+  return fingerprintShowAll.value ? results : results.slice(0, FINGERPRINT_TOP_N)
+})
+
+const fingerprintStatusLabel = computed(() => {
+  if (fingerprintStatus.value === 'running') return t('admin.accounts.fingerprint.running')
+  if (fingerprintStatus.value === 'done') return t('admin.accounts.fingerprint.done')
+  if (fingerprintStatus.value === 'error') return t('admin.accounts.fingerprint.failed')
+  return t('admin.accounts.fingerprint.idle')
+})
+
+// FORK-ANCHOR: test-modal-fingerprint-four-state (二开：指纹卡片四态——未测灰、检测中黄、完成绿、失败红)
+const fingerprintCardClass = computed(() => {
+  if (fingerprintStatus.value === 'done')
+    return 'border-green-200 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-400'
+  if (fingerprintStatus.value === 'error')
+    return 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400'
+  if (fingerprintStatus.value === 'running')
+    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400'
+  return 'border-gray-200 bg-gray-50 text-gray-400 dark:border-dark-500 dark:bg-dark-700 dark:text-gray-500'
+})
+
+const fingerprintIcon = computed(() => {
+  if (fingerprintStatus.value === 'done') return 'check'
+  if (fingerprintStatus.value === 'error') return 'x'
+  if (fingerprintStatus.value === 'running') return 'refresh'
+  return 'clock'
+})
+
+const fingerprintElapsedLabel = computed(() =>
+  fingerprintStatus.value === 'idle' ? '' : `${(fingerprintElapsedMs.value / 1000).toFixed(1)}s`
+)
+
+const formatFingerprintPercent = (probability: number) => `${(probability * 100).toFixed(1)}%`
+
+// 概率条按第一名归一化：否则第 3 名之后全是零宽，长尾候选在界面上完全看不见
+const fingerprintBarWidth = (probability: number) => {
+  const top = fingerprintReport.value?.analysis.results[0]?.probability ?? 0
+  if (top <= 0) return '0%'
+  return `${Math.max(1, Math.round((probability / top) * 100))}%`
+}
+
+const fingerprintRawJson = computed(() =>
+  fingerprintReport.value ? JSON.stringify(fingerprintReport.value, null, 2) : ''
+)
+
+const stopFingerprintTimer = () => {
+  if (fingerprintTimer) {
+    clearInterval(fingerprintTimer)
+    fingerprintTimer = null
+  }
+}
+
+const resetFingerprint = () => {
+  fingerprintRunId += 1
+  stopFingerprintTimer()
+  fingerprintStatus.value = 'idle'
+  fingerprintReport.value = null
+  fingerprintError.value = ''
+  fingerprintElapsedMs.value = 0
+  fingerprintShowAll.value = false
+}
+
+const runFingerprint = async () => {
+  if (!props.account || fingerprintStatus.value === 'running') return
+  const runId = ++fingerprintRunId
+  stopFingerprintTimer()
+  fingerprintStatus.value = 'running'
+  fingerprintReport.value = null
+  fingerprintError.value = ''
+  fingerprintElapsedMs.value = 0
+  fingerprintShowAll.value = false
+  const started = Date.now()
+  fingerprintTimer = setInterval(() => {
+    fingerprintElapsedMs.value = Date.now() - started
+  }, 100)
+  try {
+    // 目前是 mock（固定 3 秒延迟）。接后端时换成真实请求，其余不用动。
+    const report = await runFingerprintMock()
+    if (runId !== fingerprintRunId) return
+    fingerprintReport.value = report
+    fingerprintStatus.value = 'done'
+  } catch (error: unknown) {
+    if (runId !== fingerprintRunId) return
+    fingerprintError.value = error instanceof Error ? error.message : t('common.unknownError')
+    fingerprintStatus.value = 'error'
+  } finally {
+    if (runId === fingerprintRunId) {
+      stopFingerprintTimer()
+      fingerprintElapsedMs.value = Date.now() - started
+    }
+  }
 }
 
 const terminalRef = ref<HTMLElement | null>(null)
@@ -942,6 +1187,9 @@ watch(
       // FORK-ANCHOR: test-modal-protocol-seed-on-open (二开：打开弹窗就按平台铺好灰色协议占位)
       protocolResults.value = buildProtocolPlaceholders()
       resetState()
+      // FORK-ANCHOR: test-modal-fingerprint-reset-on-open (二开：换账号/重开弹窗时指纹回到未检测)
+      // 只在这里重置，不放进 resetState()——否则点「开始测试」会把指纹结论一起清掉。
+      resetFingerprint()
       await loadAvailableModels()
       if (isGrokAccount.value) {
         pickDefaultModelForMode()
@@ -1371,6 +1619,8 @@ const handleEvent = (event: {
       break
   }
 }
+
+onUnmounted(stopFingerprintTimer)
 
 const copyOutput = () => {
   const text = outputLines.value.map((l) => l.text).join('\n')

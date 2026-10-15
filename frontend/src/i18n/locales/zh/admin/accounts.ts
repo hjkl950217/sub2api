@@ -336,6 +336,30 @@ export default {
       protocolProbing: '正在测试 {protocol} 端点…',
       protocolProbePassed: '可用',
       protocolProbeFailed: '不可用',
+      // FORK-ANCHOR: i18n-fingerprint-zh (二开：模型指纹检测文案)
+      fingerprint: {
+        title: '模型指纹测试',
+        rowLabel: '模型指纹测试',
+        tag: '指纹',
+        start: '开始检测',
+        rerun: '重新检测',
+        running: '检测中',
+        done: '已完成',
+        failed: '检测失败',
+        idle: '未检测',
+        mostLikely: '最像',
+        family: '家族',
+        showAll: '展开全部 {count} 个',
+        collapse: '收起',
+        samplesUsed: '有效样本 {used}/{total}',
+        bankModels: '参考库 {count} 个模型',
+        evidenceLabel: '判定：',
+        disclaimer: '结果只是参考库内的封闭集合排序，库外模型同样会得到一个「最像」的候选，不是身份证明。',
+        rawJson: '原始返回',
+        batchStart: '开始指纹检测',
+        batchRunning: '指纹检测中',
+        batchHint: '对每个账号各发 3 组请求、每组生成约 300 个数字，会消耗账号额度。'
+      },
       // FORK-ANCHOR: i18n-protocol-probe-error-zh (二开：失败协议的完整报错前缀)
       protocolProbeErrorLabel: '失败原因：',
       // FORK-ANCHOR: i18n-protocol-probe-pending-zh (二开：协议尚未测试时的占位状态)

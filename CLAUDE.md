@@ -46,7 +46,7 @@ git add -f CLAUDE.md
   `-c core.quotepath=false` 不能省：中文文件名的路径会被 git 转义成八进制，`grep -v '\.md:'` 就匹配不上，会多算。
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **480 个** = 源码 465 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **491 个** = 源码 476 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   其中 `.github/` 占 15 个，单独看：`git -c core.quotepath=false grep -o "FORK-ANCHOR:" -- .github | wc -l`。
 
 全量清单见 **`锚点清单.md`**：按文件分组列出每个锚点的名字，合并上游后照它逐条核对。
@@ -855,6 +855,53 @@ DeepSeek 不认。两者形态不同，HTTP 层看不出区别，所以探测会
 
 **风险**：这是全站显示口径的改动，涉及 30 多个文件。用量明细表（`UsageTable`）每行的 token
 也从精确值变成了 `1.23万` 这种缩写——如果你看明细时更需要精确位数，单独回退那个文件即可。
+
+### 2.25 账号测试弹窗「模型指纹测试」（改上游文件，新增 11 个锚点）
+
+集成 [lm-detector](https://github.com/Ikaleio/lm-detector)（CLI 名 `fpd`，npm 包 `lmfpd`，MIT）
+的模型指纹检测，用来判断某个中转站是否真在提供它声称的模型。
+**本次只做前端 + mock，后端还没接。**
+
+判定原理：让模型凭第一反应写约 300 个 1–355 的整数，比对各模型稳定的数字分布偏好，
+在参考库（59 个指纹身份）里给出最接近的候选。**是闭集排序，不是身份证明**，UI 上必须带这句免责。
+
+#### 前端（本次）
+
+- 新增 `frontend/src/components/admin/account/fingerprintMock.ts`（**新增文件，只带 `FORK:` 头**）：
+  类型定义 + 一份真实检测报告示例数据 + `runFingerprintMock()`（固定 3 秒延迟）。
+  示例数据取自一次真实检测（账号 3285「云枢」/ `https://yunshu.best` / 请求模型 `claude-opus-5-5`），
+  完整原始返回见 `临时文件/lm-detector-sample-output.json`。
+  **接后端时只换 `runFingerprintMock` 的函数体，类型和 UI 都不用动。**
+- `AccountTestModal.vue`：协议结果面板下方加「模型指纹测试」区块。一行样式对齐协议行
+  （图标 + 名称 + 状态 + 耗时 + 独立按钮），行下的框放结论（最像的模型 + 概率、Top-5 候选概率条、
+  证据、免责、原始返回折叠）。**默认不跑，也不随「开始测试」触发或清除，必须单独点「开始检测」。**
+- `AccountBatchTestModal.vue`：每个可测账号行加一条指纹结果行，底部加「开始指纹检测」按钮，
+  与后端的协议测试完全独立（不写回账号协议）。
+
+#### 两个实测反直觉点（改这块代码时必须知道）
+
+1. `evidence.insufficient` 在**成功**检测时也是 `true`——它表达的是「证据不足以证明身份」，
+   不是「检测失败」，**UI 绝不能渲染成错误态**。
+2. `analysis.results` 是参考库**全部**模型的完整排行（本次 59 条），不是 top-N，UI 要自己截断。
+
+#### 后续（后端，尚未做）
+
+- 运行时用 **Bun**（单文件、musl 版能直接塞进 alpine；Node 还要额外拖 libstdc++）
+- 构建期烘焙 CLI 进镜像（改 `Dockerfile.goreleaser`；要往构建上下文放文件还得同步改
+  `.github/release-tools/release_matrix.py`），运行期从 npm registry 拉样本库到
+  `/app/data/lm-detector/bank/`，用 `--bank` 指过去——这样**不重新部署也能更新样本库**
+- 后端 exec `fpd --json`，解析 `fpd-detection-v1` 报告
+- 完整调研（CLI 参数、样本库在线源实测、sub2api 挂载点、镜像约束、硬限制）见
+  `临时文件/lm-detector调研.md`
+
+| 文件 | 锚点 |
+|---|---|
+| `frontend/src/components/admin/account/AccountTestModal.vue` | `test-modal-fingerprint-section` / `test-modal-fingerprint-state` / `test-modal-fingerprint-four-state` / `test-modal-fingerprint-reset-on-open` |
+| `frontend/src/components/admin/account/AccountBatchTestModal.vue` | `batch-test-fingerprint-line` / `batch-test-fingerprint-field` / `batch-test-fingerprint-run` |
+| `frontend/src/i18n/locales/zh/admin/accounts.ts` | `i18n-fingerprint-zh` |
+| `frontend/src/i18n/locales/en/admin/accounts.ts` | `i18n-fingerprint-en` |
+| `.../account/__tests__/AccountTestModal.spec.ts` | `test-test-modal-fingerprint` |
+| `.../account/__tests__/AccountBatchTestModal.spec.ts` | `test-batch-test-fingerprint` |
 
 ## 3. 发版方式
 

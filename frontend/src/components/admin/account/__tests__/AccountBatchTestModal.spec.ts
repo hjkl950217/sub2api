@@ -1,14 +1,24 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountBatchTestModal from '../AccountBatchTestModal.vue'
+// FORK: 批量指纹检测的断言用真实示例数据
+import { FINGERPRINT_SAMPLE } from '../fingerprintMock'
 
-const { getBatchTestPlan, updateProbedProtocols, setSchedulable, showSuccess, showError } = vi.hoisted(() => ({
+const { getBatchTestPlan, updateProbedProtocols, setSchedulable, showSuccess, showError, runFingerprintMock } = vi.hoisted(() => ({
   getBatchTestPlan: vi.fn(),
   updateProbedProtocols: vi.fn(),
   setSchedulable: vi.fn(),
   showSuccess: vi.fn(),
-  showError: vi.fn()
+  showError: vi.fn(),
+  runFingerprintMock: vi.fn()
 }))
+
+// FORK: 指纹检测现在是 mock（固定 3 秒延迟）。这里换成可控的 promise，
+// 好在「检测中」和「已完成」两个状态上做精确断言。
+vi.mock('../fingerprintMock', async () => {
+  const actual = await vi.importActual<typeof import('../fingerprintMock')>('../fingerprintMock')
+  return { ...actual, runFingerprintMock }
+})
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ showSuccess, showError })
@@ -553,5 +563,63 @@ describe('AccountBatchTestModal', () => {
 
     expect(setSchedulable).toHaveBeenCalledWith(1, false)
     expect(wrapper.emitted('updated')).toHaveLength(1)
+  })
+})
+
+// FORK-ANCHOR: test-batch-test-fingerprint (二开：批量指纹检测)
+// 和后端协议测试是两条独立链路：单独按钮触发，默认不跑，不写回账号协议。
+describe('AccountBatchTestModal 批量指纹检测', () => {
+  beforeEach(() => {
+    getBatchTestPlan.mockResolvedValue(planFixture())
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: {
+        getItem: vi.fn((key: string) => (key === 'auth_token' ? 'test-token' : null)),
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+        clear: vi.fn()
+      },
+      configurable: true
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('默认不跑：可测账号行上没有指纹结果', async () => {
+    const wrapper = mountModal({ show: false, accountIds: [1, 2] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="batch-fingerprint-1"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="batch-fingerprint-2"]').exists()).toBe(false)
+    expect(runFingerprintMock).not.toHaveBeenCalled()
+  })
+
+  it('点批量指纹按钮：每个可测账号各跑一次，回来后逐行显示最像的模型', async () => {
+    const pending: Array<(value: typeof FINGERPRINT_SAMPLE) => void> = []
+    runFingerprintMock.mockImplementation(
+      () => new Promise((resolve) => { pending.push(resolve) })
+    )
+    const wrapper = mountModal({ show: false, accountIds: [1, 2] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="batch-fingerprint-button"]').trigger('click')
+    await flushPromises()
+
+    // 两个可测账号各一次；不可测的 grok 账号（id 3）不参与
+    expect(runFingerprintMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-testid="batch-fingerprint-1"]').text()).toContain(
+      'admin.accounts.fingerprint.running'
+    )
+    expect(wrapper.find('[data-testid="batch-fingerprint-result-1"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="batch-fingerprint-3"]').exists()).toBe(false)
+
+    pending.forEach((resolve) => resolve(FINGERPRINT_SAMPLE))
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="batch-fingerprint-result-1"]').text()).toBe('mimo-v2.5 · 46.7%')
+    expect(wrapper.get('[data-testid="batch-fingerprint-result-2"]').text()).toBe('mimo-v2.5 · 46.7%')
   })
 })

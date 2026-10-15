@@ -156,6 +156,41 @@
               </div>
             </div>
 
+            <!-- FORK-ANCHOR: batch-test-fingerprint-line (二开：模型指纹检测结果行)
+                 与协议行同构：标签 + 状态 + 结果。没跑过（idle）整行不显示，不占地方。 -->
+            <div
+              v-if="row.eligible && row.fingerprint.status !== 'idle'"
+              class="flex items-center gap-1 border-t border-gray-100 bg-gray-50 px-3 py-2 font-mono text-xs dark:border-dark-600 dark:bg-gray-900"
+              :data-testid="`batch-fingerprint-${row.id}`"
+            >
+              <span class="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium" :class="fingerprintClass(row.fingerprint)">
+                {{ t('admin.accounts.fingerprint.tag') }}
+              </span>
+              <span
+                class="shrink-0 text-[11px]"
+                :class="row.fingerprint.status === 'error' ? 'text-red-600 dark:text-red-300' : 'text-gray-500'"
+              >
+                {{ fingerprintStatusLabel(row.fingerprint) }}
+              </span>
+              <span
+                v-if="row.fingerprint.status === 'done'"
+                class="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-300"
+                :data-testid="`batch-fingerprint-result-${row.id}`"
+              >
+                {{ row.fingerprint.predictionName }} · {{ (row.fingerprint.probability * 100).toFixed(1) }}%
+              </span>
+              <span
+                v-else-if="row.fingerprint.status === 'error'"
+                class="min-w-0 flex-1 break-all text-red-600 dark:text-red-300"
+                :data-testid="`batch-fingerprint-result-${row.id}`"
+              >
+                {{ row.fingerprint.error }}
+              </span>
+              <span v-else class="min-w-0 flex-1 text-gray-500">
+                {{ t('admin.accounts.fingerprint.batchRunning') }}
+              </span>
+            </div>
+
             <!-- FORK-ANCHOR: batch-test-row-failure-line (二开：行级失败原因，展开与否都直接可见)
                  逐协议报错之外还有收尾错误（超时、无完成事件等），它们不属于任何协议，
                  这里统一显示，收起正文时也不会漏掉失败原因。 -->
@@ -192,6 +227,29 @@
         >
           <Icon name="refresh" size="sm" :stroke-width="2" :class="savingProtocols ? 'animate-spin' : ''" />
           <span>{{ t('admin.accounts.batchTest.updateProtocolsCount', { count: probedRows.length }) }}</span>
+        </button>
+        <!-- FORK: 批量指纹检测。常显，没有可测的行时置灰；
+             和后端协议测试是两条独立链路，跑指纹不写回账号协议。 -->
+        <button
+          type="button"
+          data-testid="batch-fingerprint-button"
+          :disabled="fingerprintRunning || !fingerprintTargets.length"
+          :title="t('admin.accounts.fingerprint.batchHint')"
+          :class="[
+            'flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+            fingerprintRunning || !fingerprintTargets.length
+              ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-dark-600 dark:text-gray-500'
+              : 'bg-emerald-500 text-white hover:bg-emerald-600'
+          ]"
+          @click="startFingerprint"
+        >
+          <Icon
+            :name="fingerprintRunning ? 'refresh' : 'clock'"
+            size="sm"
+            :stroke-width="2"
+            :class="fingerprintRunning ? 'animate-spin' : ''"
+          />
+          <span>{{ fingerprintRunning ? t('admin.accounts.fingerprint.batchRunning') : t('admin.accounts.fingerprint.batchStart') }}</span>
         </button>
         <button
           type="button"
@@ -231,6 +289,8 @@ import { buildApiUrl } from '@/api/client'
 import { ADMIN_UI_REQUEST_HEADER } from '@/api/adminUIRequest'
 import { useAppStore } from '@/stores/app'
 import type { BatchTestAccountGroup } from '@/api/admin/accounts'
+// FORK: 模型指纹检测的 mock 调用（接后端时只换 runFingerprintMock 的实现）
+import { runFingerprintMock } from './fingerprintMock'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -266,6 +326,17 @@ interface BatchRow {
   // 逐协议报错挂在各自的 ProtocolResult.error 上，不重复进这里。
   rowFailure: string
   schedulable: boolean
+  // FORK-ANCHOR: batch-test-fingerprint-field (二开：模型指纹检测状态)
+  // 和协议测试完全独立：默认不跑，也不随「开始测试」触发，走单独的按钮。
+  fingerprint: FingerprintRowState
+}
+
+// FORK: 单行指纹检测状态。idle = 没跑过，行里不显示任何东西。
+interface FingerprintRowState {
+  status: 'idle' | 'running' | 'done' | 'error'
+  predictionName: string
+  probability: number
+  error: string
 }
 
 const props = defineProps<{
@@ -318,6 +389,59 @@ const canStart = computed(
   () => !running.value && !loadingPlan.value && rows.value.some((row) => row.eligible) &&
     groups.value.some((group) => group.common_models.length > 0)
 )
+
+// FORK-ANCHOR: batch-test-fingerprint-run (二开：批量指纹检测)
+// 每行各自跑一次（现在是 mock 的 3 秒延迟，并发发起），互不阻塞；
+// 和后端的协议测试是两条独立的链路，按钮也分开。
+const fingerprintRunning = ref(false)
+const fingerprintTargets = computed(() => rows.value.filter((row) => row.eligible))
+let fingerprintRunId = 0
+
+const fingerprintClass = (state: FingerprintRowState) => {
+  if (state.status === 'done') return 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
+  if (state.status === 'error') return 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
+  return 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
+}
+
+const fingerprintStatusLabel = (state: FingerprintRowState) => {
+  if (state.status === 'done') return t('admin.accounts.fingerprint.done')
+  if (state.status === 'error') return t('admin.accounts.fingerprint.failed')
+  return t('admin.accounts.fingerprint.running')
+}
+
+const startFingerprint = async () => {
+  if (fingerprintRunning.value) return
+  const targets = fingerprintTargets.value
+  if (!targets.length) return
+  const runId = ++fingerprintRunId
+  fingerprintRunning.value = true
+  targets.forEach((row) => {
+    row.fingerprint = { status: 'running', predictionName: '', probability: 0, error: '' }
+  })
+  await Promise.all(
+    targets.map(async (row) => {
+      try {
+        const report = await runFingerprintMock()
+        if (runId !== fingerprintRunId) return
+        row.fingerprint = {
+          status: 'done',
+          predictionName: report.analysis.prediction_name,
+          probability: report.analysis.probability,
+          error: ''
+        }
+      } catch (error: unknown) {
+        if (runId !== fingerprintRunId) return
+        row.fingerprint = {
+          status: 'error',
+          predictionName: '',
+          probability: 0,
+          error: error instanceof Error ? error.message : t('common.unknownError')
+        }
+      }
+    })
+  )
+  if (runId === fingerprintRunId) fingerprintRunning.value = false
+}
 
 // FORK-ANCHOR: batch-test-protocol-four-state (二开：协议标签四态——未测灰、测试中黄、通过绿、失败红)
 const protocolClass = (result: ProtocolResult) => {
@@ -435,7 +559,8 @@ const loadPlan = async () => {
           // 打开就按后端给的协议清单铺占位标签，测试推进时逐个变色
           protocols: (account.protocols || []).map((protocol) => ({ protocol, success: null, probing: false, error: '', body: '', expanded: false, firstByteMs: null, totalMs: null })),
           rowFailure: '',
-          schedulable: account.schedulable
+          schedulable: account.schedulable,
+          fingerprint: { status: 'idle', predictionName: '', probability: 0, error: '' }
         })
       })
     })
