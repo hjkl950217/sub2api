@@ -47,7 +47,9 @@ vi.mock('vue-i18n', async () => {
     // FORK-ANCHOR: batch-test-spec-i18n (二开：逐协议行的状态与失败原因文案)
     'admin.accounts.protocolProbePassed': 'passed-protocol',
     'admin.accounts.protocolProbeFailed': 'failed-protocol',
-    'admin.accounts.protocolProbeErrorLabel': 'reason:'
+    'admin.accounts.protocolProbeErrorLabel': 'reason:',
+    // FORK: 平台显示名——分组头不许出现 ag_hub 这种代码标识
+    'admin.accounts.platforms.ag_hub': '聚合中转'
   }
   return {
     ...actual,
@@ -586,14 +588,38 @@ describe('AccountBatchTestModal 批量指纹检测', () => {
     vi.restoreAllMocks()
   })
 
-  it('默认不跑：可测账号行上没有指纹结果', async () => {
+  it('默认就铺好指纹行（状态「未检测」），但不发起检测', async () => {
     const wrapper = mountModal({ show: false, accountIds: [1, 2] })
     await wrapper.setProps({ show: true })
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="batch-fingerprint-1"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="batch-fingerprint-2"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="batch-fingerprint-1"]').text()).toContain('admin.accounts.fingerprint.idle')
+    expect(wrapper.get('[data-testid="batch-fingerprint-2"]').text()).toContain('admin.accounts.fingerprint.idle')
+    // 还没跑，所以没有结果文本
+    expect(wrapper.find('[data-testid="batch-fingerprint-result-1"]').exists()).toBe(false)
     expect(runFingerprintMock).not.toHaveBeenCalled()
+  })
+
+  it('分组头显示平台名而不是代码标识', async () => {
+    getBatchTestPlan.mockResolvedValue({
+      groups: [
+        {
+          platform: 'ag_hub',
+          account_ids: [9],
+          common_models: ['glm-5.3'],
+          accounts: [
+            { id: 9, name: '聚合账号', models: ['glm-5.3'], eligible: true, schedulable: true, protocols: ['chat_completions'] }
+          ]
+        }
+      ],
+      skipped_count: 0
+    })
+    const wrapper = mountModal({ show: false, accountIds: [9] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('聚合中转')
+    expect(wrapper.text()).not.toContain('ag_hub')
   })
 
   it('点批量指纹按钮：每个可测账号各跑一次，回来后逐行显示最像的模型', async () => {

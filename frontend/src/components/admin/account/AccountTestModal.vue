@@ -482,19 +482,9 @@
         </div>
       </div>
 
-      <!-- Test Info -->
-      <div class="flex items-center justify-between px-1 text-xs text-gray-500 dark:text-gray-400">
-        <div class="flex items-center gap-3">
-          <span class="flex items-center gap-1">
-            <Icon name="grid" size="sm" :stroke-width="2" />
-            {{ t('admin.accounts.testModel') }}
-          </span>
-        </div>
-        <span class="flex items-center gap-1">
-          <Icon name="chat" size="sm" :stroke-width="2" />
-          {{ testModeSummary }}
-        </span>
-      </div>
+      <!-- FORK-ANCHOR: test-modal-remove-test-info (二开：删掉上游底部那行「测试模型 / 提示词：…」信息行)
+           长空 2026-10-15 反馈：这行本该跟在「测试消息」输入框下面，放在弹窗底部位置不对，直接去掉。
+           它原来用的 testModeSummary computed 已一并删除。 -->
     </div>
 
     <template #footer>
@@ -1059,30 +1049,7 @@ const promptInputHint = computed(() => {
   return ''
 })
 
-// FORK-ANCHOR: test-modal-dynamic-prompt-summary (显示当前实际测试消息)
-const testModeSummary = computed(() => {
-  if (isGrokAccount.value) {
-    switch (grokTestMode.value) {
-      case 'video':
-        return t('admin.accounts.videoTestMode')
-      case 'image':
-        return t('admin.accounts.imageTestMode')
-      case 'search':
-        return t('admin.accounts.grok.searchTestMode')
-      case 'tts':
-        return t('admin.accounts.grok.ttsTestMode')
-      case 'stt':
-        return t('admin.accounts.grok.sttTestMode')
-      case 'realtime':
-        return t('admin.accounts.grok.realtimeTestMode')
-      default:
-        return t('admin.accounts.testPrompt', { prompt: currentTestPrompt.value })
-    }
-  }
-  if (supportsImageTest.value) return t('admin.accounts.imageTestMode')
-  if (!supportsPromptInput.value) return t('admin.accounts.openai.testModeCompact')
-  return t('admin.accounts.testPrompt', { prompt: currentTestPrompt.value })
-})
+// 原 testModeSummary computed 随底部信息行一起删除，锚点见模板里的 test-modal-remove-test-info
 
 const currentTestPrompt = computed(() => {
   const prompt = testPrompt.value.trim()

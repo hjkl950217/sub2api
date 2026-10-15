@@ -296,6 +296,9 @@ import {
 } from '@/api/channelMonitorV2'
 import { adminAPI } from '@/api/admin'
 import type { AdminGroup } from '@/types'
+// FORK: 平台显示名统一走平台清单（catalog 驱动）。原来这里自己维护了一张硬编码 map，
+// 没有 ag_hub 这类二开平台，会回落成原始 id。锚点见 CLAUDE.md §2.26
+import { platformLabel } from '@/utils/platformColors'
 
 const { t, te } = useI18n()
 const appStore = useAppStore()
@@ -410,23 +413,8 @@ function categoryLabel(category: string) {
   return te(key) ? t(key) : category
 }
 
-function platformLabel(value: string) {
-  return (
-    {
-      anthropic: 'Claude',
-      openai: 'OpenAI',
-      grok: 'Grok',
-      kiro: 'Kiro',
-      gemini: 'Gemini',
-      antigravity: 'Antigravity',
-      kimi: 'Kimi',
-      zhipu: 'Zhipu GLM',
-      deepseek: 'DeepSeek',
-      minimax: 'MiniMax',
-      composite: 'Composite',
-    } as Record<string, string>
-  )[value] || value
-}
+// FORK-ANCHOR: monitor-settings-display-name (二开：删掉本地硬编码平台名 map，
+// 改用平台清单驱动的 platformLabel，否则 ag_hub 这类新增平台会显示原始 id)
 
 function normalizeConfig(value: MonitorConfig): MonitorConfig {
   const ignored = value.ignored_error_categories

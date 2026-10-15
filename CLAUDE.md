@@ -46,7 +46,7 @@ git add -f CLAUDE.md
   `-c core.quotepath=false` 不能省：中文文件名的路径会被 git 转义成八进制，`grep -v '\.md:'` 就匹配不上，会多算。
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **491 个** = 源码 476 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **495 个** = 源码 480 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   其中 `.github/` 占 15 个，单独看：`git -c core.quotepath=false grep -o "FORK-ANCHOR:" -- .github | wc -l`。
 
 全量清单见 **`锚点清单.md`**：按文件分组列出每个锚点的名字，合并上游后照它逐条核对。
@@ -875,8 +875,10 @@ DeepSeek 不认。两者形态不同，HTTP 层看不出区别，所以探测会
 - `AccountTestModal.vue`：协议结果面板下方加「模型指纹测试」区块。一行样式对齐协议行
   （图标 + 名称 + 状态 + 耗时 + 独立按钮），行下的框放结论（最像的模型 + 概率、Top-5 候选概率条、
   证据、免责、原始返回折叠）。**默认不跑，也不随「开始测试」触发或清除，必须单独点「开始检测」。**
-- `AccountBatchTestModal.vue`：每个可测账号行加一条指纹结果行，底部加「开始指纹检测」按钮，
-  与后端的协议测试完全独立（不写回账号协议）。
+  顺带删掉了上游弹窗底部那行「测试模型 / 提示词：…」信息行（长空 2026-10-15 反馈它位置不对），
+  它用的 `testModeSummary` computed 一并删除（`test-modal-remove-test-info`）。
+- `AccountBatchTestModal.vue`：每个可测账号行加一条指纹结果行（**默认就铺好，状态「未检测」**，
+  由底部「开始指纹检测」按钮触发），与后端的协议测试完全独立（不写回账号协议）。
 
 #### 两个实测反直觉点（改这块代码时必须知道）
 
@@ -902,6 +904,52 @@ DeepSeek 不认。两者形态不同，HTTP 层看不出区别，所以探测会
 | `frontend/src/i18n/locales/en/admin/accounts.ts` | `i18n-fingerprint-en` |
 | `.../account/__tests__/AccountTestModal.spec.ts` | `test-test-modal-fingerprint` |
 | `.../account/__tests__/AccountBatchTestModal.spec.ts` | `test-batch-test-fingerprint` |
+
+### 2.26 平台显示名统一走平台清单（改上游文件，新增 4 个锚点、删 1 个）
+
+**问题**（长空 2026-10-15 反馈）：二开新增的平台 `ag_hub` 在若干位置显示成原始 id `ag_hub`，
+而不是「聚合中转」。根因两类：
+
+**（1）本地硬编码的平台名 map 覆盖了 catalog 驱动的 helper** —— 这类最隐蔽，新增平台必然漏。
+已删掉本地 map，改从 `@/utils/platformColors` 引 `platformLabel`
+（内部走 `getPlatformSpec(p)?.display_name`，由后端平台清单驱动）：
+
+| 文件 | 锚点 |
+|---|---|
+| `frontend/src/components/user/PlatformUsageBreakdown.vue` | `platform-usage-breakdown-display-name` |
+| `frontend/src/components/user/dashboard/UserDashboardStats.vue` | `user-dashboard-stats-display-name` |
+| `frontend/src/features/channel-monitor-v2/MonitorSettingsPanel.vue` | `monitor-settings-display-name` |
+
+**（2）直接渲染原始 platform id** —— 本次只修了长空点名的批量测试弹窗分组头
+（`batch-test-platform-display-name`），改成
+`t('admin.accounts.platforms.' + p, platformLabel(p))`。
+
+**还没修的同症状位置**（2026-10-15 全站排查结果，按语义分三类）：
+
+- 账号/分组语义，用户可见，**建议修**：
+  `views/user/ChannelStatusV2View.vue:313,373,594,609`、
+  `components/channels/AvailableChannelsTable.vue:75,211`、
+  `components/channels/SupportedModelChip.vue:26,53`、
+  `views/admin/GroupModelAccountsView.vue:100`、
+  `features/prompt-audit/components/PolicyPanel.vue:35`、
+  `views/admin/RiskControlView.vue:763,1490`、
+  `views/admin/orders/PlanEditDialog.vue:139`、
+  `components/admin/user/GroupReplaceModal.vue:48`、
+  `components/admin/user/UserAllowedGroupsModal.vue:69,149`、
+  `components/account/SyncFromCrsModal.vue:91,133`、
+  `components/admin/ErrorPassthroughRulesModal.vue:120`、
+  `components/user/UserErrorRequestsTable.vue:78`、
+  `components/user/UserErrorDetailModal.vue:49`
+- 配额键 / 运维台，**大概率故意显示原始 id**，改前需确认：
+  `components/user/UserPlatformQuotaCell.vue:12`、
+  `components/admin/user/UserPlatformQuotaModal.vue:32`、
+  `views/admin/SettingsView.vue:5066`、
+  `views/admin/ops/components/` 下的 `OpsErrorLogTable` / `OpsErrorDetailModal` /
+  `OpsRequestDetailsModal` / `OpsThroughputTrendChart` / `OpsConcurrencyCard` /
+  `OpsAlertEventsCard` / `OpsSystemLogTable`
+
+**一个共性风险**：`platformLabel` 依赖平台清单，若清单在首屏渲染前还没加载完，
+所有调用点都会短暂回落成原始 id。本次没有验证首屏时序。
 
 ## 3. 发版方式
 

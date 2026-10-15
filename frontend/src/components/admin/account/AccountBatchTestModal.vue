@@ -36,7 +36,8 @@
           class="overflow-hidden rounded-xl border border-gray-200 dark:border-dark-500"
         >
           <div class="flex flex-wrap items-center gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 dark:border-dark-500 dark:bg-dark-700">
-            <span class="font-medium text-gray-800 dark:text-gray-100">{{ group.platform }}</span>
+            <!-- FORK-ANCHOR: batch-test-platform-display-name (二开：分组头显示平台中文名，不显示 ag_hub 这种代码标识) -->
+            <span class="font-medium text-gray-800 dark:text-gray-100">{{ t('admin.accounts.platforms.' + group.platform, platformLabel(group.platform)) }}</span>
             <span class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.batchTest.accountCount', { count: group.accounts.length }) }}
             </span>
@@ -157,19 +158,17 @@
             </div>
 
             <!-- FORK-ANCHOR: batch-test-fingerprint-line (二开：模型指纹检测结果行)
-                 与协议行同构：标签 + 状态 + 结果。没跑过（idle）整行不显示，不占地方。 -->
+                 与协议行同构：标签 + 状态 + 结果。可测账号**默认就显示这一行**（状态「未检测」），
+                 由底部的「开始指纹检测」按钮触发，不占位置的行只在不可测账号上不出现。 -->
             <div
-              v-if="row.eligible && row.fingerprint.status !== 'idle'"
+              v-if="row.eligible"
               class="flex items-center gap-1 border-t border-gray-100 bg-gray-50 px-3 py-2 font-mono text-xs dark:border-dark-600 dark:bg-gray-900"
               :data-testid="`batch-fingerprint-${row.id}`"
             >
               <span class="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium" :class="fingerprintClass(row.fingerprint)">
                 {{ t('admin.accounts.fingerprint.tag') }}
               </span>
-              <span
-                class="shrink-0 text-[11px]"
-                :class="row.fingerprint.status === 'error' ? 'text-red-600 dark:text-red-300' : 'text-gray-500'"
-              >
+              <span class="shrink-0 text-[11px]" :class="fingerprintStatusClass(row.fingerprint)">
                 {{ fingerprintStatusLabel(row.fingerprint) }}
               </span>
               <span
@@ -185,9 +184,6 @@
                 :data-testid="`batch-fingerprint-result-${row.id}`"
               >
                 {{ row.fingerprint.error }}
-              </span>
-              <span v-else class="min-w-0 flex-1 text-gray-500">
-                {{ t('admin.accounts.fingerprint.batchRunning') }}
               </span>
             </div>
 
@@ -289,6 +285,8 @@ import { buildApiUrl } from '@/api/client'
 import { ADMIN_UI_REQUEST_HEADER } from '@/api/adminUIRequest'
 import { useAppStore } from '@/stores/app'
 import type { BatchTestAccountGroup } from '@/api/admin/accounts'
+// FORK: 平台显示名走平台清单（catalog 驱动），ag_hub 这类二开平台也能拿到中文名
+import { platformLabel } from '@/utils/platformColors'
 // FORK: 模型指纹检测的 mock 调用（接后端时只换 runFingerprintMock 的实现）
 import { runFingerprintMock } from './fingerprintMock'
 
@@ -400,13 +398,23 @@ let fingerprintRunId = 0
 const fingerprintClass = (state: FingerprintRowState) => {
   if (state.status === 'done') return 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
   if (state.status === 'error') return 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
-  return 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
+  if (state.status === 'running') return 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
+  // 未检测：和协议占位一样是灰色
+  return 'bg-gray-100 text-gray-400 dark:bg-dark-600 dark:text-gray-500'
+}
+
+const fingerprintStatusClass = (state: FingerprintRowState) => {
+  if (state.status === 'done') return 'text-green-600 dark:text-green-300'
+  if (state.status === 'error') return 'text-red-600 dark:text-red-300'
+  if (state.status === 'running') return 'text-amber-600 dark:text-amber-300'
+  return 'text-gray-500'
 }
 
 const fingerprintStatusLabel = (state: FingerprintRowState) => {
   if (state.status === 'done') return t('admin.accounts.fingerprint.done')
   if (state.status === 'error') return t('admin.accounts.fingerprint.failed')
-  return t('admin.accounts.fingerprint.running')
+  if (state.status === 'running') return t('admin.accounts.fingerprint.running')
+  return t('admin.accounts.fingerprint.idle')
 }
 
 const startFingerprint = async () => {

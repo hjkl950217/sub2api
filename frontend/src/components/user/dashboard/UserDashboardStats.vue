@@ -231,6 +231,9 @@ import Icon from '@/components/icons/Icon.vue'
 import type { PlatformDashboardStats, UserDashboardStats as UserStatsType } from '@/api/usage'
 import type { PlatformQuotaItem } from '@/types'
 import { formatNumber, formatCost } from '@/utils/format'
+// FORK: 平台显示名统一走平台清单（catalog 驱动）。原来这里自己维护了一张硬编码 map，
+// 没有 ag_hub 这类二开平台，会回落成原始 id。锚点见 CLAUDE.md §2.26
+import { platformLabel } from '@/utils/platformColors'
 
 interface FusedPlatformCard {
   platform: string
@@ -249,21 +252,8 @@ const props = defineProps<{
   platformQuotas?: PlatformQuotaItem[] | null
 }>()
 const { t } = useI18n()
-
-const PLATFORM_LABELS: Record<string, string> = {
-  anthropic: 'Claude',
-  openai: 'OpenAI',
-  gemini: 'Gemini',
-  antigravity: 'Antigravity',
-  grok: 'Grok',
-  kimi: 'Kimi',
-  zhipu: 'Zhipu GLM',
-  deepseek: 'DeepSeek',
-  minimax: 'MiniMax',
-  typesafe: 'TypeSafe / Jev',
-}
-
-const platformLabel = (p: string) => PLATFORM_LABELS[p] ?? p
+// FORK-ANCHOR: user-dashboard-stats-display-name (二开：删掉本地硬编码平台名 map，
+// 改用平台清单驱动的 platformLabel，否则 ag_hub 这类新增平台会显示原始 id)
 
 // 处理"各平台之和 < 总值"的差值：后端按平台聚合时过滤了无法归属平台的行
 // （group 与 account 都缺 platform）。这里把差值作为"其他"卡片显式展示，

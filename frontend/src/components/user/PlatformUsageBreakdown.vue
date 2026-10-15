@@ -47,6 +47,9 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import type { PlatformUsage } from '@/api/admin/dashboard'
+// FORK: 平台显示名统一走平台清单（catalog 驱动）。原来这里自己维护了一张硬编码 map，
+// 没有 ag_hub 这类二开平台，会回落成原始 id。锚点见 CLAUDE.md §2.26
+import { platformLabel } from '@/utils/platformColors'
 
 const props = defineProps<{
   today: number
@@ -89,20 +92,6 @@ const sortedBreakdown = computed<BreakdownRow[]>(() => {
 })
 
 const hasBreakdown = computed(() => sortedBreakdown.value.length > 0)
-
-const PLATFORM_LABELS: Record<string, string> = {
-  anthropic: 'Claude',
-  openai: 'OpenAI',
-  gemini: 'Gemini',
-  antigravity: 'Antigravity',
-  grok: 'Grok',
-  kimi: 'Kimi',
-  zhipu: 'Zhipu GLM',
-  deepseek: 'DeepSeek',
-  minimax: 'MiniMax',
-}
-
-function platformLabel(platform: string): string {
-  return PLATFORM_LABELS[platform] ?? platform
-}
+// FORK-ANCHOR: platform-usage-breakdown-display-name (二开：删掉本地硬编码平台名 map，
+// 改用平台清单驱动的 platformLabel，否则 ag_hub 这类新增平台会显示原始 id)
 </script>
