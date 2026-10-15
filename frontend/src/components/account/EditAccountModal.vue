@@ -6584,6 +6584,13 @@ const handleMixedChannelCancel = () => {
   @apply sticky top-0 z-10 -mx-4 -mt-3 flex flex-shrink-0 items-center border-b border-gray-200 bg-white px-4 dark:border-dark-700 dark:bg-dark-800 sm:-mx-6 sm:-mt-4 sm:px-6;
 }
 
+/* 吸顶时 .modal-body 的 padding-top（12px / sm:16px）那一带会露出滚过去的内容，
+   用伪元素把它盖成同一底色 */
+.edit-account-tabs::before {
+  content: '';
+  @apply pointer-events-none absolute inset-x-0 -top-3 h-3 bg-white dark:bg-dark-800 sm:-top-4 sm:h-4;
+}
+
 .edit-account-tab {
   @apply flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition-colors;
 }
