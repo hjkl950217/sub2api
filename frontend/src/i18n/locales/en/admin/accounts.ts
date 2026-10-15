@@ -77,6 +77,11 @@ export default {
         'Existing accounts only sync fields returned by CRS; missing fields keep their current values. Credentials are merged by key — keys not returned by CRS are preserved. Proxies are kept when "Sync proxies" is unchecked.',
       crsBack: 'Back',
       editAccount: 'Edit Account',
+      // FORK-ANCHOR: i18n-edit-account-tabs-en（edit modal tab labels）
+      editTabs: {
+        basic: 'Basic Info',
+        tempScheduling: 'Temp Scheduling'
+      },
       deleteAccount: 'Delete Account',
       // FORK-ANCHOR: search-placeholder-id-en（搜索框范围已扩展到账号 ID）
       searchAccounts: 'Search name or ID...',

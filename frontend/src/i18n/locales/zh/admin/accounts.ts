@@ -76,6 +76,11 @@ export default {
         '已有账号仅同步 CRS 返回的字段，缺失字段保持原值；凭据按键合并，不会清空未下发的键；未勾选"同步代理"时保留原有代理。',
       crsBack: '返回',
       editAccount: '编辑账号',
+      // FORK-ANCHOR: i18n-edit-account-tabs-zh（编辑弹窗 tab 名）
+      editTabs: {
+        basic: '基础信息',
+        tempScheduling: '临时调度'
+      },
       deleteAccount: '删除账号',
       // FORK-ANCHOR: search-placeholder-id-zh（搜索框范围已扩展到账号 ID）
       searchAccounts: '搜索账号名或 ID...',

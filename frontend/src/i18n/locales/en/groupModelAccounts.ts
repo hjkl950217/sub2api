@@ -1,4 +1,4 @@
-// FORK: copy for the group-model-accounts page (see fork/CLAUDE.md section 2.6c)
+// FORK: copy for the group-model-accounts page (see AGENTS.md section 2.6c)
 export default {
   groupModelAccounts: {
     title: 'Group Model Accounts',

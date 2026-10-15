@@ -1,4 +1,4 @@
-# CLAUDE.md — sub2api fork
+# AGENTS.md — sub2api fork
 
 本仓库是 **Sub2API 的个人二次开发 fork**（origin `hjkl950217/sub2api`）。前端补丁与后端二开的管理中心在 PersonalAITaskCenter 的 `工具/管理_sub2api/子任务/二开sub2api/`，本文件只描述**本仓库自身**的改动与纪律。
 
@@ -21,10 +21,10 @@ git remote -v
 
 改动都提交在 `main` 分支。合并上游后，按本节逐条复查是否还在、是否仍然需要。
 
-本文件本身也是改动之一：上游 `.gitignore:122` 忽略了 `CLAUDE.md`，所以它需要强制加入版本控制。
+本文件本身也是改动之一：上游 `.gitignore:122` 忽略了 `CLAUDE.md`。2026-10-15 起本仓库的这份说明改名 `AGENTS.md`（本机约定：项目级指令文件统一叫 `AGENTS.md`），改名后不再被 `.gitignore` 命中，**不需要再 `git add -f`**。
 
 ```bash
-git add -f CLAUDE.md
+git add AGENTS.md
 ```
 
 ### 2.0 标记纪律（强制，长空 2026-09-30 定）
@@ -46,7 +46,7 @@ git add -f CLAUDE.md
   `-c core.quotepath=false` 不能省：中文文件名的路径会被 git 转义成八进制，`grep -v '\.md:'` 就匹配不上，会多算。
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **516 个** = 源码 501 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **525 个** = 源码 510 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   其中 `.github/` 占 15 个，单独看：`git -c core.quotepath=false grep -o "FORK-ANCHOR:" -- .github | wc -l`。
 
 全量清单见 **`锚点清单.md`**：按文件分组列出每个锚点的名字，合并上游后照它逐条核对。
@@ -942,6 +942,33 @@ DeepSeek 不认。两者形态不同，HTTP 层看不出区别，所以探测会
 
 **一个共性风险**：`platformLabel` 依赖平台清单，若清单在首屏渲染前还没加载完，
 所有调用点都会短暂回落成原始 id。本次没有验证首屏时序。
+
+### 2.27 编辑账号弹窗拆成两个 tab（改上游文件，新增 9 个锚点）
+
+`frontend/src/components/account/EditAccountModal.vue` 的表单有三千多行，
+配「临时不可调度」要滚很久。按 `ChannelsView.vue` 的「编辑渠道」弹窗做成两个 tab：
+
+- `基础信息`（默认）/ `临时调度`，`activeTab` 状态在 `edit-account-tabs-state`；
+- tab 条 `edit-account-tabs` 吸顶（`sticky top-0` + 负 margin 撑满弹窗宽度），滚到哪儿都能切；
+- 原有表单内容整块包进 `edit-account-tab-panels`，临时不可调度整块包进 `edit-account-tab-temp-panel`；
+- **用 `v-show` 不用 `v-if`**：既有的三条 temp-unsched 测试直接查 DOM 里的
+  `[data-testid^="temp-unsched-scope-"]`，`v-if` 会把它们全打红；
+- 每次打开或换账号时 `edit-account-tabs-reset` 把 tab 复位到「基础信息」；
+- 样式 `edit-account-tabs-style` 新增了本文件第一个 `<style scoped>` 块，照抄 ChannelsView 的三个 class。
+
+**没跟着搬的**：`账号调度阈值覆盖`（`account-scheduling-threshold-section`）留在「基础信息」。
+长空只点名了「临时不可调度开关以及配置」，阈值覆盖是账号级语义，不扩范围。
+
+**踩坑**：测试里不要用 `wrapper.isVisible()` 判断 tab 显隐。
+它走 jsdom 的 `getComputedStyle`，该值会缓存，切完 tab 仍返回切换前的旧值，
+表现为「点了没反应」的假失败。断言 `(el as HTMLElement).style.display !== 'none'`，
+这才是 `v-show` 真正控制的东西（锚点 `test-edit-account-tabs`）。
+
+**i18n**：`admin.accounts.editTabs.basic` / `.tempScheduling`，
+zh/en 各一个锚点（`i18n-edit-account-tabs-zh` / `-en`）。i18n 完整性测试卡着，两边都要加。
+
+**同批改动**：`CLAUDE.md` 改名为 `AGENTS.md`，仓库内 7 处指向旧文件名的注释
+和 `锚点清单.md` 一并更新；改名后该文件不再被上游 `.gitignore:122` 命中，不用再 `git add -f`。
 
 
 ## 3. 发版方式

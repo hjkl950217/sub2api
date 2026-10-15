@@ -2204,3 +2204,71 @@ describe('EditAccountModal temp-unschedulable rule scope', () => {
     wrapper.unmount()
   })
 })
+
+// FORK-ANCHOR: test-edit-account-tabs (二开：编辑弹窗 tab 分区的行为测试)
+describe('EditAccountModal 编辑弹窗 tab 分区', () => {
+  const tabButton = (wrapper: ReturnType<typeof mountModal>, id: 'basic' | 'temp') =>
+    wrapper.get(`[data-testid="edit-account-tab-${id}"]`)
+  const panel = (wrapper: ReturnType<typeof mountModal>, id: 'basic' | 'temp') =>
+    wrapper.get(`[data-testid="edit-account-panel-${id}"]`)
+  // 用 v-show 的 inline display 判断显隐：wrapper.isVisible() 走 jsdom 的 getComputedStyle，
+  // 该值会被缓存，切完 tab 后仍返回切换前的旧值
+  const isShown = (wrapper: ReturnType<typeof mountModal>, id: 'basic' | 'temp') =>
+    (panel(wrapper, id).element as HTMLElement).style.display !== 'none'
+
+  it('默认停在基础信息，临时不可调度区块不显示', () => {
+    const wrapper = mountModal()
+
+    expect(tabButton(wrapper, 'basic').attributes('aria-selected')).toBe('true')
+    expect(isShown(wrapper, 'basic')).toBe(true)
+    expect(isShown(wrapper, 'temp')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('切到临时调度后，临时不可调度区块显示、基础信息隐藏', async () => {
+    const wrapper = mountModal()
+
+    await tabButton(wrapper, 'temp').trigger('click')
+
+    expect(tabButton(wrapper, 'temp').attributes('aria-selected')).toBe('true')
+    expect(isShown(wrapper, 'temp')).toBe(true)
+    expect(isShown(wrapper, 'basic')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('换成另一个账号重新打开时回到基础信息', async () => {
+    const wrapper = mountModal()
+    await tabButton(wrapper, 'temp').trigger('click')
+    expect(isShown(wrapper, 'temp')).toBe(true)
+
+    await wrapper.setProps({ account: buildAccount() })
+    await flushPromises()
+
+    expect(isShown(wrapper, 'basic')).toBe(true)
+    expect(isShown(wrapper, 'temp')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('临时不可调度的开关与规则配置都落在临时调度面板里', () => {
+    const account = buildAccount()
+    const wrapper = mountModal({
+      ...account,
+      credentials: {
+        ...account.credentials,
+        temp_unschedulable_enabled: true,
+        temp_unschedulable_rules: []
+      }
+    } as any)
+    const tempPanel = panel(wrapper, 'temp').element
+    const basicPanel = panel(wrapper, 'basic').element
+    const addRule = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('admin.accounts.tempUnschedulable.addRule'))
+
+    expect(addRule).toBeTruthy()
+    expect(tempPanel.contains(addRule!.element)).toBe(true)
+    expect(tempPanel.textContent).toContain('admin.accounts.tempUnschedulable.title')
+    expect(basicPanel.textContent).not.toContain('admin.accounts.tempUnschedulable.title')
+    wrapper.unmount()
+  })
+})

@@ -11,6 +11,34 @@
       @submit.prevent="handleSubmit"
       class="space-y-5"
     >
+      <!-- FORK-ANCHOR: edit-account-tabs (二开：编辑弹窗拆成「基础信息 / 临时调度」两个 tab，省掉长距离滚动) -->
+      <div class="edit-account-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          data-testid="edit-account-tab-basic"
+          :aria-selected="activeTab === 'basic'"
+          class="edit-account-tab"
+          :class="activeTab === 'basic' ? 'edit-account-tab-active' : 'edit-account-tab-inactive'"
+          @click="activeTab = 'basic'"
+        >
+          {{ t('admin.accounts.editTabs.basic') }}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          data-testid="edit-account-tab-temp"
+          :aria-selected="activeTab === 'temp'"
+          class="edit-account-tab"
+          :class="activeTab === 'temp' ? 'edit-account-tab-active' : 'edit-account-tab-inactive'"
+          @click="activeTab = 'temp'"
+        >
+          {{ t('admin.accounts.editTabs.tempScheduling') }}
+        </button>
+      </div>
+
+      <!-- FORK-ANCHOR: edit-account-tab-panels (二开：基础信息面板，原有表单内容原样包进来) -->
+      <div v-show="activeTab === 'basic'" data-testid="edit-account-panel-basic" class="space-y-5">
       <div>
         <label class="input-label">{{ t('common.name') }}</label>
         <input v-model="form.name" type="text" required class="input" data-tour="edit-account-form-name" />
@@ -1629,8 +1657,15 @@
         </div>
       </div>
 
+      </div>
+
       <!-- Temp Unschedulable Rules -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
+      <!-- FORK-ANCHOR: edit-account-tab-temp-panel (二开：临时不可调度整块挪进「临时调度」tab；用 v-show 保住既有 data-testid 查询) -->
+      <div
+        v-show="activeTab === 'temp'"
+        data-testid="edit-account-panel-temp"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
+      >
         <div class="mb-3 flex items-center justify-between">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.tempUnschedulable.title') }}</label>
@@ -4130,6 +4165,8 @@ const antigravityModelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist'
 const antigravityWhitelistModels = ref<string[]>([])
 const antigravityModelMappings = ref<ModelMapping[]>([])
 const isSyncingAntigravityUpstream = ref(false)
+// FORK-ANCHOR: edit-account-tabs-state (二开：编辑弹窗当前 tab，默认「基础信息」)
+const activeTab = ref<'basic' | 'temp'>('basic')
 const tempUnschedEnabled = ref(false)
 const accountSchedulingThresholdOverrideEnabled = ref(false)
 const accountSchedulingThresholdOverrideValue = ref(100)
@@ -5116,6 +5153,8 @@ watch(
       return
     }
     if (!wasShow || newAccount !== previousAccount) {
+      // FORK-ANCHOR: edit-account-tabs-reset (二开：每次打开或换账号都回到「基础信息」)
+      activeTab.value = 'basic'
       syncFormFromAccount(newAccount)
       loadTLSProfiles()
     }
@@ -6538,3 +6577,22 @@ const handleMixedChannelCancel = () => {
   clearMixedChannelDialog()
 }
 </script>
+
+<!-- FORK-ANCHOR: edit-account-tabs-style (二开：tab 条吸顶，滚到哪儿都能切；样式对齐渠道编辑弹窗) -->
+<style scoped>
+.edit-account-tabs {
+  @apply sticky top-0 z-10 -mx-4 -mt-3 flex flex-shrink-0 items-center border-b border-gray-200 bg-white px-4 dark:border-dark-700 dark:bg-dark-800 sm:-mx-6 sm:-mt-4 sm:px-6;
+}
+
+.edit-account-tab {
+  @apply flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition-colors;
+}
+
+.edit-account-tab-active {
+  @apply border-primary-600 text-primary-600 dark:border-primary-400 dark:text-primary-400;
+}
+
+.edit-account-tab-inactive {
+  @apply border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300;
+}
+</style>

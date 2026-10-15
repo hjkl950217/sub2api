@@ -1,4 +1,4 @@
-// FORK: 「分组模型账号」页面文案（见 fork/CLAUDE.md 第 2.6c 节）
+// FORK: 「分组模型账号」页面文案（见 AGENTS.md 第 2.6c 节）
 export default {
   groupModelAccounts: {
     title: '分组模型账号',

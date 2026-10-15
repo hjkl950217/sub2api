@@ -297,7 +297,7 @@ import {
 import { adminAPI } from '@/api/admin'
 import type { AdminGroup } from '@/types'
 // FORK: 平台显示名统一走平台清单（catalog 驱动）。原来这里自己维护了一张硬编码 map，
-// 没有 ag_hub 这类二开平台，会回落成原始 id。锚点见 CLAUDE.md §2.26
+// 没有 ag_hub 这类二开平台，会回落成原始 id。锚点见 AGENTS.md §2.26
 import { platformLabel } from '@/utils/platformColors'
 
 const { t, te } = useI18n()

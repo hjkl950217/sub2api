@@ -147,7 +147,7 @@
 
 <script setup lang="ts">
 // FORK: 「分组模型账号」管理页。取代原先挂在 /custom/group-model-accounts 上的
-// 运行时 DOM 注入面板（见 fork/CLAUDE.md 第 2.6c 节）：真路由页随镜像发布，
+// 运行时 DOM 注入面板（见 AGENTS.md 第 2.6c 节）：真路由页随镜像发布，
 // 站点升级后不需要重建，也不受自定义页面 iframe 的 X-Frame-Options 限制。
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
