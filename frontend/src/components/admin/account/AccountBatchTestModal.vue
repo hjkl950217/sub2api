@@ -196,6 +196,16 @@
               >
                 {{ row.fingerprint.error }}
               </span>
+              <!-- FORK-ANCHOR: batch-test-fingerprint-ambiguous-hint (二开：库里的合并条目加提示)
+                   fpd 库里有些条目是两个模型合起来的（display_name 形如「a/b」），
+                   这种名字本身无法再细分，加个提示说明为什么名字是斜杠连着的。
+                   独立 v-if，不插进上面 done/error 那条链里。 -->
+              <span
+                v-if="row.fingerprint.status === 'done' && row.fingerprint.predictionName !== row.fingerprint.prediction"
+                class="shrink-0 cursor-help text-amber-500 dark:text-amber-400"
+                data-testid="batch-fingerprint-ambiguous-hint"
+                :title="t('admin.accounts.fingerprint.ambiguousHint')"
+              >ⓘ</span>
             </div>
 
             <!-- FORK-ANCHOR: batch-test-row-failure-line (二开：行级失败原因，展开与否都直接可见)
@@ -349,9 +359,17 @@ interface BatchRow {
 interface FingerprintRowState {
   status: 'idle' | 'running' | 'done' | 'error'
   predictionName: string
+  // FORK-ANCHOR: batch-test-fingerprint-ambiguous-field（二开：合并条目提示的判据）
+  // fpd 库里有些条目是两个模型合起来的，display_name 形如「a/b」而 model 只有「a」。
+  // 存下来跟 predictionName 比，不一样就说明是合并条目，加提示符号。
+  prediction: string
   probability: number
   error: string
   elapsedMs: number
+  // FORK-ANCHOR: batch-test-fingerprint-sample-progress（二开：逐行样本进度）
+  // 后端 SSE 推过来，用来显示「检测中(1/3)」。
+  samplesDone: number
+  samplesTotal: number
 }
 
 const props = defineProps<{
@@ -463,7 +481,12 @@ const fingerprintStatusClass = (state: FingerprintRowState) => {
 const fingerprintStatusLabel = (state: FingerprintRowState) => {
   if (state.status === 'done') return t('admin.accounts.fingerprint.done')
   if (state.status === 'error') return t('admin.accounts.fingerprint.failed')
-  if (state.status === 'running') return t('admin.accounts.fingerprint.running')
+  if (state.status === 'running') {
+    // 长空 2026-10-16：三个样本并发跑，显示「检测中(1/3)」让等待有进度感。
+    return state.samplesTotal > 0
+      ? t('admin.accounts.fingerprint.runningWithProgress', { done: state.samplesDone, total: state.samplesTotal })
+      : t('admin.accounts.fingerprint.running')
+  }
   return t('admin.accounts.fingerprint.idle')
 }
 
@@ -477,7 +500,7 @@ const startFingerprint = async () => {
   fingerprintStartedAt.clear()
   targets.forEach((row) => {
     fingerprintStartedAt.set(row.id, startedAt)
-    row.fingerprint = { status: 'running', predictionName: '', probability: 0, error: '', elapsedMs: 0 }
+    row.fingerprint = { status: 'running', predictionName: '', prediction: '', probability: 0, error: '', elapsedMs: 0, samplesDone: 0, samplesTotal: 0 }
   })
   startFingerprintTimer()
   await Promise.all(
@@ -487,16 +510,29 @@ const startFingerprint = async () => {
       try {
         // 真实检测：后端 exec lm-detector CLI。模型用该分组当前选中的那个；
         // 没选就交给后端从账号 model_mapping 里挑。
-        const report = await adminAPI.accounts.runFingerprint(row.id, selectedModels.value[row.platform] || undefined)
+        const report = await adminAPI.accounts.runFingerprint(
+          row.id,
+          selectedModels.value[row.platform] || undefined,
+          (completed, total) => {
+            // 只认当前这次检测的进度：重新发起时旧回调不能串进来。
+            if (runId === fingerprintRunId) {
+              row.fingerprint.samplesDone = completed
+              row.fingerprint.samplesTotal = total
+            }
+          }
+        )
         if (runId !== fingerprintRunId) return
         // 先从计时表里摘掉，再写入最终值，免得定时器把定格好的秒数又改回去。
         fingerprintStartedAt.delete(row.id)
         row.fingerprint = {
           status: 'done',
           predictionName: report.analysis.prediction_name,
+          prediction: report.analysis.prediction,
           probability: report.analysis.probability,
           error: '',
-          elapsedMs: Date.now() - rowStartedAt
+          elapsedMs: Date.now() - rowStartedAt,
+          samplesDone: 0,
+          samplesTotal: 0
         }
       } catch (error: unknown) {
         if (runId !== fingerprintRunId) return
@@ -507,9 +543,12 @@ const startFingerprint = async () => {
         row.fingerprint = {
           status: 'error',
           predictionName: '',
+          prediction: '',
           probability: 0,
           error: typeof message === 'string' && message ? message : t('common.unknownError'),
-          elapsedMs: Date.now() - rowStartedAt
+          elapsedMs: Date.now() - rowStartedAt,
+          samplesDone: 0,
+          samplesTotal: 0
         }
       }
     })
@@ -637,7 +676,7 @@ const loadPlan = async () => {
           protocols: (account.protocols || []).map((protocol) => ({ protocol, success: null, probing: false, error: '', body: '', expanded: false, firstByteMs: null, totalMs: null })),
           rowFailure: '',
           schedulable: account.schedulable,
-          fingerprint: { status: 'idle', predictionName: '', probability: 0, error: '', elapsedMs: 0 }
+          fingerprint: { status: 'idle', predictionName: '', prediction: '', probability: 0, error: '', elapsedMs: 0, samplesDone: 0, samplesTotal: 0 }
         })
       })
     })

@@ -18,6 +18,7 @@
 package service
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -74,6 +75,24 @@ const (
 // fetch 立刻变 200。注意 --dns-result-order=ipv4first 治不了这个，它照样会试 IPv6；
 // NODE_OPTIONS 也不认这个参数（不在白名单里），只能走命令行。
 var fingerprintNodeFlags = []string{"--no-network-family-autoselection"}
+
+// fingerprintSamplePattern 匹配 fpd 的进度行，形如：
+//
+//	[1/1] Sample 1: Failed (0/293) · HTTP 429: Upstream rate limit exceeded
+//	[1/1] Sample 2: Complete (321/321) · 12.3s
+//
+// 每个样本**收尾**时打一行（不论成败），所以「匹配到几行 = 处理完几个样本」。
+// 这是长空要的「检测中(1/3)」的唯一数据来源 —— fpd 在 --json 模式下只在最后
+// 吐一次完整 JSON，拿不到过程；只有 TUI 模式才有这些行（见 Detect 里的说明）。
+var fingerprintSamplePattern = regexp.MustCompile(`Sample\s+\d+:`)
+
+// FingerprintProgress 是检测过程中的进度快照。
+type FingerprintProgress struct {
+	// Completed 是已收尾的样本数（成功和失败都算）。
+	Completed int
+	// Total 是本轮样本总数（即 fingerprintProbeCount）。
+	Total int
+}
 
 // FingerprintReport 是 fpd 输出的裁剪版报告，字段与前端 fingerprintMock.ts 的
 // FingerprintReport 一一对应。刻意不带上游完整的 rounds / challenges / outputs
@@ -255,7 +274,7 @@ func (s *FingerprintService) GetFingerprintRuntime(ctx context.Context) Fingerpr
 // Detect 对单个账号跑一次指纹检测，返回裁剪版报告。
 //
 // 调用方负责并发控制；本方法内部还有一层信号量，防止批量场景把进程数打满。
-func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelID string) (*FingerprintReport, error) {
+func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelID string, onProgress func(FingerprintProgress)) (*FingerprintReport, error) {
 	if s == nil {
 		return nil, errors.New("模型指纹检测服务未启用")
 	}
@@ -291,15 +310,26 @@ func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelI
 		return nil, errors.New("该账号没有可用于指纹检测的模型，请在测试弹窗里选一个模型")
 	}
 
+	// 报告走 --output 文件而不是 --json：--json 只在最后吐一次完整 JSON，过程完全看不到；
+	// 去掉它之后 stdout 变成 TUI 文本，每个样本收尾打一行进度，正好用来数「检测中(1/3)」。
+	// （2026-10-16 容器内实测：不带 --json 时 --output 照常写出完整的 fpd-detection-v1 报告。）
+	reportFile, err := os.CreateTemp("", "fpd-report-*.json")
+	if err != nil {
+		return nil, fmt.Errorf("无法创建检测报告临时文件：%w", err)
+	}
+	reportPath := reportFile.Name()
+	_ = reportFile.Close()
+	defer func() { _ = os.Remove(reportPath) }()
+
 	scriptArgs := []string{
 		s.cliScript,
 		"-b", baseURL,
 		"-m", model,
 		"-a", apiFormat,
-		"--json",
 		"--count", fmt.Sprintf("%d", fingerprintProbeCount),
 		"--timeout", "120",
 		"--no-update-check",
+		"--output", reportPath,
 	}
 	if bankFile, ok := s.resolveBankFile(); ok {
 		scriptArgs = append(scriptArgs, "--bank", bankFile)
@@ -327,34 +357,58 @@ func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelI
 	// API key 走环境变量而不是命令行参数：命令行参数在 ps 输出里对同宿主其它进程可见。
 	cmd := exec.CommandContext(ctx, s.nodePath, nodeArgs...)
 	cmd.Env = cmdEnv
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
-	if err := cmd.Run(); err != nil {
-		// 退出码 1 既可能是「上游不通」，也可能是「有轮次没排上名」——两种情况下
-		// stdout 里都有合法 JSON，所以先尝试解析，解析不出来才按进程错误处理。
-		if report, parseErr := parseFingerprintReport(stdout.Bytes()); parseErr == nil {
-			return nil, fingerprintFailureError(stdout.Bytes(), report, stderr.String())
-		}
-		if ctx.Err() != nil {
-			return nil, errors.New("检测超时或已取消")
-		}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("无法读取 lm-detector 的输出：%w", err)
+	}
+	if err := cmd.Start(); err != nil {
 		return nil, fingerprintProcessError(err, stderr.String())
 	}
 
-	report, err := parseFingerprintReport(stdout.Bytes())
-	if err != nil {
-		return nil, err
+	// 边跑边数样本的收尾行并把进度回调出去。stdout 必须一路读到 EOF ——
+	// 中途停下来会让管道写满，把子进程卡死。
+	completed := 0
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
+	for scanner.Scan() {
+		if onProgress != nil && fingerprintSamplePattern.MatchString(scanner.Text()) {
+			completed++
+			if completed > fingerprintProbeCount {
+				completed = fingerprintProbeCount
+			}
+			onProgress(FingerprintProgress{Completed: completed, Total: fingerprintProbeCount})
+		}
 	}
+	runErr := cmd.Wait()
+
+	raw, readErr := os.ReadFile(reportPath)
+	if readErr != nil || len(bytes.TrimSpace(raw)) == 0 {
+		// 没写出报告 = 进程没跑到最后（起不来、被杀、超时）。
+		if ctx.Err() != nil {
+			return nil, errors.New("检测超时或已取消")
+		}
+		return nil, fingerprintProcessError(runErr, stderr.String())
+	}
+
+	report, parseErr := parseFingerprintReport(raw)
+	if parseErr != nil {
+		if runErr != nil {
+			return nil, fingerprintProcessError(runErr, stderr.String())
+		}
+		return nil, parseErr
+	}
+	// 退出码非 0 但报告合法：上游不通、或有轮次没排上名，原因在 rounds 里。
 	if report.ScoredRounds == 0 {
-		return nil, fingerprintFailureError(stdout.Bytes(), report, stderr.String())
+		return nil, fingerprintFailureError(raw, report, stderr.String())
 	}
 	return report, nil
 }
 
 // DetectWithTimeout 给 Detect 套一层默认超时，供 handler 直接调用。
-func (s *FingerprintService) DetectWithTimeout(ctx context.Context, accountID int64, modelID string) (*FingerprintReport, error) {
+func (s *FingerprintService) DetectWithTimeout(ctx context.Context, accountID int64, modelID string, onProgress func(FingerprintProgress)) (*FingerprintReport, error) {
 	runCtx, cancel := context.WithTimeout(ctx, fingerprintDefaultTimeout)
 	defer cancel()
 
@@ -365,7 +419,7 @@ func (s *FingerprintService) DetectWithTimeout(ctx context.Context, accountID in
 	case <-runCtx.Done():
 		return nil, errors.New("检测排队超时，请稍后重试")
 	}
-	return s.Detect(runCtx, accountID, modelID)
+	return s.Detect(runCtx, accountID, modelID, onProgress)
 }
 
 // resolveBankFile 返回运行期下载的样本库文件路径。

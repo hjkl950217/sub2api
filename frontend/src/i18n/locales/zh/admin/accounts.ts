@@ -349,10 +349,14 @@ export default {
         start: '开始检测',
         rerun: '重新检测',
         running: '检测中',
+        // FORK-ANCHOR: i18n-fingerprint-running-progress（二开：检测中带样本进度）
+        runningWithProgress: '检测中({done}/{total})',
         done: '已完成',
         failed: '检测失败',
         idle: '未检测',
         mostLikely: '最像',
+        // FORK-ANCHOR: i18n-fingerprint-ambiguous-hint（二开：库里合并条目的提示）
+        ambiguousHint: '检测库里这两个模型合为一个条目（名字用斜杠连着），本站的指纹方法分不开它们。',
         family: '家族',
         showAll: '展开全部 {count} 个',
         collapse: '收起',

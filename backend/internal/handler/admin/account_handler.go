@@ -1463,14 +1463,37 @@ func (h *AccountHandler) Fingerprint(c *gin.Context) {
 	// 允许空 body：不带 model_id 时后端自己挑一个。
 	_ = c.ShouldBindJSON(&req)
 
-	report, err := h.fingerprintService.DetectWithTimeout(c.Request.Context(), accountID, req.ModelID)
+	// 流式返回：先把每个样本的进度推给前端（「检测中(1/3)」），最后推结果或错误。
+	// 前端用 fetch 的 reader 逐事件读，和批量测试同一个套路。
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	flusher, _ := c.Writer.(http.Flusher)
+	sendEvent := func(payload any) {
+		raw, mErr := json.Marshal(payload)
+		if mErr != nil {
+			return
+		}
+		_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", raw)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+
+	report, err := h.fingerprintService.DetectWithTimeout(
+		c.Request.Context(), accountID, req.ModelID,
+		func(p service.FingerprintProgress) {
+			sendEvent(map[string]any{"type": "progress", "completed": p.Completed, "total": p.Total})
+		},
+	)
 	if err != nil {
 		// 这里的错误都是给管理员看的可读原因（账号不支持 / 没有可用模型 / 上游不通），
 		// 原样透出，前端直接显示在指纹行的错误区。
-		response.Error(c, http.StatusBadRequest, err.Error())
+		sendEvent(map[string]any{"type": "error", "message": err.Error()})
 		return
 	}
-	response.Success(c, report)
+	sendEvent(map[string]any{"type": "result", "report": report})
 }
 
 // RecoverState handles unified recovery of recoverable account runtime state.

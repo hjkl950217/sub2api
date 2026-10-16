@@ -3,7 +3,8 @@
  * Handles AI platform account management for administrators
  */
 
-import { apiClient } from '../client'
+import { apiClient, buildApiUrl } from '../client'
+import { ADMIN_UI_REQUEST_HEADER } from '../adminUIRequest'
 import type { OpenAIReferralRefreshResult, OpenAIReferralSendResult } from '@/types/openaiReferrals'
 import type {
   Account,
@@ -729,16 +730,82 @@ export interface FingerprintReport {
  * @param id - Account ID
  * @param modelId - 要检测的模型名；留空时后端从账号 model_mapping 里挑一个
  */
-export async function runFingerprint(id: number, modelId?: string): Promise<FingerprintReport> {
-  // apiClient 默认 30 秒超时，而真实检测要 30-180 秒（后端自己的上限是 300 秒）。
-  // 不单独放宽的话，请求会在 30 秒被前端掐断 —— 页面报错，后端却已经真跑了一轮、
-  // 真花了上游的钱。
-  const { data } = await apiClient.post<FingerprintReport>(
-    `/admin/accounts/${id}/fingerprint`,
-    { model_id: modelId ?? '' },
-    { timeout: 330000 }
-  )
-  return data
+export async function runFingerprint(
+  id: number,
+  modelId?: string,
+  onProgress?: (completed: number, total: number) => void
+): Promise<FingerprintReport> {
+  // 后端返回 text/event-stream：先逐条推 progress（每个样本收尾一条），最后推 result 或 error。
+  // 走 fetch 而不是 apiClient 是为了能边读边更新「检测中(1/3)」——axios 要等整个响应体读完。
+  // 超时不用管：后端自己是 300 秒封顶，这里跟着它的节奏走。
+  const response = await fetch(buildApiUrl(`/admin/accounts/${id}/fingerprint`), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
+      'Content-Type': 'application/json',
+      [ADMIN_UI_REQUEST_HEADER]: '1'
+    },
+    body: JSON.stringify({ model_id: modelId ?? '' })
+  })
+
+  if (!response.ok) {
+    // 走不到流的情况（401 未登录、503 服务未启用等），尽量把后端的 message 取出来。
+    const text = await response.text().catch(() => '')
+    let message = `HTTP ${response.status}`
+    try {
+      const parsed = JSON.parse(text) as { message?: unknown }
+      if (typeof parsed?.message === 'string' && parsed.message) message = parsed.message
+    } catch {
+      // 不是 JSON 就保留状态码兜底
+    }
+    throw new Error(message)
+  }
+
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error('无法读取检测进度流')
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let report: FingerprintReport | null = null
+  let errorMessage = ''
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    // SSE 事件之间用空行分隔，一条事件里可能有多个字段行，这里只认 data。
+    let sep = buffer.indexOf('\n\n')
+    while (sep >= 0) {
+      const chunk = buffer.slice(0, sep)
+      buffer = buffer.slice(sep + 2)
+      const dataLine = chunk.split('\n').find((line) => line.startsWith('data: '))
+      if (dataLine) {
+        try {
+          const payload = JSON.parse(dataLine.slice(6)) as {
+            type?: string
+            completed?: number
+            total?: number
+            message?: string
+            report?: FingerprintReport
+          }
+          if (payload.type === 'progress' && onProgress) {
+            onProgress(payload.completed ?? 0, payload.total ?? 0)
+          } else if (payload.type === 'result' && payload.report) {
+            report = payload.report
+          } else if (payload.type === 'error') {
+            errorMessage = payload.message || '检测失败'
+          }
+        } catch {
+          // 半条事件或坏数据，跳过继续读
+        }
+      }
+      sep = buffer.indexOf('\n\n')
+    }
+  }
+
+  if (errorMessage) throw new Error(errorMessage)
+  if (!report) throw new Error('检测没有返回结果')
+  return report
 }
 
 export interface SyncUpstreamModelsResult {

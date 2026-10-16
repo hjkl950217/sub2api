@@ -144,10 +144,15 @@ export default {
         start: 'Run',
         rerun: 'Re-run',
         running: 'Running',
+        // FORK-ANCHOR: i18n-fingerprint-running-progress（二开：检测中带样本进度）
+        runningWithProgress: 'Running ({done}/{total})',
         done: 'Done',
         failed: 'Failed',
         idle: 'Not run',
         mostLikely: 'Closest match',
+        // FORK-ANCHOR: i18n-fingerprint-ambiguous-hint（二开：库里合并条目的提示）
+        ambiguousHint:
+          'These two models share one entry in the reference bank (names joined by a slash), so the fingerprint method cannot tell them apart.',
         family: 'Family',
         showAll: 'Show all {count}',
         collapse: 'Collapse',

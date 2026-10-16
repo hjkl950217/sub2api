@@ -18,7 +18,13 @@
             <Icon name="play" size="md" class="text-white" :stroke-width="2" />
           </div>
           <div>
-            <div class="font-semibold text-gray-900 dark:text-gray-100">{{ account.name }}</div>
+            <div class="font-semibold text-gray-900 dark:text-gray-100">
+              {{ account.name }}
+              <!-- FORK-ANCHOR: test-modal-account-id (二开：账号名旁显示 ID，同名账号好区分) -->
+              <span class="ml-1 text-xs font-normal text-gray-400 dark:text-gray-500" data-testid="test-modal-account-id">
+                #{{ account.id }}
+              </span>
+            </div>
             <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
               <span
                 class="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium uppercase dark:bg-dark-500"
@@ -377,7 +383,7 @@
               >
                 {{ fingerprintStatusLabel }}
               </span>
-              <!-- 检测中途拿不到进度（fpd 只在结束时吐一次 JSON），只显示已用时长 -->
+              <!-- 进度从后端 SSE 推过来（每个样本收尾一条），时长是前端自己每秒刷 -->
               <span
                 v-if="fingerprintElapsedLabel"
                 class="shrink-0 text-[11px] text-gray-400"
@@ -419,6 +425,17 @@
                 <span class="text-sm font-semibold text-gray-900 dark:text-gray-100" data-testid="fingerprint-prediction">
                   {{ fingerprintReport.analysis.prediction_name }}
                 </span>
+                <!-- FORK-ANCHOR: fingerprint-ambiguous-hint (二开：库里的合并条目加提示)
+                     fpd 的库里有些条目是两个模型合起来的（display_name 形如「a/b」），
+                     这种名字本身无法再细分，加个提示说明为什么名字是斜杠连着的。
+                     判据用 prediction_name !== prediction，不靠「名字里有斜杠」——
+                     万一以后有模型自带斜杠，按斜杠判断会误报。 -->
+                <span
+                  v-if="fingerprintReport.analysis.prediction_name !== fingerprintReport.analysis.prediction"
+                  class="cursor-help text-xs text-amber-500 dark:text-amber-400"
+                  data-testid="fingerprint-ambiguous-hint"
+                  :title="t('admin.accounts.fingerprint.ambiguousHint')"
+                >ⓘ</span>
                 <span class="rounded bg-primary-50 px-1.5 py-0.5 text-[11px] font-medium text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">
                   {{ formatFingerprintPercent(fingerprintReport.analysis.probability) }}
                 </span>
@@ -438,6 +455,15 @@
                   <span class="w-36 shrink-0 truncate text-gray-700 dark:text-gray-200" :title="candidate.display_name">
                     {{ candidate.display_name }}
                   </span>
+                  <!-- FORK-ANCHOR: fingerprint-candidate-ambiguous-hint (二开：合并条目候选加提示，同上)
+                       testid 刻意不用 fingerprint-candidate- 前缀：现有断言按这个前缀数候选条数，
+                       带上会把提示算成一个候选。 -->
+                  <span
+                    v-if="candidate.display_name !== candidate.model"
+                    class="shrink-0 cursor-help text-amber-500 dark:text-amber-400"
+                    data-testid="fingerprint-ambig-candidate"
+                    :title="t('admin.accounts.fingerprint.ambiguousHint')"
+                  >ⓘ</span>
                   <span class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-600">
                     <span class="block h-full rounded-full bg-primary-500" :style="{ width: fingerprintBarWidth(candidate.probability) }"></span>
                   </span>
@@ -712,6 +738,9 @@ const fingerprintReport = ref<FingerprintReport | null>(null)
 const fingerprintError = ref('')
 const fingerprintElapsedMs = ref(0)
 const fingerprintShowAll = ref(false)
+// FORK-ANCHOR: test-modal-fingerprint-sample-progress (二开：检测中的样本进度)
+// 后端 exec fpd 时解析它的 TUI 进度行，逐条 SSE 推过来，用来显示「检测中(1/3)」。
+const fingerprintSamples = ref({ done: 0, total: 0 })
 const FINGERPRINT_TOP_N = 5
 let fingerprintTimer: ReturnType<typeof setInterval> | null = null
 // 用递增的 runId 作废掉上一次未完成的检测，避免连点两次后旧结果覆盖新结果
@@ -723,7 +752,11 @@ const fingerprintVisibleCandidates = computed(() => {
 })
 
 const fingerprintStatusLabel = computed(() => {
-  if (fingerprintStatus.value === 'running') return t('admin.accounts.fingerprint.running')
+  if (fingerprintStatus.value === 'running') {
+    // 长空 2026-10-16：三个样本并发跑，显示「检测中(1/3)」让等待有进度感。
+    const { done, total } = fingerprintSamples.value
+    return total > 0 ? t('admin.accounts.fingerprint.runningWithProgress', { done, total }) : t('admin.accounts.fingerprint.running')
+  }
   if (fingerprintStatus.value === 'done') return t('admin.accounts.fingerprint.done')
   if (fingerprintStatus.value === 'error') return t('admin.accounts.fingerprint.failed')
   return t('admin.accounts.fingerprint.idle')
@@ -779,6 +812,7 @@ const resetFingerprint = () => {
   fingerprintError.value = ''
   fingerprintElapsedMs.value = 0
   fingerprintShowAll.value = false
+  fingerprintSamples.value = { done: 0, total: 0 }
 }
 
 const runFingerprint = async () => {
@@ -790,6 +824,7 @@ const runFingerprint = async () => {
   fingerprintError.value = ''
   fingerprintElapsedMs.value = 0
   fingerprintShowAll.value = false
+  fingerprintSamples.value = { done: 0, total: 0 }
   const started = Date.now()
   fingerprintTimer = setInterval(() => {
     fingerprintElapsedMs.value = Date.now() - started
@@ -797,7 +832,14 @@ const runFingerprint = async () => {
   try {
     // 真实检测：后端 exec lm-detector CLI，一次约 30-180 秒。
     // 模型优先用当前下拉选中的那个 —— 那正是要验证「上游是不是真在提供它」的对象。
-    const report = await adminAPI.accounts.runFingerprint(props.account.id, selectedModelId.value || undefined)
+    const report = await adminAPI.accounts.runFingerprint(
+      props.account.id,
+      selectedModelId.value || undefined,
+      (completed, total) => {
+        // 只认当前这次检测的进度：连点两次时旧回调不能串进新结果。
+        if (runId === fingerprintRunId) fingerprintSamples.value = { done: completed, total }
+      }
+    )
     if (runId !== fingerprintRunId) return
     fingerprintReport.value = report
     fingerprintStatus.value = 'done'
