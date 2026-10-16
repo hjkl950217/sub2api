@@ -1178,7 +1178,29 @@ python -c "import yaml; yaml.safe_load(open('.github/workflows/release.yml', enc
 
 ## 7. 本机环境
 
-开发机**没有 Go、没有 Docker、没有 make、没有 WSL**，无法本地编译后端或构建镜像。后端改动的验证只能走 GitHub Actions。
+开发机**没有 Docker、没有 make、没有 WSL**，无法构建镜像——镜像只能走 GitHub Actions。
+
+Go 工具链装在 `工具/管理_sub2api/子任务/二开sub2api/临时文件/go/go/bin/go.exe`（1.27.0），能编译。
+用法与踩坑见子任务 `旧补丁/记录_20261003_国产供应商协议复选与兜底转发协议.md` 第 5 节。两条现状：
+
+- 上游 `backend/go.mod` 已要求 **go 1.27.2**，本机工具链是 1.27.0，必须把 `GOTOOLCHAIN` 设成 `auto`
+  让它自己把 1.27.2 拉到 `临时文件/gopath/pkg/mod/golang.org/toolchain@...`；设 `local` 直接报
+  `go.mod requires go >= 1.27.2`。
+- **后端测试在 CI 跑，不在本机跑**（长空 2026-10-16 定，理由是本机内存不够）。
+  本仓库 push/PR 触发的工作流从来不运行（CI / CLA Assistant / Security Scan 的运行数都是 0，
+  只有手动触发的 Release 有记录，根因未查到），所以用：
+  `gh workflow run backend-ci.yml -R hjkl950217/sub2api --ref main`，
+  里面会跑 `make test-unit`（`go test -tags=unit ./...`）+ `make test-integration` + golangci-lint。
+
+改 Go 代码前必须知道的格式坑（2026-10-16 踩过）：
+
+- **gofmt 要用 go1.27.2 那一份**：`临时文件/gopath/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.windows-amd64/bin/gofmt.exe`。
+  本机 1.27.0 的 gofmt 对齐与注释规则跟它不同，用它格式化出来的文件 CI 依然判不合格。
+- **本机工作区是 CRLF，CI 看到的是 LF**，直接对工作区跑 `gofmt -l` 会误报一批文件。
+  要判断 CI 会不会报，先把 HEAD 导成 LF 版再体检：
+  `git archive HEAD backend | tar -x -C <临时目录>`，然后对导出的树跑 gofmt。
+- gofmt 在仓库目录里**写不了临时文件**（`open <文件>.<随机数>: Access is denied`，本机沙箱拦新建）。
+  绕法：把文件复制到临时目录 → 在那边 `gofmt -w` → 再拷回仓库。
 
 本地能跑的是 `.github/release-tools/` 的 Python 单测：
 
