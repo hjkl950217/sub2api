@@ -370,6 +370,12 @@ func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelI
 	if err := cmd.Start(); err != nil {
 		return nil, fingerprintProcessError(err, "")
 	}
+	// 立刻报一条 0/N：前端一进检测中就能显示「检测中(0/3) 0.0s」。
+	// 否则在第一个样本收尾前只有一个不动的「检测中」，看着像卡住了 ——
+	// 长空注意到这一点：数字的变化负责表达进展，走动的秒数负责证明没卡死。
+	if onProgress != nil {
+		onProgress(FingerprintProgress{Completed: 0, Total: fingerprintProbeCount})
+	}
 
 	// 两个流都要读到 EOF，否则管道写满会把子进程卡死，所以并发读。
 	// 进度行在 **stderr** 上（2026-10-16 实测：stdout 只有 TUI 框线表头，
