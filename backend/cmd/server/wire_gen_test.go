@@ -101,6 +101,8 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // openAIAutoReset
 		nil, // promptAudit
 		nil, // pluginManager
+		// FORK-ANCHOR: cleanup-fingerprint-bank-test (二开：provideCleanup 多了样本库参数，这里跟着补 nil)
+		nil, // fingerprintBank
 	)
 
 	require.NotPanics(t, func() {

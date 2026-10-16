@@ -85,8 +85,6 @@ export default {
       deleteAccount: 'Delete Account',
       // FORK-ANCHOR: search-placeholder-id-en（搜索框范围已扩展到账号 ID）
       searchAccounts: 'Search name or ID...',
-      moreFilters: 'More filters',
-      moreFiltersActive: 'More filters ({count} active)',
       notes: 'Notes',
       notesPlaceholder: 'Enter notes',
       notesHint: 'Notes are optional',

@@ -3,6 +3,8 @@ name: CI
 on:
   push:
   pull_request:
+  # FORK-ANCHOR: ci-backend-manual-dispatch (二开：允许手动跑 CI——本仓库 push/PR 触发一直没生效，三个工作流运行数为 0)
+  workflow_dispatch:
 
 permissions:
   contents: read

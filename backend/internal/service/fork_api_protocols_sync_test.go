@@ -307,7 +307,7 @@ func TestForkConnectionPromptPayloadsUseCustomAndDefault(t *testing.T) {
 	require.Equal(t, defaultAccountTestPrompt, resolveAccountTestPrompt("  "))
 
 	antigravity := &AntigravityGatewayService{}
-	geminiBody, err := antigravity.buildGeminiTestRequest("project", "gemini-test", customPrompt)
+	geminiBody, err := antigravity.buildGeminiTestRequestWithPrompt("project", "gemini-test", customPrompt)
 	require.NoError(t, err)
 	require.Contains(t, string(geminiBody), customPrompt)
 	claudeBody, err := antigravity.buildClaudeTestRequest("project", "claude-test", customPrompt)
