@@ -265,6 +265,8 @@ export default {
         keyDeletedBadge: 'Key 已删除',
         account: '账号',
         accountId: '账号 ID',
+        accountSelectionFailed: '选号失败',
+        accountNotSelected: '未选号',
         status: '状态码',
         message: '响应内容',
         ip: 'IP',

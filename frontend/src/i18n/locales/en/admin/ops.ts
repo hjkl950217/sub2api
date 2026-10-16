@@ -265,6 +265,8 @@ export default {
         keyDeletedBadge: 'Key Deleted',
         account: 'Account',
         accountId: 'Account ID',
+        accountSelectionFailed: 'Selection failed',
+        accountNotSelected: 'Not selected',
         status: 'Status',
         message: 'Message',
         ip: 'IP',

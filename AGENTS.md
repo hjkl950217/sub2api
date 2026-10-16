@@ -46,7 +46,7 @@ git add AGENTS.md
   `-c core.quotepath=false` 不能省：中文文件名的路径会被 git 转义成八进制，`grep -v '\.md:'` 就匹配不上，会多算。
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **525 个** = 源码 510 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **589 个** = 源码 574 + `.github/` 15），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   其中 `.github/` 占 15 个，单独看：`git -c core.quotepath=false grep -o "FORK-ANCHOR:" -- .github | wc -l`。
 
 全量清单见 **`锚点清单.md`**：按文件分组列出每个锚点的名字，合并上游后照它逐条核对。
@@ -1060,6 +1060,32 @@ compose 带 `no-new-privileges`，运行期不能 apk add）。
   「库读不出来」，挡不住「库的语义变了」。真出问题的回退动作是删掉
   `/app/data/lm-detector/bank/`，检测会退回内置库。
 
+
+### 2.29 错误请求页「选号失败 / 未选号」+ 选号失败文案补原因（改上游文件，新增 7 个锚点）
+
+**长空 2026-10-16 定：先提交，随 0.2.17 一起发版。** 起因与量化证据见
+`工具/管理_sub2api/子任务/二开sub2api/临时文件/进度-错误请求账号列为空.md`。
+
+问题：使用记录→错误请求（`/admin/ops/errors`）近 30 天 1801 行里 1159 行（64%）账号列为空，
+前端一律显示 `-`。核查结论是**没丢数据**——这些行都是路由阶段就没选出账号；
+但兜底文案 `Service temporarily unavailable` 与真正的上游错误 `Upstream service temporarily
+unavailable` 只差一个词，被读成「某账号返回的上游错误」。
+
+| # | 文件 | 改动 | 锚点 |
+|---|---|---|---|
+| 1 | `backend/internal/handler/no_account_error.go` | 新增 `selectionFailureMessage()`：非 404 时把选号器错误文案（含模型名与 `pool=/filtered:` 原因计数）接在分类文案后；分类文案为空时只回原因；原因已在文案里不重复追加 | `fork-selection-failure-reason` |
+| 2 | `backend/internal/handler/openai_gateway_handler.go` | 2 处选号失败分支改用该函数（`Responses` 主路径、`Messages` 的 `/v1/messages` 路径） | `fork-selection-failure-reason` |
+| 3 | `frontend/src/views/admin/ops/components/OpsErrorLogTable.vue` | 账号列无账号时不再显示 `-`：`phase=routing` → 琥珀色「选号失败」，其余 → 灰色「未选号」 | `fork-missing-account-badge` |
+| 4 | `frontend/src/i18n/locales/{zh,en}/admin/ops.ts` | `errorLog.accountSelectionFailed` / `errorLog.accountNotSelected` | — |
+
+404「分组里没有账号配该模型」不接后缀：分类文案本身已把话说全，选号器统计没有增量信息。
+
+测试：`backend/internal/handler/fork_selection_failure_message_test.go`（6 用例，新建文件，带 `FORK:` 头）、
+`frontend/src/views/admin/ops/components/__tests__/OpsErrorLogTable.spec.ts`（+3 用例与 i18n 键断言）。
+
+**已知边界**：选号器只回裸错误 `no available accounts` 的行（近 30 天约 23 行），文案会是
+`Service temporarily unavailable (selection failure: no available accounts)`，后缀没有信息量；
+文案也只到「哪个模型、几个候选、为什么被排除」，不点名账号。要更准得让选号器把所有分支都带上统计。
 
 ## 3. 发版方式
 

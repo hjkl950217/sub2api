@@ -97,7 +97,12 @@
             class="text-sm text-gray-900 dark:text-white"
             :title="t('admin.ops.errorLog.accountId') + ' ' + row.account_id"
           >{{ row.account_name || '#' + row.account_id }}</span>
-          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+          <!-- FORK-ANCHOR: fork-missing-account-badge (二开：没账号的行显示「选号失败/未选号」，不留 '-' 混淆成丢数据) -->
+          <span
+            v-else
+            class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium"
+            :class="getMissingAccountBadge(row).className"
+          >{{ getMissingAccountBadge(row).label }}</span>
         </template>
 
         <template #cell-category="{ row }">
@@ -285,6 +290,22 @@ function getTypeBadge(log: OpsErrorLog): { label: string; className: string } {
 
   const fallback = phase || owner || t('common.unknown')
   return { label: fallback, className: 'bg-gray-100 text-gray-800 dark:bg-dark-700 dark:text-gray-200' }
+}
+
+// FORK-ANCHOR: fork-missing-account-badge (二开：没有账号的行的账号列文案)
+// 「选号失败」= 路由阶段就没选出账号（池子空/模型无账号支持）；
+// 「未选号」= 更早被拦下（用户并发限流、分组协议派发拒绝等），本来就没有账号。
+function getMissingAccountBadge(log: OpsErrorLog): { label: string; className: string } {
+  if (String(log.phase || '').toLowerCase() === 'routing') {
+    return {
+      label: t('admin.ops.errorLog.accountSelectionFailed'),
+      className: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
+    }
+  }
+  return {
+    label: t('admin.ops.errorLog.accountNotSelected'),
+    className: 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
+  }
 }
 
 interface Props {

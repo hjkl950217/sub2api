@@ -707,7 +707,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}
-				h.handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
+				// FORK-ANCHOR: fork-selection-failure-reason (二开：文案补上选号器给出的原因)
+				h.handleStreamingAwareError(c, cls.Status, cls.ErrType, selectionFailureMessage(cls, err), streamStarted)
 				return
 			}
 			if lastFailoverErr != nil {
@@ -1335,7 +1336,8 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					if !cls.ModelNotFound {
 						markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 					}
-					h.anthropicStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
+					// FORK-ANCHOR: fork-selection-failure-reason (二开：同上；/v1/messages 走这条)
+					h.anthropicStreamingAwareError(c, cls.Status, cls.ErrType, selectionFailureMessage(cls, err), streamStarted)
 					return
 				}
 			} else {

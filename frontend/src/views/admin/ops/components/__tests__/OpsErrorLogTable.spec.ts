@@ -75,6 +75,30 @@ describe('OpsErrorLogTable user/api-key/account columns', () => {
   })
 })
 
+// FORK-ANCHOR: fork-missing-account-badge (二开：没账号的行按阶段显示「选号失败/未选号」)
+describe('OpsErrorLogTable missing-account badge', () => {
+  it('shows the selection-failed badge for a routing failure', () => {
+    const wrapper = mountTable({ phase: 'routing', account_id: null, account_name: '' })
+
+    expect(wrapper.text()).toContain('admin.ops.errorLog.accountSelectionFailed')
+    expect(wrapper.text()).not.toContain('admin.ops.errorLog.accountNotSelected')
+  })
+
+  it('shows the not-selected badge for a request blocked before account selection', () => {
+    const wrapper = mountTable({ phase: 'request', error_owner: 'client', account_id: null, account_name: '' })
+
+    expect(wrapper.text()).toContain('admin.ops.errorLog.accountNotSelected')
+    expect(wrapper.text()).not.toContain('admin.ops.errorLog.accountSelectionFailed')
+  })
+
+  it('keeps showing the account name when the row has one', () => {
+    const wrapper = mountTable({ phase: 'routing', account_id: 9, account_name: 'acct-A' })
+
+    expect(wrapper.text()).toContain('acct-A')
+    expect(wrapper.text()).not.toContain('admin.ops.errorLog.accountSelectionFailed')
+  })
+})
+
 describe('OpsErrorLogTable column order', () => {
   it('puts time and response content first for ops without changing time sorting', async () => {
     const wrapper = mountTable({})
@@ -119,6 +143,9 @@ describe('OpsErrorLogTable i18n keys exist in the errorLog namespace', () => {
       const errorLog = msgs?.admin?.ops?.errorLog
       expect(errorLog?.apiKey).toBeTruthy()
       expect(errorLog?.keyDeletedBadge).toBeTruthy()
+      // FORK-ANCHOR: fork-missing-account-badge (二开：账号列两个新文案)
+      expect(errorLog?.accountSelectionFailed).toBeTruthy()
+      expect(errorLog?.accountNotSelected).toBeTruthy()
     })
   }
 })

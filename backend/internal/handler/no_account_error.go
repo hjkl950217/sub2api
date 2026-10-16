@@ -74,6 +74,32 @@ func classifySelectionFailureError(err error, fallback noAccountErrorClassificat
 	}
 }
 
+// selectionFailureMessage appends the selector's own reason to a
+// "no available accounts" verdict. The verdict text alone is ambiguous in the
+// ops error log: the 503 fallback reads "Service temporarily unavailable",
+// which differs from the real upstream message ("Upstream service temporarily
+// unavailable") by one word, so operators read a selection failure as an
+// upstream error served by some account. The selector already names the model
+// and counts why each candidate was dropped (e.g. "pool=21, filtered:
+// temp_unschedulable=1"); appending it keeps the deliberate verdict intact
+// (including the 429 rate-limit classification) and makes the row diagnosable.
+//
+// FORK-ANCHOR: fork-selection-failure-reason (二开：选号失败文案补上选号器给出的原因)
+func selectionFailureMessage(cls noAccountErrorClassification, err error) string {
+	// 404 是配置问题（分组里没有账号配该模型），分类文案已经把话说全，不接选号器统计。
+	if err == nil || cls.ModelNotFound {
+		return cls.Message
+	}
+	reason := strings.TrimSpace(err.Error())
+	if reason == "" || strings.Contains(cls.Message, reason) {
+		return cls.Message
+	}
+	if cls.Message == "" {
+		return reason
+	}
+	return cls.Message + " (selection failure: " + reason + ")"
+}
+
 // classifyNoAccountError decides between 404 model_not_found and 503
 // api_error for "no available accounts" failures.
 //
