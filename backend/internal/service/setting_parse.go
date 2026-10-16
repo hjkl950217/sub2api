@@ -55,22 +55,22 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 
 	// 初始化默认设置
 	defaults := map[string]string{
-		SettingKeyRegistrationEnabled:                       "true",
-		SettingKeyEmailVerifyEnabled:                        "false",
-		SettingKeyRegistrationEmailSuffixWhitelist:          "[]",
-		SettingKeyRegistrationEmailDomainQuotaEnabled:       "false",
-		SettingKeyPromoCodeEnabled:                          "true", // 默认启用优惠码功能
-		SettingKeyLoginAgreementEnabled:                     "false",
-		SettingKeyLoginAgreementMode:                        defaultLoginAgreementMode,
-		SettingKeyLoginAgreementUpdatedAt:                   defaultLoginAgreementDate,
-		SettingKeyLoginAgreementDocuments:                   loginAgreementDocumentsJSON,
-		SettingKeyAPIKeyACLTrustForwardedIP:                 "true",
-		SettingKeyForwardedClientIPHeaders:                  string(forwardedClientIPHeadersJSON),
-		settingKeyForwardedClientIPModeV2:                   "true",
-		SettingKeySiteName:                                  "Sub2API",
-		SettingKeySiteLogo:                                  "",
-		SettingKeyPurchaseSubscriptionEnabled:               "false",
-		SettingKeyPurchaseSubscriptionURL:                   "",
+		SettingKeyRegistrationEnabled:                 "true",
+		SettingKeyEmailVerifyEnabled:                  "false",
+		SettingKeyRegistrationEmailSuffixWhitelist:    "[]",
+		SettingKeyRegistrationEmailDomainQuotaEnabled: "false",
+		SettingKeyPromoCodeEnabled:                    "true", // 默认启用优惠码功能
+		SettingKeyLoginAgreementEnabled:               "false",
+		SettingKeyLoginAgreementMode:                  defaultLoginAgreementMode,
+		SettingKeyLoginAgreementUpdatedAt:             defaultLoginAgreementDate,
+		SettingKeyLoginAgreementDocuments:             loginAgreementDocumentsJSON,
+		SettingKeyAPIKeyACLTrustForwardedIP:           "true",
+		SettingKeyForwardedClientIPHeaders:            string(forwardedClientIPHeadersJSON),
+		settingKeyForwardedClientIPModeV2:             "true",
+		SettingKeySiteName:                            "Sub2API",
+		SettingKeySiteLogo:                            "",
+		SettingKeyPurchaseSubscriptionEnabled:         "false",
+		SettingKeyPurchaseSubscriptionURL:             "",
 		// FORK-ANCHOR: table-default-page-size-50 (二开：列表分页默认 50)
 		SettingKeyTableDefaultPageSize:                      "50",
 		SettingKeyTablePageSizeOptions:                      "[10,20,50,100]",

@@ -863,10 +863,10 @@ func TestBuildUpstreamModelsRequest_AggregateHub(t *testing.T) {
 	account := &Account{
 		ID: 1, Platform: PlatformAggregateHub, Type: AccountTypeAPIKey,
 		Credentials: map[string]any{
-			"api_key":          "sk-test",
-			"api_protocols":    []string{APIProtocolChatCompletions},
+			"api_key":           "sk-test",
+			"api_protocols":     []string{APIProtocolChatCompletions},
 			"fallback_protocol": APIProtocolChatCompletions,
-			"base_url":         "https://relay.example.com/v1",
+			"base_url":          "https://relay.example.com/v1",
 		},
 	}
 	req, err := svc.buildUpstreamModelsRequest(context.Background(), account)

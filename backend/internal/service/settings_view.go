@@ -165,15 +165,15 @@ type SystemSettings struct {
 	CustomMenuItems             string // JSON array of custom menu items
 	CustomEndpoints             string // JSON array of custom endpoints
 
-	DefaultConcurrency           int
-	DefaultBalance               float64
-	RiskControlEnabled           bool
-	CyberSessionBlockEnabled     bool
-	CyberPolicyUserAllowlist     string
-	CyberSessionBlockTTLSeconds  int
+	DefaultConcurrency          int
+	DefaultBalance              float64
+	RiskControlEnabled          bool
+	CyberSessionBlockEnabled    bool
+	CyberPolicyUserAllowlist    string
+	CyberSessionBlockTTLSeconds int
 	// FORK-ANCHOR: settings-view-fingerprint (二开：模型指纹检测开关与样本库更新时间点)
-	FingerprintEnabled        bool
-	FingerprintBankUpdateTime string
+	FingerprintEnabled           bool
+	FingerprintBankUpdateTime    string
 	AffiliateEnabled             bool
 	AffiliateRebateRate          float64
 	AffiliateRebateFreezeHours   int

@@ -30,9 +30,9 @@ var (
 	}
 	legacyCompositeMatchingPlatforms = legacySchedulerSnapshotPlatforms
 	// FORK-ANCHOR: test-platform-list-multiprotocol-include-ag-hub（同上：聚合中转有 provider profile，属多协议供应商）
-	legacyMultiProtocolProviders     = []string{PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformAggregateHub, PlatformCommandCode, PlatformCline}
-	platformProbeValues              = append(append([]string{}, legacyAllPlatforms...), PlatformComposite, "", "moonshot", "Kimi", "openai ", "glm", "bogus")
-	platformProbeAccountTypes        = []string{AccountTypeAPIKey, AccountTypeOAuth, AccountTypeSetupToken, AccountTypeUpstream, ""}
+	legacyMultiProtocolProviders = []string{PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformAggregateHub, PlatformCommandCode, PlatformCline}
+	platformProbeValues          = append(append([]string{}, legacyAllPlatforms...), PlatformComposite, "", "moonshot", "Kimi", "openai ", "glm", "bogus")
+	platformProbeAccountTypes    = []string{AccountTypeAPIKey, AccountTypeOAuth, AccountTypeSetupToken, AccountTypeUpstream, ""}
 )
 
 func legacyIsCNProvider(platform string) bool {

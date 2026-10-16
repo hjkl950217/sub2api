@@ -186,7 +186,9 @@ func TestForkOpenAIProtocolsSyncTestWritesBackPassedOnly(t *testing.T) {
 	svc, upstream, repo := protocolSyncTestService(account, protocolMatrixResponses(
 		func() *http.Response { return adaptiveCNChatTestResponse() },
 		nil,
-		func() *http.Response { return newJSONResponse(http.StatusBadRequest, `{"error":"no responses endpoint"}`) },
+		func() *http.Response {
+			return newJSONResponse(http.StatusBadRequest, `{"error":"no responses endpoint"}`)
+		},
 	))
 	c, recorder := newTestContext()
 
