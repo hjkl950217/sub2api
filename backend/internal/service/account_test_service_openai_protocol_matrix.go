@@ -89,6 +89,7 @@ func (s *AccountTestService) probeOpenAIAPIKeyProtocolsConnection(c *gin.Context
 	}
 
 	// 普通测试不改动账号，探测过程中的 SetError / SetRateLimited 也不该落库。
+	//nolint:govet // 只读探测副本：故意浅拷贝以替换 accountRepo，探测期间不并发使用 s 的 mutex
 	probeService := *s
 	if !syncProtocols && s.accountRepo != nil {
 		probeService.accountRepo = protocolProbeAccountRepository{AccountRepository: s.accountRepo}

@@ -143,11 +143,11 @@ type FingerprintCandidate struct {
 }
 
 type FingerprintDiagnostic struct {
-	Index                int  `json:"index"`
-	ParsedNumbers        int  `json:"parsed_numbers"`
-	MinimumNumbers       int  `json:"minimum_numbers"`
-	Accepted             bool `json:"accepted"`
-	RawOutOfRangeCount   int  `json:"raw_out_of_range_count"`
+	Index              int  `json:"index"`
+	ParsedNumbers      int  `json:"parsed_numbers"`
+	MinimumNumbers     int  `json:"minimum_numbers"`
+	Accepted           bool `json:"accepted"`
+	RawOutOfRangeCount int  `json:"raw_out_of_range_count"`
 }
 
 type FingerprintEvidence struct {
@@ -214,7 +214,7 @@ func NewFingerprintService(
 		accountRepo:    accountRepo,
 		settingService: settingService,
 		cfg:            cfg,
-		nodePath:        nodePath,
+		nodePath:       nodePath,
 		cliScript:      filepath.Join(cliDir, "bin", "fpd.js"),
 		bankDir:        bankDir,
 		sem:            make(chan struct{}, fingerprintMaxConcurrency),
@@ -394,8 +394,8 @@ func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelI
 		scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
 		for scanner.Scan() {
 			line := scanner.Text()
-			stderrBuf.WriteString(line)
-			stderrBuf.WriteByte('\n')
+			_, _ = stderrBuf.WriteString(line)
+			_ = stderrBuf.WriteByte('\n')
 			if onProgress != nil && fingerprintSamplePattern.MatchString(line) {
 				completed++
 				if completed > fingerprintProbeCount {

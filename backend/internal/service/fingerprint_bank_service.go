@@ -43,8 +43,6 @@ import (
 )
 
 const (
-	fingerprintBankJobName = "fingerprint_bank_sync"
-
 	// 样本库里两个必须成对的文件（官方文档明确要同目录同名）。
 	fingerprintBankDataFile     = "unified_bank.json"
 	fingerprintBankDetectorFile = "shared_detector.bin"

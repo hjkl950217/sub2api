@@ -3362,7 +3362,7 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 		}
 		if collector, ok := c.Get(accountTestContentContextKey); ok {
 			if builder, ok := collector.(*strings.Builder); ok {
-				builder.WriteString(event.Text)
+				_, _ = builder.WriteString(event.Text)
 			}
 		}
 		if suppress, ok := c.Get(accountTestSuppressContentContextKey); ok {
@@ -3378,9 +3378,9 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 		if collector, ok := c.Get(accountTestErrorContextKey); ok {
 			if builder, ok := collector.(*strings.Builder); ok {
 				if builder.Len() > 0 {
-					builder.WriteString("\n")
+					_, _ = builder.WriteString("\n")
 				}
-				builder.WriteString(event.Error)
+				_, _ = builder.WriteString(event.Error)
 			}
 		}
 	}

@@ -127,6 +127,7 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 			probeAccount.headerOverrideCacheRawPtr = 0
 			probeAccount.headerOverrideCacheRawLen = 0
 			probeAccount.headerOverrideCacheRawSig = 0
+			//nolint:govet // 只读探测副本：故意浅拷贝以替换 accountRepo，探测期间不并发使用 s 的 mutex
 			probeService := *s
 			if !syncProtocols {
 				probeService.accountRepo = protocolProbeAccountRepository{AccountRepository: s.accountRepo}

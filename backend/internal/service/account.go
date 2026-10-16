@@ -1540,8 +1540,10 @@ func (a *Account) SupportsNativeCNResponses() bool {
 
 // FORK-ANCHOR: fork-api-protocols-parse (二开：协议复选 + 兜底转发协议解析)
 // 二开新增两个凭据字段，与旧的 api_protocol 四选一正交：
-//   credentials["api_protocols"]       []string 该站实际支持的上游协议（复选，非空）
-//   credentials["fallback_protocol"]   string   入站协议不在勾选集合内时的兜底转发协议
+//
+//	credentials["api_protocols"]       []string 该站实际支持的上游协议（复选，非空）
+//	credentials["fallback_protocol"]   string   入站协议不在勾选集合内时的兜底转发协议
+//
 // 未配置 api_protocols 时下列方法一律返回"未配置"语义，调用方继续走旧的
 // api_protocol 逻辑，保证旧账号行为零变化。
 const (

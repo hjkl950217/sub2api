@@ -237,9 +237,9 @@ type batchTestWriter struct {
 	protocolFailures []string
 }
 
-func (w *batchTestWriter) Header() http.Header    { return http.Header{} }
-func (w *batchTestWriter) WriteHeader(int)         {}
-func (w *batchTestWriter) Flush()                  {}
+func (w *batchTestWriter) Header() http.Header { return http.Header{} }
+func (w *batchTestWriter) WriteHeader(int)     {}
+func (w *batchTestWriter) Flush()              {}
 
 func (w *batchTestWriter) Write(p []byte) (int, error) {
 	w.buffer = append(w.buffer, p...)
