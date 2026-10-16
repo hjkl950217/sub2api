@@ -61,6 +61,20 @@ const (
 	fingerprintProbeCount = 3
 )
 
+// fingerprintNodeFlags 是每次跑 CLI 都要带的 node 参数，必须放在脚本路径之前。
+//
+// --no-network-family-autoselection 不是可选项，缺了它公网账号一律检测失败
+// （2026-10-16 在 NAS 容器里实测定位）。Node 的 happy-eyeballs 会同时拨 IPv4 与
+// IPv6，容器没有 IPv6 出站，于是两个连接被一起判失败：
+//
+//	AggregateError ["connect ETIMEDOUT 40.160.138.155:443",
+//	                "connect ENETUNREACH 2604:2dc0:222::122b:443"]
+//
+// 而上游其实是通的 —— 同一个 IP，容器里 curl 直连返回 200。关掉自动选族后
+// fetch 立刻变 200。注意 --dns-result-order=ipv4first 治不了这个，它照样会试 IPv6；
+// NODE_OPTIONS 也不认这个参数（不在白名单里），只能走命令行。
+var fingerprintNodeFlags = []string{"--no-network-family-autoselection"}
+
 // FingerprintReport 是 fpd 输出的裁剪版报告，字段与前端 fingerprintMock.ts 的
 // FingerprintReport 一一对应。刻意不带上游完整的 rounds / challenges / outputs
 // （单次 60 KB，UI 不用），只留 UI 真正渲染的部分。
@@ -259,9 +273,14 @@ func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelI
 		return nil, fmt.Errorf("账号不存在：%w", err)
 	}
 
-	baseURL, apiKey, err := fingerprintCredentials(account)
+	apiKey, err := fingerprintAPIKey(account)
 	if err != nil {
 		return nil, err
+	}
+	// 协议与地址跟着账号自己声明的走，不按平台硬猜（见 fingerprintEndpoint）。
+	apiFormat, baseURL := fingerprintEndpoint(account)
+	if baseURL == "" {
+		return nil, errors.New("账号没有配置 base_url，无法检测")
 	}
 
 	model := strings.TrimSpace(modelID)
@@ -272,27 +291,42 @@ func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelI
 		return nil, errors.New("该账号没有可用于指纹检测的模型，请在测试弹窗里选一个模型")
 	}
 
-	args := []string{
+	scriptArgs := []string{
 		s.cliScript,
 		"-b", baseURL,
 		"-m", model,
-		"-a", fingerprintAPIFormat(account),
+		"-a", apiFormat,
 		"--json",
 		"--count", fmt.Sprintf("%d", fingerprintProbeCount),
 		"--timeout", "120",
 		"--no-update-check",
 	}
 	if bankFile, ok := s.resolveBankFile(); ok {
-		args = append(args, "--bank", bankFile)
+		scriptArgs = append(scriptArgs, "--bank", bankFile)
 	}
 
-	// API key 走环境变量而不是命令行参数：命令行参数在 ps 输出里对同宿主其它进程可见。
-	cmd := exec.CommandContext(ctx, s.nodePath, args...)
-	cmd.Env = append(os.Environ(),
+	// node 的开关必须排在脚本路径之前，否则会被当成脚本参数。
+	nodeArgs := make([]string, 0, len(fingerprintNodeFlags)+1+len(scriptArgs))
+	nodeArgs = append(nodeArgs, fingerprintNodeFlags...)
+
+	cmdEnv := append(os.Environ(),
 		"API_KEY="+apiKey,
 		"FPD_NO_UPDATE_CHECK=1",
 		"NO_UPDATE_NOTIFIER=1",
 	)
+	// 账号配了代理就走代理：fpd 自己没有代理参数，但 node 22 的 --use-env-proxy
+	// 会让 fetch 读 HTTPS_PROXY。不配代理时两个都不加，避免误吃宿主环境里
+	// 可能存在的代理变量。
+	proxyURL := fingerprintProxyURL(account)
+	if proxyURL != "" {
+		nodeArgs = append(nodeArgs, "--use-env-proxy")
+		cmdEnv = append(cmdEnv, "HTTPS_PROXY="+proxyURL, "HTTP_PROXY="+proxyURL)
+	}
+	nodeArgs = append(nodeArgs, scriptArgs...)
+
+	// API key 走环境变量而不是命令行参数：命令行参数在 ps 输出里对同宿主其它进程可见。
+	cmd := exec.CommandContext(ctx, s.nodePath, nodeArgs...)
+	cmd.Env = cmdEnv
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -353,26 +387,104 @@ func (s *FingerprintService) resolveBankFile() (string, bool) {
 	return bankFile, true
 }
 
-// fingerprintCredentials 取出 CLI 需要的 base_url 与 api_key。
+// fingerprintAPIKey 取出 CLI 需要的 api_key。
 //
 // 只支持 API Key 账号：OAuth（Claude Code / Gemini）、Bedrock/Vertex 云签名类账号
 // 没有 CLI 认得的 base_url + key 组合，直接给出可读的拒绝理由。
-func fingerprintCredentials(account *Account) (baseURL string, apiKey string, err error) {
+func fingerprintAPIKey(account *Account) (string, error) {
 	if account == nil {
-		return "", "", errors.New("账号不存在")
+		return "", errors.New("账号不存在")
 	}
 	if account.Type != AccountTypeAPIKey {
-		return "", "", errors.New("只有 API Key 账号能做指纹检测，OAuth 账号不支持")
+		return "", errors.New("只有 API Key 账号能做指纹检测，OAuth 账号不支持")
 	}
-	apiKey = strings.TrimSpace(account.GetCredential("api_key"))
+	apiKey := strings.TrimSpace(account.GetCredential("api_key"))
 	if apiKey == "" {
-		return "", "", errors.New("账号没有 API Key，无法检测")
+		return "", errors.New("账号没有 API Key，无法检测")
 	}
-	baseURL = normalizeFingerprintBaseURL(account.GetBaseURL())
-	if baseURL == "" {
-		return "", "", errors.New("账号没有配置 base_url，无法检测")
+	return apiKey, nil
+}
+
+// fingerprintEndpoint 挑出这次检测用的协议与上游地址，两者必须成对。
+//
+// 优先读账号自己声明的：credentials["api_protocols"] 是「这个账号实际支持哪些
+// 协议」，credentials["api_base_urls"] 是「各协议各自的地址」（多协议聚合平台会
+// 给不同协议配不同路径）。挑第一个 fpd 也认得的协议，并用它自己的地址 ——
+// 长空 2026-10-16 明确要求跟着账号配置走，不要按平台硬猜。
+//
+// 账号没有声明清单时退回 GetAPIProtocol() + GetBaseURL()，保持旧行为。
+func fingerprintEndpoint(account *Account) (apiFormat, baseURL string) {
+	if account == nil {
+		return "", ""
 	}
-	return baseURL, apiKey, nil
+	baseURLs := credentialStringMap(account, "api_base_urls")
+	for _, protocol := range credentialStringSlice(account, "api_protocols") {
+		format := fingerprintAPIFormatFor(protocol)
+		if format == "" {
+			continue
+		}
+		url := strings.TrimSpace(baseURLs[protocol])
+		if url == "" {
+			url = account.GetBaseURL()
+		}
+		if url = normalizeFingerprintBaseURL(url); url == "" {
+			continue
+		}
+		return format, url
+	}
+
+	format := fingerprintAPIFormat(account)
+	if format == "" {
+		return "", ""
+	}
+	return format, normalizeFingerprintBaseURL(account.GetBaseURL())
+}
+
+// fingerprintProxyURL 返回账号配的出口代理；没配返回空串。
+func fingerprintProxyURL(account *Account) string {
+	if account == nil || account.Proxy == nil {
+		return ""
+	}
+	return account.Proxy.URL()
+}
+
+// credentialStringSlice 读凭证里的字符串数组。
+// GetCredential 只认标量（数组落到 default 分支返回空串），所以这里看原始 map。
+func credentialStringSlice(account *Account, key string) []string {
+	if account == nil || account.Credentials == nil {
+		return nil
+	}
+	switch value := account.Credentials[key].(type) {
+	case []string:
+		return value
+	case []any:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			if text, ok := item.(string); ok {
+				out = append(out, text)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// credentialStringMap 读凭证里的字符串字典（如 api_base_urls）。
+func credentialStringMap(account *Account, key string) map[string]string {
+	if account == nil || account.Credentials == nil {
+		return nil
+	}
+	raw, ok := account.Credentials[key].(map[string]any)
+	if !ok {
+		return nil
+	}
+	out := make(map[string]string, len(raw))
+	for name, value := range raw {
+		if text, ok := value.(string); ok {
+			out[name] = text
+		}
+	}
+	return out
 }
 
 // fingerprintEndpointSuffix 匹配 base_url 尾部的完整端点路径。
@@ -391,26 +503,34 @@ func normalizeFingerprintBaseURL(raw string) string {
 	return strings.TrimRight(trimmed, "/")
 }
 
-// fingerprintAPIFormat 把 sub2api 的协议标识翻译成 fpd 的 -a 取值。
+// fingerprintAPIFormat 按账号当前协议推一个 fpd 的 -a 取值。
+// 只在账号没声明 api_protocols 时用作兜底（见 fingerprintEndpoint）。
 func fingerprintAPIFormat(account *Account) string {
 	if account == nil {
 		return "chatcompletion"
 	}
-	switch account.GetAPIProtocol() {
+	if format := fingerprintAPIFormatFor(account.GetAPIProtocol()); format != "" {
+		return format
+	}
+	// adaptive（按模型分流）没有单一协议。Anthropic 系账号走 message，
+	// 其余（聚合中转八成是 OpenAI 兼容）走 chatcompletion。
+	if account.Platform == PlatformAnthropic {
+		return "message"
+	}
+	return "chatcompletion"
+}
+
+// fingerprintAPIFormatFor 是 sub2api 协议标识到 fpd 取值的映射；不认得返回空串。
+func fingerprintAPIFormatFor(protocol string) string {
+	switch protocol {
 	case APIProtocolAnthropic:
 		return "message"
 	case APIProtocolResponses:
 		return "responses"
 	case APIProtocolChatCompletions:
 		return "chatcompletion"
-	default:
-		// adaptive（按模型分流）没有单一协议。Anthropic 系账号走 message，
-		// 其余（聚合中转八成是 OpenAI 兼容）走 chatcompletion。
-		if account.Platform == PlatformAnthropic {
-			return "message"
-		}
-		return "chatcompletion"
 	}
+	return ""
 }
 
 // fingerprintDefaultModel 在调用方没指定模型时挑一个。

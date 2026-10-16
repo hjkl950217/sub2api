@@ -172,6 +172,16 @@
               <span class="shrink-0 text-[11px]" :class="fingerprintStatusClass(row.fingerprint)">
                 {{ fingerprintStatusLabel(row.fingerprint) }}
               </span>
+              <!-- FORK-ANCHOR: batch-test-fingerprint-elapsed (二开：逐行显示执行时长)
+                   单个账号弹窗一直有，这里补上；跑完保留最终秒数（不归零）。
+                   按状态而不是 elapsedMs>0 判断：秒级以下的检测会算出 0，那种也该显示。 -->
+              <span
+                v-if="row.fingerprint.status !== 'idle'"
+                class="shrink-0 text-[11px] text-gray-400"
+                :data-testid="`batch-fingerprint-elapsed-${row.id}`"
+              >
+                {{ (row.fingerprint.elapsedMs / 1000).toFixed(1) }}s
+              </span>
               <span
                 v-if="row.fingerprint.status === 'done'"
                 class="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-300"
@@ -276,7 +286,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
@@ -334,11 +344,14 @@ interface BatchRow {
 }
 
 // FORK: 单行指纹检测状态。idle = 没跑过，行里不显示任何东西。
+// FORK-ANCHOR: batch-test-fingerprint-timing-field（二开：逐行记录执行时长）
+// elapsedMs 在检测中每 100ms 刷新一次，结束后定格在最终耗时（完事也显示）。
 interface FingerprintRowState {
   status: 'idle' | 'running' | 'done' | 'error'
   predictionName: string
   probability: number
   error: string
+  elapsedMs: number
 }
 
 const props = defineProps<{
@@ -404,6 +417,34 @@ const fingerprintRunning = ref(false)
 const fingerprintTargets = computed(() => rows.value.filter((row) => row.eligible))
 let fingerprintRunId = 0
 
+// FORK-ANCHOR: batch-test-fingerprint-timing (二开：批量指纹逐行显示执行时长)
+// 单个账号弹窗一直显示耗时，批量这边之前没有；长空 2026-10-16 要求补上，且跑完
+// 保留最终秒数。每行记各自的开始时刻：批量是并发发起的，完成时间差得远，
+// 共用一个基准会把先完成的那些算长。格式沿用单个账号弹窗（0.1s 一位小数）。
+const fingerprintStartedAt = new Map<number, number>()
+let fingerprintTimer: ReturnType<typeof setInterval> | null = null
+
+const stopFingerprintTimer = () => {
+  if (fingerprintTimer) {
+    clearInterval(fingerprintTimer)
+    fingerprintTimer = null
+  }
+}
+
+const startFingerprintTimer = () => {
+  stopFingerprintTimer()
+  fingerprintTimer = setInterval(() => {
+    const now = Date.now()
+    rows.value.forEach((row) => {
+      const startedAt = fingerprintStartedAt.get(row.id)
+      if (startedAt) row.fingerprint.elapsedMs = now - startedAt
+    })
+  }, 100)
+}
+
+// 关弹窗时别把定时器留下（批量最长能跑几分钟）。
+onUnmounted(stopFingerprintTimer)
+
 const fingerprintClass = (state: FingerprintRowState) => {
   if (state.status === 'done') return 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
   if (state.status === 'error') return 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
@@ -432,24 +473,34 @@ const startFingerprint = async () => {
   if (!targets.length) return
   const runId = ++fingerprintRunId
   fingerprintRunning.value = true
+  const startedAt = Date.now()
+  fingerprintStartedAt.clear()
   targets.forEach((row) => {
-    row.fingerprint = { status: 'running', predictionName: '', probability: 0, error: '' }
+    fingerprintStartedAt.set(row.id, startedAt)
+    row.fingerprint = { status: 'running', predictionName: '', probability: 0, error: '', elapsedMs: 0 }
   })
+  startFingerprintTimer()
   await Promise.all(
     targets.map(async (row) => {
+      // 每行自己的开始时刻：批量是并发发起、完成时间差得远，不能共用一个基准。
+      const rowStartedAt = fingerprintStartedAt.get(row.id) ?? startedAt
       try {
         // 真实检测：后端 exec lm-detector CLI。模型用该分组当前选中的那个；
         // 没选就交给后端从账号 model_mapping 里挑。
         const report = await adminAPI.accounts.runFingerprint(row.id, selectedModels.value[row.platform] || undefined)
         if (runId !== fingerprintRunId) return
+        // 先从计时表里摘掉，再写入最终值，免得定时器把定格好的秒数又改回去。
+        fingerprintStartedAt.delete(row.id)
         row.fingerprint = {
           status: 'done',
           predictionName: report.analysis.prediction_name,
           probability: report.analysis.probability,
-          error: ''
+          error: '',
+          elapsedMs: Date.now() - rowStartedAt
         }
       } catch (error: unknown) {
         if (runId !== fingerprintRunId) return
+        fingerprintStartedAt.delete(row.id)
         // 同 AccountTestModal：拦截器 reject 的是普通对象不是 Error，必须直接读 message，
         // 否则后端的中文失败原因会被兜底文案盖掉。
         const message = (error as { message?: unknown } | null)?.message
@@ -457,12 +508,16 @@ const startFingerprint = async () => {
           status: 'error',
           predictionName: '',
           probability: 0,
-          error: typeof message === 'string' && message ? message : t('common.unknownError')
+          error: typeof message === 'string' && message ? message : t('common.unknownError'),
+          elapsedMs: Date.now() - rowStartedAt
         }
       }
     })
   )
-  if (runId === fingerprintRunId) fingerprintRunning.value = false
+  if (runId === fingerprintRunId) {
+    fingerprintRunning.value = false
+    stopFingerprintTimer()
+  }
 }
 
 // FORK-ANCHOR: batch-test-protocol-four-state (二开：协议标签四态——未测灰、测试中黄、通过绿、失败红)
@@ -582,7 +637,7 @@ const loadPlan = async () => {
           protocols: (account.protocols || []).map((protocol) => ({ protocol, success: null, probing: false, error: '', body: '', expanded: false, firstByteMs: null, totalMs: null })),
           rowFailure: '',
           schedulable: account.schedulable,
-          fingerprint: { status: 'idle', predictionName: '', probability: 0, error: '' }
+          fingerprint: { status: 'idle', predictionName: '', probability: 0, error: '', elapsedMs: 0 }
         })
       })
     })

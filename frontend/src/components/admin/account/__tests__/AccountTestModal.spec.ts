@@ -438,6 +438,27 @@ describe('AccountTestModal', () => {
     expect(wrapper.text()).toContain('[anthropic] admin.accounts.protocolProbeErrorLabel401 invalid api key')
   })
 
+  // 长空 2026-10-16 定：协议卡片按 chat → responses → anthropic 展示。
+  it('协议卡片按 chat、responses、anthropic 的顺序排列', async () => {
+    const wrapper = mountModal({
+      id: 7,
+      name: 'DeepSeek',
+      platform: 'deepseek',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect(
+      wrapper.findAll('[data-testid^="protocol-result-"]').map((node) => node.attributes('data-testid'))
+    ).toEqual([
+      'protocol-result-chat_completions',
+      'protocol-result-responses',
+      'protocol-result-anthropic'
+    ])
+  })
+
   // FORK-ANCHOR: test-modal-protocol-placeholder-spec (二开：打开弹窗就显示灰色协议占位)
   it('打开弹窗就显示“协议测试结果”，三个协议都是灰色未测试，测完才变色', async () => {
     global.fetch = vi.fn().mockResolvedValue(

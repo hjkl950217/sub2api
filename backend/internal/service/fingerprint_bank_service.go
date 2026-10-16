@@ -504,13 +504,17 @@ func (s *FingerprintBankService) selfCheck(ctx context.Context, stagingDir strin
 	checkCtx, cancel := context.WithTimeout(ctx, fingerprintBankSelfCheckTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(checkCtx, s.nodePath,
+	// 自检虽是离线重放，也用同一套 node 启动参数，避免两条路径行为分叉
+	// （见 fingerprintNodeFlags 里那条自动选族的说明）。
+	args := append([]string{}, fingerprintNodeFlags...)
+	args = append(args,
 		s.cliScript,
 		"--input", probePath,
 		"--json",
 		"--no-update-check",
 		"--bank", filepath.Join(stagingDir, fingerprintBankDataFile),
 	)
+	cmd := exec.CommandContext(checkCtx, s.nodePath, args...)
 	cmd.Env = append(os.Environ(), "FPD_NO_UPDATE_CHECK=1", "NO_UPDATE_NOTIFIER=1")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

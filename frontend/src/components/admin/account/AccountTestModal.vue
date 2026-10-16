@@ -622,8 +622,10 @@ const protocolResults = ref<ProtocolProbeResult[]>([])
 const expectedProtocolCount = computed(() => (props.account?.platform === 'openai' ? 2 : 3))
 // FORK-ANCHOR: test-modal-protocol-placeholders (二开：打开弹窗就按平台铺好灰色协议占位)
 // 协议清单与顺序对齐后端协议矩阵（cnProtocolProbeOrder / openaiAPIKeyProtocolProbeOrder）：
-// 国产三家是 chat_completions / anthropic / responses，openai API Key 是前两个。
-const CN_PROTOCOL_PROBE_ORDER = ['chat_completions', 'anthropic', 'responses']
+// 国产三家按「chat → responses → anthropic」展示（长空 2026-10-16 定），
+// openai API Key 是前两个。
+// 只改这里的展示顺序：后端 cnProtocolProbeOrder 还兼着兜底优先级，不动它。
+const CN_PROTOCOL_PROBE_ORDER = ['chat_completions', 'responses', 'anthropic']
 const OPENAI_PROTOCOL_PROBE_ORDER = ['chat_completions', 'responses']
 // 只有会跑协议矩阵的账号才铺占位，其他平台保持原样（面板不显示）。
 const protocolPlaceholderOrder = computed(() => {

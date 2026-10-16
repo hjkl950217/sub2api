@@ -658,4 +658,20 @@ describe('AccountBatchTestModal 批量指纹检测', () => {
 
     expect(wrapper.get('[data-testid="batch-fingerprint-1"]').text()).toContain('上游没有返回可用的样本')
   })
+
+  // 长空 2026-10-16 要求：批量指纹也要显示执行时长，且跑完保留秒数。
+  it('检测完成后逐行保留执行时长', async () => {
+    runFingerprint.mockResolvedValue(FINGERPRINT_SAMPLE)
+    const wrapper = mountModal({ show: false, accountIds: [1, 2] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="batch-fingerprint-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="batch-fingerprint-elapsed-1"]').text()).toMatch(/^\d+\.\d+s$/)
+    expect(wrapper.get('[data-testid="batch-fingerprint-elapsed-2"]').text()).toMatch(/^\d+\.\d+s$/)
+    // 没跑过的行不该出现耗时
+    expect(wrapper.find('[data-testid="batch-fingerprint-elapsed-3"]').exists()).toBe(false)
+  })
 })
