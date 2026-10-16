@@ -730,9 +730,14 @@ export interface FingerprintReport {
  * @param modelId - 要检测的模型名；留空时后端从账号 model_mapping 里挑一个
  */
 export async function runFingerprint(id: number, modelId?: string): Promise<FingerprintReport> {
-  const { data } = await apiClient.post<FingerprintReport>(`/admin/accounts/${id}/fingerprint`, {
-    model_id: modelId ?? ''
-  })
+  // apiClient 默认 30 秒超时，而真实检测要 30-180 秒（后端自己的上限是 300 秒）。
+  // 不单独放宽的话，请求会在 30 秒被前端掐断 —— 页面报错，后端却已经真跑了一轮、
+  // 真花了上游的钱。
+  const { data } = await apiClient.post<FingerprintReport>(
+    `/admin/accounts/${id}/fingerprint`,
+    { model_id: modelId ?? '' },
+    { timeout: 330000 }
+  )
   return data
 }
 

@@ -450,11 +450,14 @@ const startFingerprint = async () => {
         }
       } catch (error: unknown) {
         if (runId !== fingerprintRunId) return
+        // 同 AccountTestModal：拦截器 reject 的是普通对象不是 Error，必须直接读 message，
+        // 否则后端的中文失败原因会被兜底文案盖掉。
+        const message = (error as { message?: unknown } | null)?.message
         row.fingerprint = {
           status: 'error',
           predictionName: '',
           probability: 0,
-          error: error instanceof Error ? error.message : t('common.unknownError')
+          error: typeof message === 'string' && message ? message : t('common.unknownError')
         }
       }
     })

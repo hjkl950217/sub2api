@@ -801,7 +801,11 @@ const runFingerprint = async () => {
     fingerprintStatus.value = 'done'
   } catch (error: unknown) {
     if (runId !== fingerprintRunId) return
-    fingerprintError.value = error instanceof Error ? error.message : t('common.unknownError')
+    // client.ts 的响应拦截器 reject 的是 {status, code, message} 普通对象，不是 Error
+    // 实例。只判断 instanceof Error 的话，后端给的可读原因（账号不支持 / 没有可用模型 /
+    // 上游不通）会被兜底文案盖掉，只剩「发生未知错误」。
+    const message = (error as { message?: unknown } | null)?.message
+    fingerprintError.value = typeof message === 'string' && message ? message : t('common.unknownError')
     fingerprintStatus.value = 'error'
   } finally {
     if (runId === fingerprintRunId) {

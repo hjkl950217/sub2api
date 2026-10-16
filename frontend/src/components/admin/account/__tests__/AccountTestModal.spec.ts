@@ -723,6 +723,32 @@ describe('AccountTestModal 模型指纹测试', () => {
     expect(wrapper.find('[data-testid="fingerprint-conclusion"]').exists()).toBe(true)
   })
 
+  // 回归：client.ts 的响应拦截器 reject 的是 {status, code, message} 普通对象，不是
+  // Error 实例。早先这里只判断 instanceof Error，导致后端给的中文原因被「发生未知错误」盖掉。
+  it('后端返回的可读失败原因直接显示，不被兜底文案盖掉', async () => {
+    runFingerprint.mockRejectedValueOnce({
+      status: 400,
+      code: 400,
+      message: '该账号没有配置 base_url，无法检测'
+    })
+    const wrapper = await open()
+
+    await wrapper.get('[data-testid="fingerprint-run-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="fingerprint-error"]').text()).toBe('该账号没有配置 base_url，无法检测')
+  })
+
+  it('连 message 都拿不到时才回落到兜底文案', async () => {
+    runFingerprint.mockRejectedValueOnce({})
+    const wrapper = await open()
+
+    await wrapper.get('[data-testid="fingerprint-run-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="fingerprint-error"]').text()).toBe('common.unknownError')
+  })
+
   it('候选默认只显示 5 个，展开后是参考库全部 59 个', async () => {
     runFingerprint.mockResolvedValue(FINGERPRINT_SAMPLE)
     const wrapper = await open()

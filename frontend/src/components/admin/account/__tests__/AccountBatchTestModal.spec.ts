@@ -644,4 +644,18 @@ describe('AccountBatchTestModal 批量指纹检测', () => {
     expect(wrapper.get('[data-testid="batch-fingerprint-result-1"]').text()).toBe('mimo-v2.5 · 46.7%')
     expect(wrapper.get('[data-testid="batch-fingerprint-result-2"]').text()).toBe('mimo-v2.5 · 46.7%')
   })
+
+  // 回归：client.ts 的拦截器 reject 的是普通对象不是 Error，原先只判断 instanceof Error，
+  // 后端给的中文原因会被「发生未知错误」盖掉。
+  it('检测失败时把后端给的原因显示在行里', async () => {
+    runFingerprint.mockRejectedValue({ status: 400, code: 400, message: '上游没有返回可用的样本' })
+    const wrapper = mountModal({ show: false, accountIds: [1, 2] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="batch-fingerprint-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="batch-fingerprint-1"]').text()).toContain('上游没有返回可用的样本')
+  })
 })
