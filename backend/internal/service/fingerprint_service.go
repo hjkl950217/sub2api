@@ -24,12 +24,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -357,31 +359,49 @@ func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelI
 	// API key 走环境变量而不是命令行参数：命令行参数在 ps 输出里对同宿主其它进程可见。
 	cmd := exec.CommandContext(ctx, s.nodePath, nodeArgs...)
 	cmd.Env = cmdEnv
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("无法读取 lm-detector 的输出：%w", err)
 	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, fmt.Errorf("无法读取 lm-detector 的错误输出：%w", err)
+	}
 	if err := cmd.Start(); err != nil {
-		return nil, fingerprintProcessError(err, stderr.String())
+		return nil, fingerprintProcessError(err, "")
 	}
 
-	// 边跑边数样本的收尾行并把进度回调出去。stdout 必须一路读到 EOF ——
-	// 中途停下来会让管道写满，把子进程卡死。
-	completed := 0
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
-	for scanner.Scan() {
-		if onProgress != nil && fingerprintSamplePattern.MatchString(scanner.Text()) {
-			completed++
-			if completed > fingerprintProbeCount {
-				completed = fingerprintProbeCount
+	// 两个流都要读到 EOF，否则管道写满会把子进程卡死，所以并发读。
+	// 进度行在 **stderr** 上（2026-10-16 实测：stdout 只有 TUI 框线表头，
+	// 3 个 Sample 行全在 stderr），所以进度从 stderr 里数，stdout 直接丢掉。
+	var stderrBuf bytes.Buffer
+	var completed int
+	var readers sync.WaitGroup
+	readers.Add(2)
+	go func() {
+		defer readers.Done()
+		_, _ = io.Copy(io.Discard, stdout)
+	}()
+	go func() {
+		defer readers.Done()
+		scanner := bufio.NewScanner(stderrPipe)
+		scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+			stderrBuf.WriteString(line)
+			stderrBuf.WriteByte('\n')
+			if onProgress != nil && fingerprintSamplePattern.MatchString(line) {
+				completed++
+				if completed > fingerprintProbeCount {
+					completed = fingerprintProbeCount
+				}
+				onProgress(FingerprintProgress{Completed: completed, Total: fingerprintProbeCount})
 			}
-			onProgress(FingerprintProgress{Completed: completed, Total: fingerprintProbeCount})
 		}
-	}
+	}()
+	// 先等两个 reader 读完（进程结束时管道自动关闭），再 Wait 收退出码。
+	// 反过来的话 Wait 会提前关掉管道，读端拿到 ErrClosedPipe。
+	readers.Wait()
 	runErr := cmd.Wait()
 
 	raw, readErr := os.ReadFile(reportPath)
@@ -390,19 +410,19 @@ func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelI
 		if ctx.Err() != nil {
 			return nil, errors.New("检测超时或已取消")
 		}
-		return nil, fingerprintProcessError(runErr, stderr.String())
+		return nil, fingerprintProcessError(runErr, stderrBuf.String())
 	}
 
 	report, parseErr := parseFingerprintReport(raw)
 	if parseErr != nil {
 		if runErr != nil {
-			return nil, fingerprintProcessError(runErr, stderr.String())
+			return nil, fingerprintProcessError(runErr, stderrBuf.String())
 		}
 		return nil, parseErr
 	}
 	// 退出码非 0 但报告合法：上游不通、或有轮次没排上名，原因在 rounds 里。
 	if report.ScoredRounds == 0 {
-		return nil, fingerprintFailureError(raw, report, stderr.String())
+		return nil, fingerprintFailureError(raw, report, stderrBuf.String())
 	}
 	return report, nil
 }
