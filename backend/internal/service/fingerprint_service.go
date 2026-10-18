@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +36,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 )
 
 const (
@@ -62,7 +64,56 @@ const (
 	// fingerprintProbeCount 是 fpd 每轮生成的样本数。少于 3 就没有置信度，
 	// 保持默认值 3，不暴露给前端。
 	fingerprintProbeCount = 3
+
+	// fingerprintHeadersEnv 是传给 fpd 进程的额外请求头（JSON）。
+	fingerprintHeadersEnv = "SUB2API_FPD_HEADERS"
 )
+
+// fingerprintPreloadScript 用 node --require 在 fpd 进程里包一层 fetch，
+// 把 SUB2API_FPD_HEADERS 里的头合并进每个请求。
+//
+// 为什么需要它：fpd 只发协议必需的头（anthropic 是 x-api-key + version），
+// 不少中转站按客户端身份拦截。2026-10-18 实测账号 3304 的上游：
+// node 默认 UA → 401 unauthorized client detected；换成 claude-cli/... → 200。
+// 单账号测试本来就带 claude.DefaultHeaders() / Codex 身份头，指纹测试没带。
+const fingerprintPreloadScript = `const extra = JSON.parse(process.env.SUB2API_FPD_HEADERS || "{}");
+if (Object.keys(extra).length > 0 && typeof globalThis.fetch === "function") {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (input, init = {}) => {
+    const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
+    for (const [name, value] of Object.entries(extra)) headers.set(name, value);
+    return originalFetch(input, { ...init, headers });
+  };
+}
+`
+
+// fingerprintExtraHeaders 复用单账号测试的出站身份头：
+//   - message：claude.DefaultHeaders() + API-key 的 anthropic-beta；
+//   - responses：Codex 探测身份头（UA / originator / version / OpenAI-Beta）；
+//   - chatcompletion：与单账号测试一致，不加额外头。
+//
+// 最后叠加账号的请求头覆写，优先级与真实转发相同（覆写最后生效）。
+func fingerprintExtraHeaders(account *Account, apiFormat string) map[string]string {
+	headers := make(http.Header)
+	switch apiFormat {
+	case "message":
+		for key, value := range claude.DefaultHeaders() {
+			headers.Set(key, value)
+		}
+		headers.Set("anthropic-beta", claude.APIKeyBetaHeader)
+	case "responses":
+		applyOpenAICodexProbeHeaders(headers)
+	}
+	account.ApplyHeaderOverrides(headers)
+
+	out := make(map[string]string, len(headers))
+	for key, values := range headers {
+		if len(values) > 0 {
+			out[key] = values[0]
+		}
+	}
+	return out
+}
 
 // fingerprintNodeFlags 是每次跑 CLI 都要带的 node 参数，必须放在脚本路径之前。
 //
@@ -311,6 +362,27 @@ func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelI
 	if model == "" {
 		return nil, errors.New("该账号没有可用于指纹检测的模型，请在测试弹窗里选一个模型")
 	}
+	// 与单账号测试一致：下拉给的是账号侧模型名时先过 model_mapping。
+	model = account.GetMappedModel(model)
+
+	// fpd 不支持自定义请求头。用 --require 预加载脚本，把单账号测试的客户端
+	// 身份头和账号的请求头覆写补进每次 fetch；缺了它们，按客户端身份拦截的
+	// 上游会直接回 401 unauthorized client detected（2026-10-18 账号 3304 实测）。
+	headersJSON, err := json.Marshal(fingerprintExtraHeaders(account, apiFormat))
+	if err != nil {
+		return nil, fmt.Errorf("无法生成指纹检测请求头：%w", err)
+	}
+	preloadFile, err := os.CreateTemp("", "fpd-headers-*.cjs")
+	if err != nil {
+		return nil, fmt.Errorf("无法创建指纹检测预加载脚本：%w", err)
+	}
+	preloadPath := preloadFile.Name()
+	defer func() { _ = os.Remove(preloadPath) }()
+	if _, err := preloadFile.WriteString(fingerprintPreloadScript); err != nil {
+		_ = preloadFile.Close()
+		return nil, fmt.Errorf("无法写入指纹检测预加载脚本：%w", err)
+	}
+	_ = preloadFile.Close()
 
 	// 报告走 --output 文件而不是 --json：--json 只在最后吐一次完整 JSON，过程完全看不到；
 	// 去掉它之后 stdout 变成 TUI 文本，每个样本收尾打一行进度，正好用来数「检测中(1/3)」。
@@ -338,11 +410,13 @@ func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelI
 	}
 
 	// node 的开关必须排在脚本路径之前，否则会被当成脚本参数。
-	nodeArgs := make([]string, 0, len(fingerprintNodeFlags)+1+len(scriptArgs))
+	nodeArgs := make([]string, 0, len(fingerprintNodeFlags)+3+len(scriptArgs))
 	nodeArgs = append(nodeArgs, fingerprintNodeFlags...)
+	nodeArgs = append(nodeArgs, "--require", preloadPath)
 
 	cmdEnv := append(os.Environ(),
 		"API_KEY="+apiKey,
+		fingerprintHeadersEnv+"="+string(headersJSON),
 		"FPD_NO_UPDATE_CHECK=1",
 		"NO_UPDATE_NOTIFIER=1",
 	)
