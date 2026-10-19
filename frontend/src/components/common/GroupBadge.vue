@@ -177,6 +177,21 @@ const labelClass = computed(() => {
   if (props.platform === 'minimax') {
     return `${base} bg-rose-200/60 text-rose-800 dark:bg-rose-800/40 dark:text-rose-300`
   }
+  if (props.platform === 'opencode_go') {
+    return `${base} bg-amber-200/60 text-amber-800 dark:bg-amber-800/40 dark:text-amber-300`
+  }
+  if (props.platform === 'typesafe') {
+    return `${base} bg-sky-200/60 text-sky-800 dark:bg-sky-800/40 dark:text-sky-300`
+  }
+  if (props.platform === 'ag_hub') {
+    return `${base} bg-slate-300/70 text-slate-800 dark:bg-slate-700/60 dark:text-slate-200`
+  }
+  if (props.platform === 'command_code') {
+    return `${base} bg-neutral-300/70 text-neutral-800 dark:bg-neutral-700/60 dark:text-neutral-200`
+  }
+  if (props.platform === 'cline') {
+    return `${base} bg-violet-200/60 text-violet-800 dark:bg-violet-800/40 dark:text-violet-300`
+  }
   if (props.platform === 'composite') {
     return `${base} bg-cyan-200/70 text-cyan-900 dark:bg-cyan-900/50 dark:text-cyan-300`
   }
@@ -234,6 +249,31 @@ const badgeClass = computed(() => {
     return isSubscription.value
       ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
       : 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-400'
+  }
+  if (props.platform === 'opencode_go') {
+    return isSubscription.value
+      ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+      : 'bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300'
+  }
+  if (props.platform === 'typesafe') {
+    return isSubscription.value
+      ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
+      : 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300'
+  }
+  if (props.platform === 'ag_hub') {
+    return isSubscription.value
+      ? 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100'
+      : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
+  }
+  if (props.platform === 'command_code') {
+    return isSubscription.value
+      ? 'bg-neutral-200 text-neutral-800 dark:bg-neutral-700 dark:text-neutral-100'
+      : 'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200'
+  }
+  if (props.platform === 'cline') {
+    return isSubscription.value
+      ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400'
+      : 'bg-violet-50 text-violet-700 dark:bg-violet-900/20 dark:text-violet-400'
   }
   if (props.platform === 'composite') {
     return isSubscription.value

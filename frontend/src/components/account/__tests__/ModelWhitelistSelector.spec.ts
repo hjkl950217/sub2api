@@ -115,20 +115,39 @@ describe('ModelWhitelistSelector', () => {
   )
 
   it.each(['typesafe', 'unregistered'])(
-    'hides upstream sync for unsupported %s saved accounts and creation previews',
-    (platform) => {
+    'keeps upstream sync visible for unsupported %s and explains why it cannot run',
+    async (platform) => {
       const wrappers = [
         mountSelector({ platform, accountId: 46 }),
-        mountSelector({ platform, syncCredentials: { platform, type: 'apikey', api_key: 'test-key' } })
+        mountSelector({ platform, syncCredentials: { platform, type: 'apikey', api_key: 'test-key', base_url: 'https://example.com' } })
       ]
       for (const wrapper of wrappers) {
-        expect(wrapper.findAll('button').some(button => button.text() === 'admin.accounts.syncUpstreamModels')).toBe(false)
+        const button = wrapper.findAll('button').find(button => button.text() === 'admin.accounts.syncUpstreamModels')
+        expect(button).toBeDefined()
+        await button!.trigger('click')
+        await flushPromises()
         wrapper.unmount()
       }
+      expect(showWarning).toHaveBeenCalledWith('admin.accounts.syncUpstreamModelsUnsupported')
       expect(syncUpstreamModels).not.toHaveBeenCalled()
       expect(syncUpstreamModelsPreview).not.toHaveBeenCalled()
     }
   )
+
+  it('keeps upstream sync visible and prompts when URL or API key is incomplete', async () => {
+    const wrapper = mountSelector({
+      platform: 'openai',
+      syncCredentials: { platform: 'openai', type: 'apikey', api_key: '', base_url: '' }
+    })
+
+    const button = wrapper.findAll('button').find(button => button.text() === 'admin.accounts.syncUpstreamModels')
+    expect(button).toBeDefined()
+    await button!.trigger('click')
+    await flushPromises()
+
+    expect(showWarning).toHaveBeenCalledWith('admin.accounts.syncUpstreamModelsMissingCredentials')
+    expect(syncUpstreamModelsPreview).not.toHaveBeenCalled()
+  })
 
   it('requires a supported request builder for newly registered platforms', async () => {
     const wrapper = mountSelector({ platform: 'acme_router', accountId: 46 })
@@ -138,7 +157,7 @@ describe('ModelWhitelistSelector', () => {
     ]
     setPlatformCatalog({ ...BUILTIN_PLATFORM_CATALOG, platforms })
     await flushPromises()
-    expect(wrapper.findAll('button').some(button => button.text() === 'admin.accounts.syncUpstreamModels')).toBe(false)
+    expect(wrapper.findAll('button').some(button => button.text() === 'admin.accounts.syncUpstreamModels')).toBe(true)
 
     setPlatformCatalog({
       ...BUILTIN_PLATFORM_CATALOG,

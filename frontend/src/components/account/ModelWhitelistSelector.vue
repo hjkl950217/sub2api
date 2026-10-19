@@ -103,8 +103,8 @@
       >
         {{ t('admin.accounts.fillRelatedModels') }}
       </button>
+      <!-- FORK-ANCHOR: sync-upstream-always-visible（二开：按钮常显，缺 URL/API Key 时点击只提示） -->
       <button
-        v-if="canSyncUpstream"
         type="button"
         @click="syncUpstreamModels"
         :disabled="isSyncingUpstream"
@@ -297,7 +297,18 @@ const fillRelated = () => {
 }
 
 const syncUpstreamModels = async () => {
-  if (isSyncingUpstream.value || !canSyncUpstream.value) return
+  if (isSyncingUpstream.value) return
+  if (!props.accountId) {
+    const credentials = props.syncCredentials
+    if (!credentials?.api_key?.trim() || !credentials?.base_url?.trim()) {
+      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMissingCredentials'))
+      return
+    }
+  }
+  if (!canSyncUpstream.value) {
+    appStore.showWarning(t('admin.accounts.syncUpstreamModelsUnsupported'))
+    return
+  }
 
   isSyncingUpstream.value = true
   try {

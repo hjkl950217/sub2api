@@ -71,6 +71,19 @@
     <rect x="65.5996" y="44.8008" width="9.6" height="28.8" rx="4.8" />
     <rect x="36.8008" y="44.8008" width="9.6" height="28.8" rx="4.8" />
   </svg>
+  <!-- TypeSafe / Jev mark (shield with check) -->
+  <svg v-else-if="platform === 'typesafe'" :class="sizeClass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l7 3v5c0 4.5-2.9 8.4-7 10-4.1-1.6-7-5.5-7-10V6l7-3z" />
+    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4" />
+  </svg>
+  <!-- Aggregate hub mark (spoke nodes) -->
+  <svg v-else-if="platform === 'ag_hub'" :class="sizeClass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <circle cx="12" cy="12" r="2.5" />
+    <circle cx="5" cy="6" r="2" />
+    <circle cx="19" cy="6" r="2" />
+    <circle cx="12" cy="20" r="2" />
+    <path stroke-linecap="round" d="M6.6 7.2l3.4 3M17.4 7.2l-3.4 3M12 14.5v3.5" />
+  </svg>
   <!-- Composite group icon -->
   <svg v-else-if="platform === 'composite'" :class="sizeClass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
     <circle cx="6" cy="12" r="3" />

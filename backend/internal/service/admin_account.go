@@ -539,6 +539,9 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	if err := s.ValidateAccountGroupBindings(ctx, groupIDs); err != nil {
 		return nil, err
 	}
+	if err := s.validateAccountGroupPlatforms(ctx, account.Platform, account.Extra, groupIDs); err != nil { // FORK-ANCHOR: account-group-platform-guard
+		return nil, err
+	}
 	if err := s.accountRepo.Create(ctx, account); err != nil {
 		return nil, err
 	}
@@ -856,6 +859,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		if err := s.ValidateAccountGroupBindings(ctx, *input.GroupIDs); err != nil {
 			return nil, err
 		}
+		if err := s.validateAccountGroupPlatforms(ctx, account.Platform, account.Extra, *input.GroupIDs); err != nil { // FORK-ANCHOR: account-group-platform-guard
+			return nil, err
+		}
 
 		// 检查混合渠道风险（除非用户已确认）
 		if !input.SkipMixedChannelCheck {
@@ -1004,7 +1010,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil {
+	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || input.GroupIDs != nil || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
 			return nil, err
@@ -1193,6 +1199,16 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		entry := BulkUpdateAccountResult{AccountID: accountID}
 
 		if input.GroupIDs != nil {
+			if target := targetsByID[accountID]; target != nil {
+				if err := s.validateAccountGroupPlatforms(ctx, target.Platform, target.Extra, *input.GroupIDs); err != nil { // FORK-ANCHOR: account-group-platform-guard
+					entry.Success = false
+					entry.Error = err.Error()
+					result.Failed++
+					result.FailedIDs = append(result.FailedIDs, accountID)
+					result.Results = append(result.Results, entry)
+					continue
+				}
+			}
 			if err := s.accountRepo.BindGroups(ctx, accountID, *input.GroupIDs); err != nil {
 				entry.Success = false
 				entry.Error = err.Error()
@@ -1613,6 +1629,51 @@ func (s *adminServiceImpl) ValidateAccountGroupBindings(ctx context.Context, gro
 		}
 		if !IsGroupBindableInSimpleMode(group) {
 			return infraerrors.BadRequest("SIMPLE_MODE_GROUP_NOT_BINDABLE", "composite groups cannot be bound in simple mode")
+		}
+	}
+	return nil
+}
+
+// FORK-ANCHOR: account-group-platform-guard（二开：账号只能绑同平台分组，composite 分组与
+// antigravity 混合调度为例外；创建/更新/批量更新的显式绑定都要过这道校验）
+// accountGroupPlatformAllowed mirrors the scheduler's hard platform isolation:
+// an account only joins groups of its own platform, except composite groups
+// (any concrete platform) and antigravity accounts with mixed scheduling
+// (anthropic/gemini groups).
+func accountGroupPlatformAllowed(accountPlatform string, accountExtra map[string]any, groupPlatform string) bool {
+	if groupPlatform == PlatformComposite || groupPlatform == accountPlatform {
+		return true
+	}
+	if accountPlatform != PlatformAntigravity ||
+		(groupPlatform != PlatformAnthropic && groupPlatform != PlatformGemini) {
+		return false
+	}
+	enabled, _ := accountExtra["mixed_scheduling"].(bool)
+	return enabled
+}
+
+// validateAccountGroupPlatforms rejects bindings the scheduler would never use,
+// so a hidden or stale group selection cannot attach an account to another
+// platform's group.
+func (s *adminServiceImpl) validateAccountGroupPlatforms(ctx context.Context, accountPlatform string, accountExtra map[string]any, groupIDs []int64) error {
+	if len(groupIDs) == 0 || accountPlatform == "" || s.groupRepo == nil {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if _, ok := seen[groupID]; ok {
+			continue
+		}
+		seen[groupID] = struct{}{}
+		group, err := s.groupRepo.GetByIDLite(ctx, groupID)
+		if err != nil {
+			return fmt.Errorf("get group: %w", err)
+		}
+		if !accountGroupPlatformAllowed(accountPlatform, accountExtra, group.Platform) {
+			return infraerrors.BadRequest(
+				"ACCOUNT_GROUP_PLATFORM_MISMATCH",
+				fmt.Sprintf("account platform %q cannot bind group %q (platform %q)", accountPlatform, group.Name, group.Platform),
+			)
 		}
 	}
 	return nil

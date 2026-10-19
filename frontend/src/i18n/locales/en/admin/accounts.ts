@@ -194,6 +194,7 @@ export default {
           selectAtLeastOne: 'Select at least one protocol',
           // FORK-ANCHOR: i18n-cn-endpoint-hint-en (endpoint block copy: sits under the fallback protocol; new selections reuse the previous endpoint)
           endpointsHint: 'Only selected protocols are listed. A newly selected protocol reuses the previous protocol’s URL by default — many sites share one URL across all three — and can be edited separately.',
+          endpointFallbackHint: 'Only the first endpoint is required. Empty endpoints follow the first configured URL; fill them only when they actually differ.',
         },
         zhipuTeam: {
           title: 'Team Plan Organization / Project ID',
@@ -903,6 +904,8 @@ export default {
       syncUpstreamModelsEmpty: 'Upstream returned no models to sync',
       syncUpstreamModelsFailed: 'Failed to sync upstream models',
       syncUpstreamModelsError: 'Failed to sync upstream models: {message}',
+      syncUpstreamModelsMissingCredentials: 'Fill in the upstream URL and API key before syncing models.',
+      syncUpstreamModelsUnsupported: 'This platform does not support upstream model sync.',
       syncUpstreamModelsMetadataIncomplete:
         'Model IDs were synced, but no capability metadata could be updated.',
       syncUpstreamModelsMetadataPartial:
@@ -1208,6 +1211,7 @@ export default {
       apiKeyReveal: 'Show key',
       apiKeyHide: 'Hide key',
       apiKeyRevealFailed: 'Failed to load the API key',
+      apiKeyRevealUnavailable: 'No API key is saved yet. Enter one to reveal it.',
       // Upstream type
       upstream: {
         baseUrl: 'Upstream Base URL',

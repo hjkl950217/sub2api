@@ -108,6 +108,32 @@ func TestForkOpenAIProtocolsBaseURL(t *testing.T) {
 	require.Equal(t, "https://relay.example.com/v1", acc.GetCNProtocolBaseURL(APIProtocolResponses))
 }
 
+// 只填一个分协议端点时，其他协议回落到第一个已配置地址（openai / 聚合中转）。
+func TestForkSharedProtocolEndpointFollowsFirstConfigured(t *testing.T) {
+	t.Parallel()
+
+	openai := forkProtocolAccount(PlatformOpenAI, map[string]any{
+		"api_protocols": []any{APIProtocolChatCompletions, APIProtocolResponses},
+		"api_base_urls": map[string]any{
+			APIProtocolResponses: "https://relay.example.com/v1",
+		},
+	})
+	require.Equal(t, "https://relay.example.com/v1", openai.GetOpenAIBaseURL())
+	require.Equal(t, "https://relay.example.com/v1", openai.GetCNProtocolBaseURL(APIProtocolChatCompletions))
+	require.Equal(t, "https://relay.example.com/v1", openai.GetCNProtocolBaseURL(APIProtocolResponses))
+
+	hub := forkProtocolAccount(PlatformAggregateHub, map[string]any{
+		"api_protocols": []any{APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses},
+		"api_base_urls": map[string]any{
+			APIProtocolAnthropic: "https://hub.example.com/v1",
+		},
+	})
+	require.Equal(t, "https://hub.example.com/v1", hub.GetOpenAIBaseURL())
+	require.Equal(t, "https://hub.example.com/v1", hub.GetCNProtocolBaseURL(APIProtocolChatCompletions))
+	require.Equal(t, "https://hub.example.com/v1", hub.GetAnthropicProtocolBaseURL())
+	require.Equal(t, "https://hub.example.com/v1", hub.GetCNProtocolBaseURL(APIProtocolResponses))
+}
+
 // 门控边界：OAuth 不进入复选路径；openai 复选账号不参与 CN 余额/额度与分组级豁免。
 func TestForkOpenAIProtocolsGating(t *testing.T) {
 	t.Parallel()

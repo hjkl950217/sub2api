@@ -246,7 +246,11 @@
             <!-- FORK-ANCHOR: edit-openai-endpoint-block-skip (二开：openai 的 chat 与 responses 同域不同路径，不渲染分协议端点输入框) -->
             <div v-if="isEditCNProtocolUIPlatform" class="mt-3">
               <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.endpoints') }}</label>
-              <p class="input-hint">{{ t('admin.accounts.cnProviders.apiProtocol.endpointsHint') }}</p>
+              <p class="input-hint">
+                {{ isEditSharedEndpointPlatform
+                  ? t('admin.accounts.cnProviders.apiProtocol.endpointFallbackHint')
+                  : t('admin.accounts.cnProviders.apiProtocol.endpointsHint') }}
+              </p>
               <div class="mt-2 space-y-3">
                 <div v-for="item in editEndpointProtocolOptions" :key="item.value">
                   <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -260,7 +264,7 @@
                     :class="isEditEndpointPreview(item.value) ? 'placeholder:italic placeholder:text-gray-400 dark:placeholder:text-gray-500' : ''"
                     :data-testid="`cn-adaptive-base-url-${item.value}`"
                     :data-preview="isEditEndpointPreview(item.value) ? 'true' : undefined"
-                    :placeholder="editEndpointPreviewText(item.value)"
+                    :placeholder="editEndpointPlaceholder(item.value)"
                     @focus="focusedEditEndpointProtocol = item.value"
                     @blur="onEditEndpointBlur(item.value)"
                     @change="onEditEndpointChange(item.value)"
@@ -369,7 +373,7 @@
               type="button"
               data-testid="api-key-reveal-toggle"
               class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 disabled:opacity-50 dark:hover:text-gray-300"
-              :disabled="!apiKeyHasStored || apiKeyRevealLoading"
+              :disabled="apiKeyRevealLoading"
               :title="apiKeyRevealed ? t('admin.accounts.apiKeyHide') : t('admin.accounts.apiKeyReveal')"
               @click="toggleApiKeyReveal"
             >
@@ -1087,7 +1091,7 @@
               type="button"
               data-testid="api-key-reveal-toggle"
               class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 disabled:opacity-50 dark:hover:text-gray-300"
-              :disabled="!apiKeyHasStored || apiKeyRevealLoading"
+              :disabled="apiKeyRevealLoading"
               :title="apiKeyRevealed ? t('admin.accounts.apiKeyHide') : t('admin.accounts.apiKeyReveal')"
               @click="toggleApiKeyReveal"
             >
@@ -3732,6 +3736,15 @@ async function toggleApiKeyReveal() {
     apiKeyRevealed.value = false
     return
   }
+  if (!apiKeyHasStored.value) {
+    // 没有已存密钥时，眼睛按钮仍可用：手输的新值直接显隐；空值给提示。
+    if (editApiKey.value && !isApiKeyMaskValue(editApiKey.value)) {
+      apiKeyRevealed.value = true
+      return
+    }
+    appStore.showInfo(t('admin.accounts.apiKeyRevealUnavailable'))
+    return
+  }
   const plain = await loadApiKeyPlain(false)
   if (!plain) {
     return
@@ -3783,6 +3796,11 @@ const isOpenCodeGoPlatform = computed(() => props.account?.platform === 'opencod
 // FORK-ANCHOR: edit-openai-protocol-select-platform (二开：openai API Key 账号启用协议复选卡片)
 const isEditOpenAIProtocolSelectPlatform = computed(
   () => props.account?.platform === 'openai' && props.account?.type === 'apikey'
+)
+// FORK-ANCHOR: edit-shared-endpoint-fallback (二开：openai / 聚合中转 的协议端点默认共用第一个地址，
+// 其余留空；后端解析空值时回落到 base_url)
+const isEditSharedEndpointPlatform = computed(
+  () => props.account?.platform === 'ag_hub' || isEditOpenAIProtocolSelectPlatform.value
 )
 const editOpenCodeGoProtocolRules = ref<OpenCodeGoProtocolRule[]>(cloneOpenCodeGoProtocolRules())
 // 多协议供应商（国产厂商与走通用表单的供应商）的接入模式；OpenCode 用 editOpenCodeAccountMode。
@@ -3870,8 +3888,7 @@ function ensureEditFallbackProtocol(): void {
 //   2. 上一个已勾选协议的地址是用户自定义的 → 复制过来；
 //   3. 否则仅在目标端点为空时用上一个地址补空（官方平台各自有正确默认值，不覆盖）。
 function copyEditEndpointFromPreviousProtocol(protocol: CnNativeApiProtocol, previous: CnNativeApiProtocol[]): void {
-  // FORK-ANCHOR: edit-openai-protocol-endpoint-skip (二开：openai 的 chat/responses 同域不同路径，不使用分协议端点)
-  if (isEditOpenAIProtocolSelectPlatform.value) return
+  if (isEditSharedEndpointPlatform.value) return
   const defaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, currentOpenCodeOrCNMode())
   const targetDefault = (defaults[protocol] || '').trim()
   const current = (editAdaptiveBaseUrls.value[protocol] || '').trim()
@@ -3907,15 +3924,24 @@ function onEditEndpointBlur(protocol: CnNativeApiProtocol): void {
   if (focusedEditEndpointProtocol.value === protocol) focusedEditEndpointProtocol.value = ''
 }
 function editEndpointPreviewText(protocol: CnNativeApiProtocol): string | undefined {
+  if (isEditSharedEndpointPlatform.value) return undefined
   if ((editAdaptiveBaseUrls.value[protocol] ?? '').trim()) return undefined
   const source = focusedEditEndpointProtocol.value
   if (!source || source === protocol) return undefined
   return (editAdaptiveBaseUrls.value[source] ?? '').trim() || undefined
 }
+function editEndpointPlaceholder(protocol: CnNativeApiProtocol): string | undefined {
+  if (isEditSharedEndpointPlatform.value && !(editAdaptiveBaseUrls.value[protocol] ?? '').trim()) {
+    const first = editEndpointProtocolOptions.value[0]?.value
+    return protocol === first ? undefined : t('admin.accounts.cnProviders.apiProtocol.endpointFallbackHint')
+  }
+  return editEndpointPreviewText(protocol)
+}
 function isEditEndpointPreview(protocol: CnNativeApiProtocol): boolean {
   return editEndpointPreviewText(protocol) !== undefined
 }
 function onEditEndpointChange(protocol: CnNativeApiProtocol): void {
+  if (isEditSharedEndpointPlatform.value) return
   const value = (editAdaptiveBaseUrls.value[protocol] ?? '').trim()
   if (!value) return
   for (const item of editEndpointProtocolOptions.value) {
@@ -5801,6 +5827,8 @@ const handleSubmit = async () => {
         newCredentials.api_protocols = selectedProtocols
         newCredentials.fallback_protocol = selectedFallback
         newCredentials.api_protocol = legacyProtocolFromSelection(selectedProtocols, selectedFallback)
+        // 端点统一跟随 base_url，清掉旧版遗留的分协议端点。
+        delete newCredentials.api_base_urls
       }
 
       // 国产供应商：模式与协议写入凭据（决定额度/余额探测与转发端点/格式）。
@@ -5819,17 +5847,25 @@ const handleSubmit = async () => {
             : defaultFallbackProtocol(selectedProtocols)) as CnNativeApiProtocol | ''
           const defaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, currentOpenCodeOrCNMode())
           const protocolBaseUrls: Record<string, string> = {}
+          // FORK-ANCHOR: edit-shared-endpoint-empty (二开：openai / 聚合中转 只写用户实际填写的端点，
+          // 其余留空由后端回落到 base_url；国产供应商仍按平台默认端点补全)
+          const sharedEndpoint = isEditSharedEndpointPlatform.value
           for (const protocol of selectedProtocols) {
-            protocolBaseUrls[protocol] = (
-              editAdaptiveBaseUrls.value[protocol] || defaults[protocol]
-            ).trim()
+            const configured = (editAdaptiveBaseUrls.value[protocol] ?? '').trim()
+            const value = sharedEndpoint
+              ? configured
+              : (configured || defaults[protocol]).trim()
+            if (!value) continue
+            protocolBaseUrls[protocol] = value
           }
           newCredentials.api_protocols = selectedProtocols
           newCredentials.fallback_protocol = selectedFallback
           newCredentials.api_base_urls = protocolBaseUrls
-          newCredentials.base_url = protocolBaseUrls.chat_completions ||
-            protocolBaseUrls[selectedFallback as CnNativeApiProtocol] ||
-            newBaseUrl
+          newCredentials.base_url = sharedEndpoint
+            ? selectedProtocols.map(protocol => protocolBaseUrls[protocol]).find(Boolean) || newBaseUrl
+            : protocolBaseUrls.chat_completions ||
+              protocolBaseUrls[selectedFallback as CnNativeApiProtocol] ||
+              newBaseUrl
           newCredentials.api_protocol = legacyProtocolFromSelection(selectedProtocols, selectedFallback)
         } else if (editApiProtocol.value === 'adaptive') {
           const defaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, currentOpenCodeOrCNMode())

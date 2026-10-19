@@ -199,6 +199,27 @@ async function openCodexImportStep(toggleClicks = 0) {
   return wrapper
 }
 
+describe('CreateAccountModal API key reveal', () => {
+  it('keeps the reveal toggle visible and switches the input between password and text', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+
+    const input = wrapper.get('[data-testid="create-api-key-input"]')
+    const toggle = wrapper.get('[data-testid="create-api-key-reveal-toggle"]')
+    expect(toggle.exists()).toBe(true)
+    expect(input.attributes('type')).toBe('password')
+
+    await input.setValue('sk-visible')
+    await toggle.trigger('click')
+    expect(input.attributes('type')).toBe('text')
+    expect((input.element as HTMLInputElement).value).toBe('sk-visible')
+
+    await toggle.trigger('click')
+    expect(input.attributes('type')).toBe('password')
+  })
+})
+
 describe('CreateAccountModal OpenAI long-context billing', () => {
   beforeEach(() => {
     authIsSimpleMode.value = true
@@ -897,8 +918,8 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     })
   })
 
-  // FORK-ANCHOR: test-create-endpoint-autofill (二开：deepseek/聚合中转 填一个端点自动补到其余空着的框)
-  it('聚合中转填好一个端点后自动补到其余空框，已填过的不覆盖', async () => {
+  // FORK-ANCHOR: test-create-shared-endpoint (二开：聚合中转只写用户填写的端点，其余保持空)
+  it('聚合中转只写用户填写的端点，其余端点保持为空', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, '聚合中转')
 
@@ -912,18 +933,21 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
     await anthropic.setValue('https://relay.example.com')
     await anthropic.trigger('change')
-    expect((chat.element as HTMLInputElement).value).toBe('https://relay.example.com')
-    expect((responses.element as HTMLInputElement).value).toBe('https://relay.example.com')
+    expect((chat.element as HTMLInputElement).value).toBe('')
+    expect((responses.element as HTMLInputElement).value).toBe('')
 
-    // 手工改过的框不被后续变更覆盖
-    await chat.setValue('https://other.example.com')
-    await chat.trigger('change')
-    expect((anthropic.element as HTMLInputElement).value).toBe('https://relay.example.com')
-    expect((responses.element as HTMLInputElement).value).toBe('https://relay.example.com')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('hub account')
+    await wrapper.get('[data-testid="create-api-key-input"]').setValue('sk-hub')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const credentials = createAccountMock.mock.calls[0]?.[0]?.credentials
+    expect(credentials.api_base_urls).toEqual({ anthropic: 'https://relay.example.com' })
+    expect(credentials.base_url).toBe('https://relay.example.com')
   })
 
-  // FORK-ANCHOR: test-create-endpoint-live-preview (二开：输入一格时其余空格浅色预览，离开输入框落定)
-  it('端点输入时其余空格显示浅色预览，离开输入框后落定为真实值', async () => {
+  // FORK-ANCHOR: test-create-shared-endpoint-no-preview (二开：共用端点平台不再预览/落定到其他框)
+  it('聚合中转端点不再预览或落定到其他空框，空框显示跟随提示', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, '聚合中转')
 
@@ -931,19 +955,16 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     const anthropic = wrapper.get('[data-testid="cn-adaptive-base-url-anthropic"]')
 
     await chat.trigger('focus')
-    // 只派发 input（VTU 的 setValue 会连带派发 change，那样就直接落定了，测不到预览）
     const chatInput = chat.element as HTMLInputElement
     chatInput.value = 'https://relay.example.com'
     await chat.trigger('input')
-    // 还在输入：值只作浅色预览（placeholder + data-preview），没有写进真实值
     expect((anthropic.element as HTMLInputElement).value).toBe('')
-    expect((anthropic.element as HTMLInputElement).placeholder).toBe('https://relay.example.com')
-    expect(anthropic.attributes('data-preview')).toBe('true')
+    expect((anthropic.element as HTMLInputElement).placeholder)
+      .toBe('admin.accounts.cnProviders.apiProtocol.endpointFallbackHint')
+    expect(anthropic.attributes('data-preview')).toBeUndefined()
 
     await chat.trigger('blur')
-    expect((anthropic.element as HTMLInputElement).value).toBe('https://relay.example.com')
-    expect(anthropic.attributes('data-preview')).toBeUndefined()
-    expect((anthropic.element as HTMLInputElement).placeholder).toBe('')
+    expect((anthropic.element as HTMLInputElement).value).toBe('')
   })
 
   it('deepseek 平台同样自动补全端点，其他平台不受影响', async () => {

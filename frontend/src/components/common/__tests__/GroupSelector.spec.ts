@@ -40,4 +40,29 @@ describe('GroupSelector simple-mode binding policy', () => {
     const wrapper = mountSelector([1, 2])
     expect(wrapper.emitted('update:modelValue')).toEqual([[[1]]])
   })
+
+  it('drops selections that belong to the previous platform after a platform switch', async () => {
+    const wrapper = mount(GroupSelector, {
+      props: { modelValue: [1], groups, platform: 'anthropic' },
+      global: { stubs: { GroupBadge: { props: ['name'], template: '<span>{{ name }}</span>' }, Icon: true } }
+    })
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+
+    await wrapper.setProps({ platform: 'ag_hub' })
+    expect(wrapper.emitted('update:modelValue')).toEqual([[[]]])
+  })
+
+  it('allows anthropic groups for antigravity only when mixed scheduling is on', async () => {
+    const wrapper = mount(GroupSelector, {
+      props: { modelValue: [1], groups, platform: 'antigravity' },
+      global: { stubs: { GroupBadge: { props: ['name'], template: '<span>{{ name }}</span>' }, Icon: true } }
+    })
+    expect(wrapper.emitted('update:modelValue')).toEqual([[[]]])
+
+    const mixed = mount(GroupSelector, {
+      props: { modelValue: [1], groups, platform: 'antigravity', mixedScheduling: true },
+      global: { stubs: { GroupBadge: { props: ['name'], template: '<span>{{ name }}</span>' }, Icon: true } }
+    })
+    expect(mixed.emitted('update:modelValue')).toBeUndefined()
+  })
 })

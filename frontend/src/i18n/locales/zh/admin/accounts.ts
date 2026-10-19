@@ -398,6 +398,7 @@ export default {
           selectAtLeastOne: '至少勾选一个协议',
           // FORK-ANCHOR: i18n-cn-endpoint-hint-zh (端点配置区说明：位于兜底转发协议下方，新勾选协议会沿用上一个端点)
           endpointsHint: '只显示已勾选的协议。新勾选的协议会默认沿用上一个协议的地址，很多站点三个协议共用同一地址，按需单独修改。',
+          endpointFallbackHint: '只有第一个端点地址需要填写；留空的端点会跟随第一个地址。确实不同再单独填写。',
         },
         zhipuTeam: {
           title: '团队版组织 / 项目 ID',
@@ -1009,6 +1010,8 @@ export default {
       syncUpstreamModelsEmpty: '上游没有返回可同步的模型',
       syncUpstreamModelsFailed: '同步上游模型失败',
       syncUpstreamModelsError: '同步上游模型失败：{message}',
+      syncUpstreamModelsMissingCredentials: '请先填写上游地址和 API Key，再同步模型',
+      syncUpstreamModelsUnsupported: '当前平台不支持同步上游模型',
       syncUpstreamModelsMetadataIncomplete: '模型 ID 已同步，但未能更新任何能力元数据。',
       syncUpstreamModelsMetadataPartial: '已更新部分模型的能力元数据；其余模型能力仍不完整。',
       clearAllModels: '清除所有模型',
@@ -1309,6 +1312,7 @@ export default {
       apiKeyReveal: '显示明文',
       apiKeyHide: '隐藏明文',
       apiKeyRevealFailed: '获取 API Key 明文失败',
+      apiKeyRevealUnavailable: '还没有保存 API Key，填写后才能显示明文',
       // Upstream type
       upstream: {
         baseUrl: '上游 Base URL',

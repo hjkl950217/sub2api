@@ -89,22 +89,28 @@ const isSearchable = computed(() => {
   return props.searchable
 })
 
-// Filter groups by platform if specified
-const filteredGroups = computed(() => {
+// FORK-ANCHOR: group-selector-platform-cleanup（二开：平台切换后清掉不可绑定的分组勾选，
+// 避免被平台过滤隐藏的跨平台分组随表单一起提交）
+// 可绑定分组：默认只允许同 platform 的分组；composite 分组可接收任意具体平台账号。
+// antigravity 账户启用混合调度后，可选择 anthropic/gemini 分组。
+const bindableGroups = computed(() => {
   let result = authStore.isSimpleMode
     ? props.groups.filter((g) => g.platform !== 'composite')
     : props.groups
   if (props.platform) {
-    // antigravity 账户启用混合调度后，可选择 anthropic/gemini 分组
     if (props.platform === 'antigravity' && props.mixedScheduling) {
       result = result.filter(
         (g) => g.platform === 'antigravity' || g.platform === 'anthropic' || g.platform === 'gemini' || g.platform === 'composite'
       )
     } else {
-      // 默认：只能选择同 platform 的分组；composite 分组可接收任意具体平台账号
       result = result.filter((g) => g.platform === props.platform || g.platform === 'composite')
     }
   }
+  return result
+})
+
+const filteredGroups = computed(() => {
+  let result = bindableGroups.value
   if (isSearchable.value && searchText.value) {
     const q = searchText.value.toLowerCase()
     result = result.filter(
@@ -114,12 +120,14 @@ const filteredGroups = computed(() => {
   return result
 })
 
+// 平台切换后清掉不再可绑定的分组：被平台过滤隐藏的勾选若留在 modelValue 里，
+// 保存时会被一起提交，把账号绑到其他平台的分组上。
 watch(
-  () => [authStore.isSimpleMode, props.groups, props.modelValue] as const,
+  () => [authStore.isSimpleMode, props.platform, props.mixedScheduling, props.groups, props.modelValue] as const,
   () => {
-    if (!authStore.isSimpleMode || props.groups.length === 0) return
-    const visibleIDs = new Set(props.groups.filter((group) => group.platform !== 'composite').map((group) => group.id))
-    const cleaned = props.modelValue.filter((id) => visibleIDs.has(id))
+    if (props.groups.length === 0) return
+    const bindableIDs = new Set(bindableGroups.value.map((group) => group.id))
+    const cleaned = props.modelValue.filter((id) => bindableIDs.has(id))
     if (cleaned.length !== props.modelValue.length) emit('update:modelValue', cleaned)
   },
   { immediate: true, deep: true }

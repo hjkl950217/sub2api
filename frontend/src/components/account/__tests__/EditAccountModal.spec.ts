@@ -2055,6 +2055,32 @@ describe('EditAccountModal ag_hub protocol UI', () => {
     expect(saved.api_base_urls.responses).toBe('https://relay.example.com/resp')
     expect(saved.base_url).toBe('https://relay.example.com/v1')
   })
+
+  it('leaves unconfigured protocol endpoints empty for ag_hub', async () => {
+    const account = buildAgHubAccount()
+    account.credentials.api_base_urls = { chat_completions: 'https://relay.example.com/v1' }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+    await flushPromises()
+
+    const chat = wrapper.get('[data-testid="cn-adaptive-base-url-chat_completions"]')
+    const responses = wrapper.get('[data-testid="cn-adaptive-base-url-responses"]')
+    expect((responses.element as HTMLInputElement).value).toBe('')
+    expect((responses.element as HTMLInputElement).placeholder)
+      .toBe('admin.accounts.cnProviders.apiProtocol.endpointFallbackHint')
+
+    await chat.setValue('https://relay.example.com/v2')
+    await chat.trigger('change')
+    expect((responses.element as HTMLInputElement).value).toBe('')
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const saved = updateAccountMock.mock.calls[0]?.[1]?.credentials
+    expect(saved.api_base_urls).toEqual({ chat_completions: 'https://relay.example.com/v2' })
+    expect(saved.base_url).toBe('https://relay.example.com/v2')
+  })
 })
 
 describe('EditAccountModal gemini explicit cache upstream switch', () => {

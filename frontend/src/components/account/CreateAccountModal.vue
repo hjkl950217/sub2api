@@ -725,7 +725,11 @@
           <!-- FORK-ANCHOR: create-ag-hub-endpoint-block (二开：聚合中转无官方端点，渲染已勾选协议的 URL 输入框) -->
           <div v-if="isCNPlatform || form.platform === 'ag_hub'" class="mt-3">
             <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.endpoints') }}</label>
-            <p class="input-hint">{{ t('admin.accounts.cnProviders.apiProtocol.endpointsHint') }}</p>
+            <p class="input-hint">
+              {{ isSharedEndpointPlatform
+                ? t('admin.accounts.cnProviders.apiProtocol.endpointFallbackHint')
+                : t('admin.accounts.cnProviders.apiProtocol.endpointsHint') }}
+            </p>
             <div class="mt-2 space-y-3">
               <div v-for="item in cnEndpointProtocolOptions" :key="item.value">
                 <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -739,7 +743,7 @@
                   :class="isEndpointPreview(item.value) ? 'placeholder:italic placeholder:text-gray-400 dark:placeholder:text-gray-500' : ''"
                   :data-testid="`cn-adaptive-base-url-${item.value}`"
                   :data-preview="isEndpointPreview(item.value) ? 'true' : undefined"
-                  :placeholder="endpointPreviewText(item.value)"
+                  :placeholder="endpointPlaceholder(item.value)"
                   @focus="focusedEndpointProtocol = item.value"
                   @blur="onCnEndpointBlur(item.value)"
                   @change="onCnEndpointChange(item.value)"
@@ -1649,13 +1653,26 @@
         />
         <div>
           <label class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
-          <input
-            v-model="apiKeyValue"
-            type="password"
-            required
-            class="input font-mono"
-            :placeholder="apiKeyValuePlaceholder"
-          />
+          <div class="relative">
+            <input
+              v-model="apiKeyValue"
+              data-testid="create-api-key-input"
+              :type="showApiKeyValue ? 'text' : 'password'"
+              required
+              class="input pr-10 font-mono"
+              :placeholder="apiKeyValuePlaceholder"
+            />
+            <!-- FORK-ANCHOR: create-api-key-reveal（二开：新增账号常显眼睛按钮，不依赖浏览器聚焦态） -->
+            <button
+              type="button"
+              data-testid="create-api-key-reveal-toggle"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              :title="showApiKeyValue ? t('admin.accounts.apiKeyHide') : t('admin.accounts.apiKeyReveal')"
+              @click="showApiKeyValue = !showApiKeyValue"
+            >
+              <Icon :name="showApiKeyValue ? 'eyeOff' : 'eye'" size="md" />
+            </button>
+          </div>
           <p v-if="apiKeyHint" class="input-hint">{{ apiKeyHint }}</p>
         </div>
 
@@ -4508,6 +4525,7 @@ const accountCategory = ref<'oauth-based' | 'apikey' | 'bedrock' | 'service_acco
 const addMethod = ref<AddMethod>('oauth') // For oauth-based: 'oauth' or 'setup-token'
 const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const apiKeyValue = ref('')
+const showApiKeyValue = ref(false)
 const upstreamBillingAutoProbeEnabled = ref(true)
 
 // ── 国产供应商（Kimi / Zhipu / DeepSeek）账号类型、API 协议与端点 ──
@@ -4544,6 +4562,11 @@ const isOpenAIProtocolSelectPlatform = computed(
 // FORK-ANCHOR: create-ag-hub-multi-protocol (二开：聚合中转与国产供应商共用复选表单)
 const isProtocolMultiselectPlatform = computed(
   () => isCNPlatform.value || isOpenAIProtocolSelectPlatform.value || form.platform === 'ag_hub'
+)
+// FORK-ANCHOR: shared-endpoint-fallback (二开：openai / 聚合中转 的协议端点默认共用第一个地址，
+// 其余留空；后端解析空值时回落到 base_url)
+const isSharedEndpointPlatform = computed(
+  () => form.platform === 'ag_hub' || isOpenAIProtocolSelectPlatform.value
 )
 // FORK-ANCHOR: create-ag-hub-uses-cn-form (二开：聚合中转沿用国产供应商的复选表单，不走通用表单)
 const isGenericMultiProtocolPlatform = computed(
@@ -4642,8 +4665,7 @@ function ensureFallbackProtocol(): void {
 //   2. 上一个已勾选协议的地址是用户自定义的 → 复制过来（自建站点的常见形态）；
 //   3. 否则仅在目标端点为空时用上一个地址补空（官方平台各自有正确默认值，不覆盖）。
 function copyEndpointFromPreviousProtocol(protocol: CnNativeApiProtocol, previous: CnNativeApiProtocol[]): void {
-  // FORK-ANCHOR: create-openai-protocol-endpoint-skip (二开：openai 的 chat/responses 同域不同路径，不使用分协议端点)
-  if (isOpenAIProtocolSelectPlatform.value) return
+  if (isSharedEndpointPlatform.value) return
   const defaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, currentOpenCodeOrCNMode())
   const targetDefault = (defaults[protocol] || '').trim()
   const current = (adaptiveBaseUrls.value[protocol] || '').trim()
@@ -4889,16 +4911,25 @@ function onCnEndpointBlur(protocol: CnNativeApiProtocol): void {
   if (focusedEndpointProtocol.value === protocol) focusedEndpointProtocol.value = ''
 }
 function endpointPreviewText(protocol: CnNativeApiProtocol): string | undefined {
+  if (isSharedEndpointPlatform.value) return undefined
   if ((adaptiveBaseUrls.value[protocol] ?? '').trim()) return undefined
   const source = focusedEndpointProtocol.value
   if (!source || source === protocol) return undefined
   return (adaptiveBaseUrls.value[source] ?? '').trim() || undefined
+}
+function endpointPlaceholder(protocol: CnNativeApiProtocol): string | undefined {
+  if (isSharedEndpointPlatform.value && !(adaptiveBaseUrls.value[protocol] ?? '').trim()) {
+    const first = cnEndpointProtocolOptions.value[0]?.value
+    return protocol === first ? undefined : t('admin.accounts.cnProviders.apiProtocol.endpointFallbackHint')
+  }
+  return endpointPreviewText(protocol)
 }
 function isEndpointPreview(protocol: CnNativeApiProtocol): boolean {
   return endpointPreviewText(protocol) !== undefined
 }
 
 function onCnEndpointChange(protocol: CnNativeApiProtocol): void {
+  if (isSharedEndpointPlatform.value) return
   const value = (adaptiveBaseUrls.value[protocol] ?? '').trim()
   if (!value) return
   for (const item of cnEndpointProtocolOptions.value) {
@@ -4909,6 +4940,15 @@ function onCnEndpointChange(protocol: CnNativeApiProtocol): void {
   }
 }
 
+// 端点共用平台（openai / 聚合中转）按勾选顺序取第一个已填写的地址；都空时回落到单 URL。
+const firstConfiguredEndpointUrl = computed(() => {
+  for (const item of cnEndpointProtocolOptions.value) {
+    const url = (adaptiveBaseUrls.value[item.value] ?? '').trim()
+    if (url) return url
+  }
+  return ''
+})
+
 const syncPreviewCredentials = computed(() => {
   if (!apiKeyValue.value) return undefined
   // FORK-ANCHOR: create-cn-preview-base-url (预览凭据 base_url 取兜底/已勾选协议端点)
@@ -4918,7 +4958,9 @@ const syncPreviewCredentials = computed(() => {
   const baseUrl = isMultiProtocolPlatform.value && apiProtocol.value === 'adaptive'
     ? (isCNPlatform.value
         ? (cnPreviewProtocol ? adaptiveBaseUrls.value[cnPreviewProtocol] : '').trim() || apiKeyBaseUrl.value.trim()
-        : adaptiveBaseUrls.value.chat_completions.trim() || apiKeyBaseUrl.value.trim())
+        : isSharedEndpointPlatform.value
+          ? firstConfiguredEndpointUrl.value || apiKeyBaseUrl.value.trim()
+          : adaptiveBaseUrls.value.chat_completions.trim() || apiKeyBaseUrl.value.trim())
     : apiKeyBaseUrl.value.trim()
   const modelMapping = buildModelMappingObject(
     modelRestrictionMode.value,
@@ -5963,6 +6005,7 @@ const resetForm = () => {
   fallbackProtocol.value = ''
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
+  showApiKeyValue.value = false
   upstreamRequestIdHeader.value = ''
   upstreamBillingAutoProbeEnabled.value = true
   editQuotaLimit.value = null
@@ -6481,17 +6524,25 @@ const handleSubmit = async () => {
         ? fallbackProtocol.value
         : defaultFallbackProtocol(selectedProtocols)) as CnNativeApiProtocol | ''
       const protocolBaseUrls: Record<string, string> = {}
+      // FORK-ANCHOR: shared-endpoint-empty (二开：openai / 聚合中转 只写用户实际填写的端点，
+      // 其余留空由后端回落到 base_url；国产供应商仍按平台默认端点补全)
+      const sharedEndpoint = isSharedEndpointPlatform.value
       for (const protocol of selectedProtocols) {
-        protocolBaseUrls[protocol] = (
-          adaptiveBaseUrls.value[protocol] || defaultCNBaseUrl(form.platform, accountMode.value, protocol)
-        ).trim()
+        const configured = (adaptiveBaseUrls.value[protocol] ?? '').trim()
+        const value = sharedEndpoint
+          ? configured
+          : (configured || defaultCNBaseUrl(form.platform, accountMode.value, protocol)).trim()
+        if (!value) continue
+        protocolBaseUrls[protocol] = value
       }
       credentials.api_protocols = selectedProtocols
       credentials.fallback_protocol = selectedFallback
       credentials.api_base_urls = protocolBaseUrls
-      credentials.base_url = protocolBaseUrls.chat_completions ||
-        protocolBaseUrls[selectedFallback as CnNativeApiProtocol] ||
-        apiKeyBaseUrl.value.trim()
+      credentials.base_url = sharedEndpoint
+        ? selectedProtocols.map(protocol => protocolBaseUrls[protocol]).find(Boolean) || apiKeyBaseUrl.value.trim()
+        : protocolBaseUrls.chat_completions ||
+          protocolBaseUrls[selectedFallback as CnNativeApiProtocol] ||
+          apiKeyBaseUrl.value.trim()
       credentials.api_protocol = legacyProtocolFromSelection(selectedProtocols, selectedFallback)
     } else if (apiProtocol.value === 'adaptive') {
       const defaults = defaultCNAdaptiveBaseUrls(

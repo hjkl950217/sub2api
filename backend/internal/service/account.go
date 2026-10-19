@@ -1443,6 +1443,28 @@ func (a *Account) IsOpenAIApiKey() bool {
 // GetOpenAIBaseURL 解析 OpenAI 协议族账号的上游 base_url。
 // 适用 openai、国产 OpenAI 兼容供应商（kimi/zhipu/deepseek）与 OpenCode Go；
 // grok 走 GetGrokBaseURL，此处对 grok 返回 "" 以保持原有行为。
+// firstConfiguredProtocolBaseURL 返回 api_base_urls 里按 chat > anthropic > responses
+// 顺序第一个非空地址。openai / 聚合中转只要求填第一个端点，其余协议留空时用它回落。
+func (a *Account) firstConfiguredProtocolBaseURL() string {
+	if a == nil {
+		return ""
+	}
+	baseURLs, ok := a.Credentials["api_base_urls"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	for _, protocol := range []string{APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses} {
+		baseURL, ok := baseURLs[protocol].(string)
+		if !ok {
+			continue
+		}
+		if trimmed := strings.TrimSpace(baseURL); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
 func (a *Account) GetOpenAIBaseURL() string {
 	if !a.IsOpenAI() && !a.IsMultiProtocolAPIKey() {
 		return ""
@@ -1465,6 +1487,10 @@ func (a *Account) GetOpenAIBaseURL() string {
 		if baseURL := strings.TrimSpace(a.GetCredential("base_url")); baseURL != "" {
 			return baseURL
 		}
+	}
+	// 分协议端点只填了一个时，其他协议回落到第一个已配置地址。
+	if first := a.firstConfiguredProtocolBaseURL(); first != "" {
+		return first
 	}
 	// FORK-ANCHOR: ag-hub-no-default-base-url (二开：聚合中转没有官方端点，不能回落 api.openai.com——
 	// 否则账号没填地址时会静默把请求发到 OpenAI，前端只看到「同步上游模型失败」)
@@ -1743,12 +1769,18 @@ func (a *Account) GetCNProtocolBaseURL(protocol string) string {
 func (a *Account) defaultCNProtocolBaseURL(protocol string) string {
 	// FORK-ANCHOR: ag-hub-base-url-default (二开：聚合中转无官方端点，三个协议的端点都由凭据 base_url 提供)
 	if a.Platform == PlatformAggregateHub {
-		return strings.TrimSpace(a.GetCredential("base_url"))
+		if baseURL := strings.TrimSpace(a.GetCredential("base_url")); baseURL != "" {
+			return baseURL
+		}
+		return a.firstConfiguredProtocolBaseURL()
 	}
 	// FORK-ANCHOR: fork-api-protocols-openai-base-url-default (二开：openai 复选账号的默认端点取账号自己的 base_url)
 	if a.Platform == PlatformOpenAI && protocol != APIProtocolAnthropic {
 		if baseURL := strings.TrimSpace(a.GetCredential("base_url")); baseURL != "" {
 			return baseURL
+		}
+		if first := a.firstConfiguredProtocolBaseURL(); first != "" {
+			return first
 		}
 		return "https://api.openai.com"
 	}

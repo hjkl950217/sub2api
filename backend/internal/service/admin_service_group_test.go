@@ -2344,3 +2344,37 @@ func TestAdminService_CreateGroup_CodexModelsManifestConfigDisabledAccepted(t *t
 	require.Equal(t, []int64{1, 2}, group.CodexModelsManifestConfig.AccountIDs)
 	require.False(t, repo.created.CodexModelsManifestConfig.Enabled)
 }
+
+func TestAdminServiceRejectsCrossPlatformGroupBindings(t *testing.T) {
+	groups := map[int64]*Group{
+		1: {ID: 1, Name: "claude", Platform: PlatformAnthropic},
+		2: {ID: 2, Name: "hub", Platform: PlatformAggregateHub},
+		3: {ID: 3, Name: "mixed", Platform: PlatformComposite},
+	}
+	svc := &adminServiceImpl{groupRepo: &groupRepoStubForAdmin{getByIDByID: groups}}
+
+	// 聚合中转账号不能绑 anthropic 分组（账号 3355 的错误场景）。
+	require.Error(t, svc.validateAccountGroupPlatforms(context.Background(), PlatformAggregateHub, nil, []int64{1}))
+	// 同平台与 composite 分组允许。
+	require.NoError(t, svc.validateAccountGroupPlatforms(context.Background(), PlatformAggregateHub, nil, []int64{2, 3}))
+	require.NoError(t, svc.validateAccountGroupPlatforms(context.Background(), PlatformAnthropic, nil, []int64{1}))
+	// antigravity 仅在开启混合调度时可绑 anthropic/gemini 分组。
+	require.Error(t, svc.validateAccountGroupPlatforms(context.Background(), PlatformAntigravity, nil, []int64{1}))
+	require.NoError(t, svc.validateAccountGroupPlatforms(context.Background(), PlatformAntigravity, map[string]any{"mixed_scheduling": true}, []int64{1}))
+}
+
+func TestAdminServiceRejectsGroupPlatformChangeWithIncompatibleAccounts(t *testing.T) {
+	svc := &adminServiceImpl{accountRepo: &accountRepoStubForGroupCodexManifest{accounts: []Account{
+		{ID: 1, Platform: PlatformAnthropic},
+	}}}
+
+	require.Error(t, svc.validateGroupPlatformChange(context.Background(), 1, PlatformAggregateHub))
+	require.NoError(t, svc.validateGroupPlatformChange(context.Background(), 1, PlatformAnthropic))
+	require.NoError(t, svc.validateGroupPlatformChange(context.Background(), 1, PlatformComposite))
+
+	mixed := &adminServiceImpl{accountRepo: &accountRepoStubForGroupCodexManifest{accounts: []Account{
+		{ID: 2, Platform: PlatformAntigravity, Extra: map[string]any{"mixed_scheduling": true}},
+	}}}
+	require.NoError(t, mixed.validateGroupPlatformChange(context.Background(), 2, PlatformAnthropic))
+	require.Error(t, mixed.validateGroupPlatformChange(context.Background(), 2, PlatformOpenAI))
+}

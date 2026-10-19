@@ -1416,6 +1416,7 @@
           <GroupSelector
             v-model="groupIds"
             :groups="groups"
+            :platform="targetSelectedPlatforms.length === 1 ? targetSelectedPlatforms[0] : undefined"
             aria-labelledby="bulk-edit-groups-label"
           />
         </div>

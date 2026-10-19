@@ -774,6 +774,13 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 
 	// 渠道缓存里存了 groupID → platform 的映射，改了平台要让它失效（见函数末尾）
 	previousPlatform := group.Platform
+	// FORK-ANCHOR: group-platform-change-guard（二开：分组改平台前先确认已绑定账号
+	// 都能落到新平台，避免改完之后账号仍挂在平台不匹配的分组里）
+	if input.Platform != "" && input.Platform != previousPlatform {
+		if err := s.validateGroupPlatformChange(ctx, id, input.Platform); err != nil {
+			return nil, err
+		}
+	}
 
 	if input.Name != "" {
 		group.Name = input.Name
@@ -1180,6 +1187,27 @@ func normalizeGroupModelPricing(platform string, pricing []ChannelModelPricing) 
 		return nil, err
 	}
 	return out, nil
+}
+
+// validateGroupPlatformChange 阻止把分组改成与已绑定账号不兼容的平台。
+// 改成 composite 时任何具体平台账号都能落进去，直接放行。
+func (s *adminServiceImpl) validateGroupPlatformChange(ctx context.Context, groupID int64, newPlatform string) error {
+	if newPlatform == PlatformComposite || s.accountRepo == nil {
+		return nil
+	}
+	accounts, err := s.accountRepo.ListByGroup(ctx, groupID)
+	if err != nil {
+		return fmt.Errorf("list group accounts: %w", err)
+	}
+	for _, account := range accounts {
+		if !accountGroupPlatformAllowed(account.Platform, account.Extra, newPlatform) {
+			return infraerrors.BadRequest(
+				"GROUP_PLATFORM_HAS_INCOMPATIBLE_ACCOUNTS",
+				fmt.Sprintf("group has account %d with platform %q, which cannot bind a group of platform %q", account.ID, account.Platform, newPlatform),
+			)
+		}
+	}
+	return nil
 }
 
 func (s *adminServiceImpl) DeleteGroup(ctx context.Context, id int64) error {
