@@ -4,7 +4,13 @@ on:
   push:
   pull_request:
   # FORK-ANCHOR: ci-backend-manual-dispatch (二开：允许手动跑 CI——本仓库 push/PR 触发一直没生效，三个工作流运行数为 0)
+  # FORK-ANCHOR: ci-skip-tests-input（手动触发可跳过测试；push 的 commit message 含 [skip-tests] 时同样跳过）
   workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: '跳过单元测试与集成测试（仍跑 lint 与 frontend）'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -25,6 +31,8 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    # FORK-ANCHOR: ci-skip-tests-guard-unit（跳过测试的判定条件：手动输入或 commit message 标记）
+    if: ${{ !inputs.skip_tests && !contains(github.event.head_commit.message || '', '[skip-tests]') }}
     steps:
       - uses: actions/checkout@v6
       - name: Check Docker Compose simple mode environment
@@ -41,9 +49,26 @@ jobs:
       - name: Unit tests
         working-directory: backend
         run: make test-unit
+
+  integration:
+    runs-on: ubuntu-latest
+    # FORK-ANCHOR: ci-integration-job-split（拆成独立 job 与单测并行，原来是串行第二步）
+    if: ${{ !inputs.skip_tests && !contains(github.event.head_commit.message || '', '[skip-tests]') }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: false
+          cache: true
+          cache-dependency-path: backend/go.sum
+      - name: Verify Go version
+        run: |
+          go version | grep -q 'go1.27.2'
+      # FORK-ANCHOR: ci-integration-exclude-service（service 包没有 integration 文件，原命令会把它的 454 个无 tag 单测重跑一遍，约 200s）
       - name: Integration tests
         working-directory: backend
-        run: make test-integration
+        run: go test -tags=integration $(go list ./... | grep -v '/internal/service$')
 
   frontend:
     runs-on: ubuntu-latest
