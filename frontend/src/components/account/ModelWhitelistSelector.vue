@@ -215,6 +215,13 @@ const canSyncUpstream = computed(() => {
   }
   return false
 })
+// FORK-ANCHOR: sync-upstream-prefer-preview (二开：编辑态带完整表单凭据时优先走预览接口，
+// 避免后端拿数据库里已保存的旧 URL/Key 去请求)
+const previewCredentials = computed<SyncUpstreamPreviewParams | null>(() => {
+  const credentials = props.syncCredentials
+  if (!credentials?.api_key?.trim() || !credentials?.base_url?.trim()) return null
+  return credentials as SyncUpstreamPreviewParams
+})
 // FORK-ANCHOR: ag-hub-hide-fill-related (二开：聚合中转无固定模型表，隐藏「同步最新支持模型」)
 const isAggregateHub = computed(() =>
   normalizedPlatforms.value.some(platform => platform.toLowerCase() === 'ag_hub')
@@ -313,10 +320,10 @@ const syncUpstreamModels = async () => {
   isSyncingUpstream.value = true
   try {
     let result
-    if (props.accountId) {
+    if (previewCredentials.value) {
+      result = await accountsAPI.syncUpstreamModelsPreview(previewCredentials.value)
+    } else if (props.accountId) {
       result = await accountsAPI.syncUpstreamModels(props.accountId)
-    } else if (props.syncCredentials) {
-      result = await accountsAPI.syncUpstreamModelsPreview(props.syncCredentials as SyncUpstreamPreviewParams)
     } else {
       return
     }

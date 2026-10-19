@@ -356,6 +356,22 @@ describe('EditAccountModal', () => {
     ])
   })
 
+  // FORK-ANCHOR: edit-api-key-focus-select-test (二开：聚焦 API Key 时掩码不消失，只做全选)
+  it('keeps the API key mask visible and selects it when focused', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    const input = wrapper.get('input[placeholder="sk-proj-..."]')
+    const element = input.element as HTMLInputElement
+    expect(element.value).toBe('****')
+
+    await input.trigger('focus')
+
+    expect(element.value).toBe('****')
+    expect(element.selectionStart).toBe(0)
+    expect(element.selectionEnd).toBe(4)
+  })
+
   it('sets expiry presets from now instead of extending the saved expiry', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2028-02-29T12:34:00'))

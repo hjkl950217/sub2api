@@ -772,6 +772,28 @@ func TestSyncUpstreamModelCatalogDoesNotOverwriteSnapshotWhenRegistryFails(t *te
 	require.Nil(t, repo.updates, "a failed metadata enrichment must not erase a previously saved snapshot")
 }
 
+// Scenario: 自定义聚合网关不在 models.dev 里，模型 ID 同步成功时不该报「能力元数据不完整」。
+// FORK-ANCHOR: ag-hub-registry-miss-test (二开：覆盖无 registry 供应商时不提示元数据不完整)
+func TestSyncUpstreamModelCatalogSkipsIncompleteWarningWhenRegistryHasNoProvider(t *testing.T) {
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"data":[{"id":"glm-5.3"},{"id":"deepseek-v4"}]}`))},
+		{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{
+			"other-provider": {"id":"other-provider","name":"Other","api":"https://other.example/v1","models":{}}
+		}`))},
+	}}
+	repo := &upstreamModelMetadataRepoStub{}
+	svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
+
+	catalog, err := svc.SyncUpstreamModelCatalog(context.Background(), &Account{
+		ID: 140, Platform: PlatformAggregateHub, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "key", "base_url": "https://hub.example/v1"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"deepseek-v4", "glm-5.3"}, catalog.Models)
+	require.Empty(t, catalog.Warnings)
+	require.Nil(t, repo.updates)
+}
+
 func TestSyncUpstreamModelCatalogDoesNotPersistPartialMetadataWhenRegistryFails(t *testing.T) {
 	upstream := &httpUpstreamRecorder{responses: []*http.Response{
 		{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"models":[{

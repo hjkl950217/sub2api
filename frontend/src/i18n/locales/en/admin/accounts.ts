@@ -897,7 +897,7 @@ export default {
       searchModels: 'Search models...',
       noMatchingModels: 'No matching models',
       fillRelatedModels: 'Sync latest supported models',
-      syncUpstreamModels: 'Sync upstream supported models',
+      syncUpstreamModels: 'Sync upstream models', // FORK-ANCHOR: sync-upstream-label-en (二开：按钮文案缩短为「Sync upstream models」)
       syncUpstreamModelsLoading: 'Syncing upstream...',
       syncUpstreamModelsSuccess: 'Synced {count} new model(s) from upstream ({total} upstream total)',
       syncUpstreamModelsNoChanges: 'All {count} upstream model(s) are already in the whitelist',

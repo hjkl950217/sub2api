@@ -1003,7 +1003,7 @@ export default {
       searchModels: '搜索模型...',
       noMatchingModels: '没有匹配的模型',
       fillRelatedModels: '同步最新支持模型',
-      syncUpstreamModels: '同步上游支持的模型',
+      syncUpstreamModels: '同步上游模型', // FORK-ANCHOR: sync-upstream-label-zh (二开：按钮文案缩短为「同步上游模型」)
       syncUpstreamModelsLoading: '同步上游中...',
       syncUpstreamModelsSuccess: '已从上游同步 {count} 个新模型（上游共 {total} 个）',
       syncUpstreamModelsNoChanges: '上游 {count} 个模型均已在白名单中',

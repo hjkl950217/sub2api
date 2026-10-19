@@ -356,7 +356,7 @@
               data-1p-ignore
               data-lpignore="true"
               data-bwignore="true"
-              @focus="clearApiKeyMask"
+              @focus="selectApiKeyText"
               :placeholder="
                 account.platform === 'openai'
                   ? 'sk-proj-...'
@@ -453,7 +453,7 @@
 
             <!-- Whitelist Mode -->
             <div v-if="modelRestrictionMode === 'whitelist'">
-              <ModelWhitelistSelector v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="account?.id" />
+              <ModelWhitelistSelector v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :sync-credentials="editSyncPreviewCredentials" />
               <p class="text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
                 <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
@@ -975,7 +975,7 @@
 
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
-            <ModelWhitelistSelector v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="account?.id" />
+            <ModelWhitelistSelector v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :sync-credentials="editSyncPreviewCredentials" />
             <p class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
               <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
@@ -1085,7 +1085,7 @@
               :type="apiKeyInputType"
               class="input pr-10 font-mono"
               placeholder="sk-..."
-              @focus="clearApiKeyMask"
+              @focus="selectApiKeyText"
             />
             <button
               type="button"
@@ -1223,7 +1223,7 @@
 
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
-            <ModelWhitelistSelector v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="account?.id" />
+            <ModelWhitelistSelector v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :sync-credentials="editSyncPreviewCredentials" />
             <p class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
               <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
@@ -3655,7 +3655,7 @@ const editApiKey = ref('')
 // FORK-ANCHOR: edit-api-key-reveal-state (二开：编辑弹窗查看 API Key 明文。
 // 上游 GET /accounts/:id 会把 api_key 脱敏掉，明文只能走二开的 reveal 接口。
 // 打开弹窗就取一次（拿到长度才能按真实长度画星号掩码），眼睛按钮只负责显隐、不再发请求；
-// 掩码态点进输入框会自动清空，方便直接粘新 key；
+// 掩码态点进输入框会全选，直接输入或粘贴即覆盖，掩码本身不消失；
 // 提交时把掩码和空串都当作「不修改」处理，见 edit-api-key-reveal-submit。)
 const API_KEY_MASK_FALLBACK = '****' // 明文长度还没回来（或取失败）时的占位
 const apiKeyRevealed = ref(false)
@@ -3683,9 +3683,11 @@ const apiKeyInputType = computed<'text' | 'password'>(() =>
   apiKeyRevealed.value || isApiKeyMaskValue(editApiKey.value) ? 'text' : 'password'
 )
 
-function clearApiKeyMask() {
-  if (isApiKeyMaskValue(editApiKey.value)) {
-    editApiKey.value = ''
+// FORK-ANCHOR: edit-api-key-focus-select (二开：聚焦时选中掩码，不再清空；直接输入或粘贴会覆盖)
+function selectApiKeyText(event: FocusEvent) {
+  const input = event.target as HTMLInputElement | null
+  if (input && isApiKeyMaskValue(editApiKey.value)) {
+    input.select()
   }
 }
 
@@ -3818,6 +3820,27 @@ const editAdaptiveBaseUrls = ref<Record<CnNativeApiProtocol, string>>({
   chat_completions: '',
   anthropic: '',
   responses: ''
+})
+// FORK-ANCHOR: edit-sync-preview-credentials (二开：编辑态同步上游模型改用表单当前 URL/Key，
+// 不再拿数据库里已保存的旧配置去请求；留空未改 Key 时用打开弹窗时取到的明文)
+const editSyncPreviewCredentials = computed(() => {
+  if (props.account?.type !== 'apikey') return undefined
+  const inputKey = editApiKey.value.trim()
+  const apiKey = inputKey && !isApiKeyMaskValue(inputKey) ? inputKey : (apiKeyPlain.value ?? '').trim()
+  if (!apiKey) return undefined
+  let baseUrl = editBaseUrl.value.trim()
+  if (isCNApiKeyAccount.value) {
+    const protocol = (isEditCNProtocolUIPlatform.value && editFallbackProtocol.value
+      ? editFallbackProtocol.value
+      : 'chat_completions') as CnNativeApiProtocol
+    baseUrl = (editAdaptiveBaseUrls.value[protocol] || editAdaptiveBaseUrls.value.chat_completions || baseUrl).trim()
+  }
+  return {
+    platform: props.account.platform,
+    type: props.account.type,
+    base_url: baseUrl || undefined,
+    api_key: apiKey
+  }
 })
 // 回填窗口标志：syncFormFromAccount 会同步改写 editAccountMode / editApiProtocol，
 // 而 watcher（pre-flush）在同步代码执行完之后才触发——若不抑制，会把刚恢复的

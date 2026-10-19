@@ -350,6 +350,31 @@ describe('ModelWhitelistSelector', () => {
     expect(wrapper.emitted('update:modelValue')).toEqual([[['x-preview-f-free']]])
   })
 
+  // FORK-ANCHOR: sync-upstream-prefer-preview-test (二开：编辑态表单凭据优先于已保存账号)
+  it('prefers live edit credentials over the saved account when both are present', async () => {
+    syncUpstreamModelsPreview.mockResolvedValue({ models: ['new-model'] })
+    const wrapper = mountSelector({
+      platform: 'ag_hub',
+      accountId: 46,
+      syncCredentials: {
+        platform: 'ag_hub',
+        type: 'apikey',
+        base_url: 'https://new.example.com',
+        api_key: 'new-key',
+      },
+    })
+    const syncButton = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'admin.accounts.syncUpstreamModels')
+
+    await syncButton!.trigger('click')
+    await flushPromises()
+
+    expect(syncUpstreamModelsPreview).toHaveBeenCalledOnce()
+    expect(syncUpstreamModels).not.toHaveBeenCalled()
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['new-model']]])
+  })
+
   it('shows the upstream sync button for OpenCode Go create-account credentials', () => {
     const wrapper = mountSelector({
       platform: 'opencode_go',
@@ -369,7 +394,7 @@ describe('ModelWhitelistSelector', () => {
   })
 
   // FORK-ANCHOR: ag-hub-hide-fill-related-spec (二开：聚合中转没有固定模型表，隐藏「同步最新支持模型」)
-  it('聚合中转不显示「同步最新支持模型」，但保留「同步上游支持的模型」', () => {
+  it('聚合中转不显示「同步最新支持模型」，但保留「同步上游模型」', () => {
     const wrapper = mountSelector({
       platform: 'ag_hub',
       syncCredentials: {

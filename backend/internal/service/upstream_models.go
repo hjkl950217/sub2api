@@ -196,6 +196,11 @@ func newUpstreamModelSyncInternalError(message string, err error) error {
 	return &UpstreamModelSyncError{Kind: UpstreamModelSyncErrorInternal, Message: message, Err: err}
 }
 
+// errNoModelMetadataProvider 表示 models.dev 里没有匹配该上游 base URL 的供应商。
+// 自定义聚合网关和自建中转本来就不在注册表里，缺能力元数据是预期行为，不该报「同步不完整」。
+// FORK-ANCHOR: ag-hub-registry-miss-sentinel (二开：聚合中转等自定义端点匹配不到 models.dev 时不提示元数据不完整)
+var errNoModelMetadataProvider = errors.New("no model metadata provider matches account base URL")
+
 // FetchUpstreamSupportedModels fetches only live model IDs. The admin sync path
 // uses SyncUpstreamModelCatalog so capability metadata can also be persisted.
 func (s *AccountTestService) FetchUpstreamSupportedModels(ctx context.Context, account *Account) ([]string, error) {
@@ -247,6 +252,7 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 	capabilityIDs := capabilitySyncModelIDs(enrichIDs)
 
 	source := "upstream"
+	registryMatched := true
 	if upstreamCatalogNeedsRegistry(capabilityIDs, catalog.Metadata) {
 		if registryMetadata, registryErr := s.fetchModelsDevMetadata(ctx, account, enrichIDs); registryErr == nil {
 			for modelID, fallback := range registryMetadata {
@@ -258,6 +264,9 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 				}
 			}
 		} else {
+			if errors.Is(registryErr, errNoModelMetadataProvider) {
+				registryMatched = false
+			}
 			slog.Warn("upstream model capability metadata enrichment failed",
 				"account_id", upstreamModelSyncAccountID(account),
 				"platform", upstreamModelSyncPlatform(account),
@@ -306,7 +315,7 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 		persistedCapabilities = true
 	}
 
-	if upstreamCatalogNeedsRegistry(capabilityIDs, catalog.Metadata) {
+	if registryMatched && upstreamCatalogNeedsRegistry(capabilityIDs, catalog.Metadata) {
 		if persistedCapabilities {
 			catalog.Warnings = append(catalog.Warnings, UpstreamModelSyncWarning{
 				Code:    UpstreamModelMetadataPartialCode,
@@ -511,7 +520,7 @@ func (s *AccountTestService) fetchModelsDevMetadata(
 	}
 	provider, ok := matchModelsDevProvider(registry, upstreamModelRegistryBaseURL(account))
 	if !ok {
-		return nil, fmt.Errorf("no model metadata provider matches account base URL")
+		return nil, errNoModelMetadataProvider
 	}
 
 	metadata := make(map[string]UpstreamModelMetadata)
