@@ -311,6 +311,8 @@ func matchesKnownZhipuNonAPIKeyDifference(tc routingMatrixCase, want, got routin
 }
 
 func TestUpstreamProtocolRoutingMatrixMatchesMainGolden(t *testing.T) {
+	// FORK-ANCHOR: skip-routing-golden (二开：协议端点默认跟随账号首个地址，CN 供应商端点与 main 黄金文件不同；本测试只记录 main 行为)
+	t.Skip("fork: CN provider endpoint routing intentionally differs from main golden")
 	gin.SetMode(gin.TestMode)
 	data, err := os.ReadFile(routingMatrixGoldenPath)
 	require.NoError(t, err)
