@@ -1812,6 +1812,11 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx con
 	}) {
 		return false, "shadow_parent_unhealthy"
 	}
+	// 模型级限流必须在初始过滤里剔除：TopK 很小（例如 1）时，被限流的账号
+	// 会占掉唯一名额，fresh/DB 复核阶段才失败，把健康账号挡在候选池外。
+	if req.RequestedModel != "" && account.isModelRateLimitedWithContext(ctx, req.RequestedModel) {
+		return false, "model_rate_limited"
+	}
 	if req.RequestedModel != "" && !supportsOpenAIRequestModel(account, req.RequestedModel, req.RequireCompact) {
 		return false, "model_not_supported"
 	}
