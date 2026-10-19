@@ -28,7 +28,7 @@ describe('GroupBadge platform tones', () => {
     const openai = mountBadge('openai')
     const gemini = mountBadge('gemini')
 
-    expect(hub.classes()).toContain('bg-slate-100')
+    expect(hub.classes()).toContain('bg-lime-50') // FORK-ANCHOR: ag-hub-color-test (二开：聚合中转改用亮色 lime 配色)
     expect(hub.classes()).not.toEqual(openai.classes())
     expect(hub.classes()).not.toEqual(gemini.classes())
   })

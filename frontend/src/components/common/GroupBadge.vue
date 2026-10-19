@@ -183,8 +183,9 @@ const labelClass = computed(() => {
   if (props.platform === 'typesafe') {
     return `${base} bg-sky-200/60 text-sky-800 dark:bg-sky-800/40 dark:text-sky-300`
   }
+  // FORK-ANCHOR: ag-hub-color-group-label (二开：聚合中转改用亮色 lime 配色)
   if (props.platform === 'ag_hub') {
-    return `${base} bg-slate-300/70 text-slate-800 dark:bg-slate-700/60 dark:text-slate-200`
+    return `${base} bg-lime-200/60 text-lime-900 dark:bg-lime-800/40 dark:text-lime-300`
   }
   if (props.platform === 'command_code') {
     return `${base} bg-neutral-300/70 text-neutral-800 dark:bg-neutral-700/60 dark:text-neutral-200`
@@ -260,10 +261,11 @@ const badgeClass = computed(() => {
       ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
       : 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300'
   }
+  // FORK-ANCHOR: ag-hub-color-group-badge (二开：聚合中转改用亮色 lime 配色)
   if (props.platform === 'ag_hub') {
     return isSubscription.value
-      ? 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100'
-      : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
+      ? 'bg-lime-100 text-lime-800 dark:bg-lime-900/30 dark:text-lime-400'
+      : 'bg-lime-50 text-lime-800 dark:bg-lime-900/20 dark:text-lime-400'
   }
   if (props.platform === 'command_code') {
     return isSubscription.value
