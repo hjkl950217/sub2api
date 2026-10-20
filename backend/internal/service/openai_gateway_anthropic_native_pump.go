@@ -98,6 +98,10 @@ func (p *anthropicNativeLinePump) nextOrClientGone(clientGone <-chan struct{}) (
 	case <-timeoutCh:
 		select {
 		case ev, ok := <-p.events:
+			// FORK-ANCHOR: anthropic-pump-heartbeat-idle (二开：缓冲的只是心跳行时仍按空闲超时结束)
+			if ok && ev.err == nil && anthropicSSELineIsHeartbeat(ev.line) {
+				return "", errAnthropicNativeStreamIdle
+			}
 			return p.deliver(ev, ok)
 		default:
 			return "", errAnthropicNativeStreamIdle
