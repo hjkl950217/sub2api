@@ -1221,6 +1221,13 @@ func (s *GatewayService) extractSSEUsagePatch(event map[string]any) *sseUsagePat
 		if v, ok := parseSSEUsageInt(usageObj["input_tokens"]); ok {
 			patch.inputTokens = v
 		}
+		// FORK-ANCHOR: anthropic-message-start-output-usage-standard (二开：保留 message_start 已上报的输出用量，流中断时不漏计费)
+		// 上游在 message_start 已上报的输出用量：流若在 message_delta 前中断，
+		// 不记录这部分会导致输出少计费。
+		if v, ok := parseSSEUsageInt(usageObj["output_tokens"]); ok && v > 0 {
+			patch.outputTokens = v
+			patch.hasOutputTokens = true
+		}
 		patch.hasCacheCreationInput = true
 		if v, ok := parseSSEUsageInt(usageObj["cache_creation_input_tokens"]); ok {
 			patch.cacheCreationInputTokens = v

@@ -640,6 +640,11 @@ func parseSSEUsagePassthrough(data string, usage *ClaudeUsage) {
 		msgUsage := parsed.Get("message.usage")
 		if msgUsage.Exists() {
 			usage.InputTokens = int(msgUsage.Get("input_tokens").Int())
+			// FORK-ANCHOR: anthropic-message-start-output-usage-passthrough (二开：透传路径同样保留 message_start 已上报的输出用量)
+			// 流在 message_delta 前中断时要保留 message_start 已上报的输出用量。
+			if v := msgUsage.Get("output_tokens").Int(); v > 0 {
+				usage.OutputTokens = int(v)
+			}
 			usage.CacheCreationInputTokens = int(msgUsage.Get("cache_creation_input_tokens").Int())
 			usage.CacheReadInputTokens = int(msgUsage.Get("cache_read_input_tokens").Int())
 
