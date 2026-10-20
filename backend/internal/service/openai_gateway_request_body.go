@@ -275,14 +275,12 @@ func aliasDeepSeekResponsesImagePart(part map[string]any) bool {
 		part["type"] = "input_image"
 		changed = true
 	}
-	// FORK-ANCHOR: deepseek-image-single-url（二开：只保留 url，避免 image_url/url 各存一份 base64 导致请求体接近翻倍、触发 DeepSeek 48MiB 413）
-	if current, ok := part["url"].(string); !ok || strings.TrimSpace(current) != imageURL {
-		part["url"] = imageURL
+	if current, ok := part["image_url"].(string); !ok || strings.TrimSpace(current) != imageURL {
+		part["image_url"] = imageURL
 		changed = true
 	}
-	// DeepSeek 线上解码器只要求 url；image_url 与 url 同值时删除，避免同一份 base64 写两遍。
-	if _, exists := part["image_url"]; exists {
-		delete(part, "image_url")
+	if current, ok := part["url"].(string); !ok || strings.TrimSpace(current) != imageURL {
+		part["url"] = imageURL
 		changed = true
 	}
 	return changed
