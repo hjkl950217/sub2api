@@ -209,8 +209,7 @@
           :sort-storage-key="ACCOUNT_SORT_STORAGE_KEY"
           :estimate-row-height="156"
           :overscan="5"
-          <!-- FORK-ANCHOR: account-table-no-virtualize（二开：分页上限 50，全量渲染，虚拟占位会造成表尾空白） -->
-          :virtualize-threshold="200"
+          :virtualize-threshold="ACCOUNT_TABLE_VIRTUALIZE_THRESHOLD"
         >
           <template #header-select>
             <input
@@ -1346,6 +1345,9 @@ const debouncedSearchReload = useDebounceFn(() => {
   clearSelection()
   void reload()
 }, ACCOUNT_SEARCH_DEBOUNCE_MS)
+
+// FORK-ANCHOR: account-table-no-virtualize（二开：分页上限 50，全量渲染，虚拟占位会把滚动区撑出表尾空白）
+const ACCOUNT_TABLE_VIRTUALIZE_THRESHOLD = 200
 
 const handleSearchQueryUpdate = () => {
   debouncedSearchReload()
