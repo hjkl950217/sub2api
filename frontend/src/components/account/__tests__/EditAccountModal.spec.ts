@@ -2313,4 +2313,22 @@ describe('EditAccountModal 编辑弹窗 tab 分区', () => {
     expect(basicPanel.textContent).not.toContain('admin.accounts.tempUnschedulable.title')
     wrapper.unmount()
   })
+
+  it('代理、优先级等基础字段不落在临时调度面板里', async () => {
+    const wrapper = mountModal()
+    const tempPanel = panel(wrapper, 'temp').element
+    const continuation = wrapper.get('[data-testid="edit-account-panel-basic-continuation"]')
+      .element as HTMLElement
+
+    expect(tempPanel.querySelector('[data-testid="account-rate-multiplier"]')).toBeNull()
+    expect(tempPanel.contains(continuation)).toBe(false)
+    expect(continuation.querySelector('[data-testid="account-rate-multiplier"]')).not.toBeNull()
+
+    await tabButton(wrapper, 'temp').trigger('click')
+    expect(continuation.style.display).toBe('none')
+
+    await tabButton(wrapper, 'basic').trigger('click')
+    expect(continuation.style.display).not.toBe('none')
+    wrapper.unmount()
+  })
 })

@@ -1854,6 +1854,8 @@
         </div>
       </div>
 
+      <!-- FORK-ANCHOR: edit-account-tab-panels-continuation (二开：临时调度面板之后的基础字段继续归入基础信息 tab) -->
+      <div v-show="activeTab === 'basic'" data-testid="edit-account-panel-basic-continuation" class="space-y-5">
 
       <div
         v-if="supportsAccountSchedulingThresholdOverride"
@@ -3327,6 +3329,8 @@
         :mixed-scheduling="mixedScheduling"
         data-tour="account-form-groups"
       />
+
+      </div>
 
     </form>
 
