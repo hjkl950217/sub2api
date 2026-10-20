@@ -209,7 +209,8 @@
           :sort-storage-key="ACCOUNT_SORT_STORAGE_KEY"
           :estimate-row-height="156"
           :overscan="5"
-          :virtualize-threshold="50"
+          <!-- FORK-ANCHOR: account-table-no-virtualize（二开：分页上限 50，全量渲染，虚拟占位会造成表尾空白） -->
+          :virtualize-threshold="200"
         >
           <template #header-select>
             <input

@@ -510,6 +510,72 @@ describe('AccountTestModal', () => {
     ).toBeUndefined()
   })
 
+  // FORK-ANCHOR: test-test-modal-sync-protocols-early (二开：有协议出结论即可同步，不等全部测完)
+  it('只要有一个协议出结论，同步按钮就可点击并显示已结论数量', async () => {
+    const encoder = new TextEncoder()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let step = 0
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: async () => {
+            if (step === 0) {
+              step++
+              return {
+                done: false,
+                value: encoder.encode(
+                  'data: {"type":"protocol_result","protocol":"chat_completions","protocol_ok":true,"text":"chat-ok"}\n'
+                )
+              }
+            }
+            await gate
+            if (step === 1) {
+              step++
+              return {
+                done: false,
+                value: encoder.encode(
+                  'data: {"type":"protocol_result","protocol":"anthropic","protocol_ok":true,"text":"anthropic-ok"}\n'
+                )
+              }
+            }
+            if (step === 2) {
+              step++
+              return { done: false, value: encoder.encode('data: {"type":"test_complete","success":true}\n') }
+            }
+            return { done: true, value: undefined }
+          }
+        })
+      }
+    }) as any
+
+    const wrapper = mountModal({
+      id: 7,
+      name: 'DeepSeek',
+      platform: 'deepseek',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    ;(wrapper.vm as any).selectedModelId = 'deepseek-chat'
+    const running = (wrapper.vm as any).startTest()
+    await flushPromises()
+
+    // 第一条协议已出结论，后面还在测：按钮已可点，且显示 1/3
+    const button = wrapper.get('[data-testid="sync-protocols-button"]')
+    expect(button.attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-testid="sync-protocols-count"]').text()).toBe('1/3')
+
+    release()
+    await running
+    await flushPromises()
+  })
+
   it('openai API Key 只铺 chat 与 responses 两张灰色占位', async () => {
     const wrapper = mountModal({
       id: 8,

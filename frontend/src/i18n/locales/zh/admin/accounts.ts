@@ -332,7 +332,7 @@ export default {
       },
       // FORK-ANCHOR: i18n-cn-sync-protocols-zh (测试弹窗「更新支持协议」文案；代码引用的是 admin.accounts 顶层路径)
       syncProtocols: '更新支持协议',
-      syncProtocolsHint: '把三个协议各测一次，测通的协议自动写入账号的 API 协议勾选，兜底转发协议取 Chat Completions 优先。',
+      syncProtocolsHint: '已出结论的协议会自动写入账号的 API 协议勾选，不必等全部协议测完；兜底转发协议取 Chat Completions 优先。',
       syncProtocolsSuccess: '已按测试结果更新账号支持的协议',
       syncProtocolsNonePassed: '三个协议都没有测通，账号配置保持不变',
       protocolProbeTitle: '协议测试结果',

@@ -127,7 +127,7 @@ export default {
       },
       // FORK-ANCHOR: i18n-cn-sync-protocols-en ("Update supported protocols" copy; code references the admin.accounts top-level path)
       syncProtocols: 'Update supported protocols',
-      syncProtocolsHint: 'Probes all three protocols once each and writes the ones that pass into the account’s protocol selection, preferring Chat Completions as the fallback protocol.',
+      syncProtocolsHint: 'Protocols that already finished are written into the account’s protocol selection; you do not have to wait for every protocol. Chat Completions is preferred as the fallback protocol.',
       syncProtocolsSuccess: 'Account supported protocols updated from test results',
       syncProtocolsNonePassed: 'None of the three protocols passed; account settings were left unchanged',
       protocolProbeTitle: 'Protocol test results',

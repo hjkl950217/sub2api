@@ -521,18 +521,23 @@
           v-if="supportsProtocolSync"
           type="button"
           data-testid="sync-protocols-button"
-          :disabled="status === 'connecting' || savingProtocols || testedProtocolCount !== expectedProtocolCount"
+          :disabled="savingProtocols || testedProtocolCount === 0"
           :title="t('admin.accounts.syncProtocolsHint')"
           @click="startProtocolSync"
           :class="[
             'mr-auto flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all',
-            status === 'connecting' || savingProtocols
+            savingProtocols || testedProtocolCount === 0
               ? 'cursor-not-allowed bg-indigo-300 text-white'
               : 'bg-indigo-500 text-white hover:bg-indigo-600'
           ]"
         >
           <Icon name="refresh" size="sm" :stroke-width="2" :class="savingProtocols ? 'animate-spin' : ''" />
           <span>{{ t('admin.accounts.syncProtocols') }}</span>
+          <span
+            v-if="testedProtocolCount > 0"
+            data-testid="sync-protocols-count"
+            class="rounded-full bg-white/20 px-1.5 py-0.5 text-xs font-semibold"
+          >{{ testedProtocolCount }}/{{ expectedProtocolCount }}</span>
         </button>
         <button
           @click="handleClose"
@@ -1304,7 +1309,7 @@ const scrollToBottom = async () => {
 
 // FORK-ANCHOR: test-modal-sync-protocols-start (二开：根据已有探测结果保存协议，不重测)
 const startProtocolSync = async () => {
-  if (!props.account || status.value === 'connecting' || savingProtocols.value) return
+  if (!props.account || savingProtocols.value) return
   const passed = protocolResults.value.filter((result) => result.success).map((result) => result.protocol)
   if (passed.length === 0) {
     appStore.showError(t('admin.accounts.syncProtocolsNonePassed'))
