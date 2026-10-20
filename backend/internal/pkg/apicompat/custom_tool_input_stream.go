@@ -72,7 +72,8 @@ func (s *customToolInputStream) delta(arguments string) string {
 				s.stopped = true
 				break
 			}
-			out.WriteString(decoded)
+			// FORK-ANCHOR: custom-tool-stream-errcheck (二开：上游未处理 strings.Builder 返回值，golangci-lint 不过)
+			_, _ = out.WriteString(decoded)
 			s.offset += n
 		default:
 			if rest[0] < 0x20 {
@@ -83,7 +84,8 @@ func (s *customToolInputStream) delta(arguments string) string {
 				return s.record(out.String())
 			}
 			r, n := utf8.DecodeRuneInString(rest)
-			out.WriteRune(r)
+			// FORK-ANCHOR: custom-tool-stream-errcheck-rune (二开：同上，WriteRune 返回值也要显式忽略)
+			_, _ = out.WriteRune(r)
 			s.offset += n
 		}
 		if s.stopped {
@@ -94,7 +96,8 @@ func (s *customToolInputStream) delta(arguments string) string {
 }
 
 func (s *customToolInputStream) record(delta string) string {
-	s.emitted.WriteString(delta)
+	// FORK-ANCHOR: custom-tool-stream-record-errcheck (二开：同上，record 里的 WriteString)
+	_, _ = s.emitted.WriteString(delta)
 	return delta
 }
 

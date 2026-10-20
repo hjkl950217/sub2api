@@ -34,7 +34,8 @@ func TestCustomToolInputStreamEverySplit(t *testing.T) {
 			for i := 1; i <= len(arguments); i++ {
 				delta := stream.delta(arguments[:i])
 				require.True(t, utf8.ValidString(delta))
-				got.WriteString(delta)
+				// FORK-ANCHOR: custom-tool-stream-test-errcheck (二开：测试里的 Builder 返回值显式忽略)
+				_, _ = got.WriteString(delta)
 			}
 			require.Equal(t, want, got.String())
 		})
