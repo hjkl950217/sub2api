@@ -1850,7 +1850,13 @@ func FinalizeChatCompletionsResponsesStream(state *ChatCompletionsToResponsesStr
 	}
 
 	state.CompletedSent = true
-	events = append(events, chatToResponsesEvent(state, "response.completed", &ResponsesStreamEvent{
+	// FORK-ANCHOR: responses-incomplete-event-type (二开：max_output_tokens 截断时事件名同步为 response.incomplete)
+	// 官方在 status=incomplete 时发 response.incomplete；沿用 completed 会让客户端把截断当正常完成。
+	eventType := "response.completed"
+	if status == "incomplete" {
+		eventType = "response.incomplete"
+	}
+	events = append(events, chatToResponsesEvent(state, eventType, &ResponsesStreamEvent{
 		Response: &ResponsesResponse{
 			ID:                state.ResponseID,
 			Object:            "response",

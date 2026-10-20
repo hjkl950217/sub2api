@@ -71,7 +71,7 @@ func TestStream_ReasoningOnlySynthesizesVisibleText(t *testing.T) {
 				sawMessageDone = true
 				require.Equal(t, "thinking before final", e.Item.Content[0].Text)
 			}
-		case "response.completed":
+		case "response.incomplete":
 			require.NotNil(t, e.Response)
 			require.Equal(t, "incomplete", e.Response.Status)
 			require.NotNil(t, e.Response.IncompleteDetails)
@@ -80,6 +80,8 @@ func TestStream_ReasoningOnlySynthesizesVisibleText(t *testing.T) {
 			require.Equal(t, "reasoning", e.Response.Output[0].Type)
 			require.Equal(t, "message", e.Response.Output[1].Type)
 			require.Equal(t, "thinking before final", e.Response.Output[1].Content[0].Text)
+		case "response.completed":
+			require.Fail(t, "truncated stream must not emit response.completed")
 		}
 	}
 	require.True(t, sawTextDelta, "reasoning-only stream must produce visible text delta")
@@ -277,9 +279,11 @@ func TestStream_ValidToolCallAtOutputLimitKeepsIncompleteResponse(t *testing.T) 
 		case "response.function_call_arguments.done":
 			sawArgsDone = true
 			require.Equal(t, `{}`, event.Arguments)
-		case "response.completed":
+		case "response.incomplete":
 			require.NotNil(t, event.Response)
 			sawIncomplete = event.Response.Status == "incomplete"
+		case "response.completed":
+			require.Fail(t, "truncated stream must not emit response.completed")
 		}
 	}
 	require.True(t, sawArgsDone)
