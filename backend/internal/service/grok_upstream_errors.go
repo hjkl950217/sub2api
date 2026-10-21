@@ -215,6 +215,9 @@ func (s *OpenAIGatewayService) shouldFailoverGrokUpstreamError(statusCode int, r
 	if isGrokUnrecognizedPaymentRequired(statusCode, responseBody) {
 		return false
 	}
+	if isGrokUnrecognizedForbidden(statusCode, responseBody) {
+		return false
+	}
 	return s.shouldFailoverUpstreamError(statusCode)
 }
 

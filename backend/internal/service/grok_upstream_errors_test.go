@@ -312,6 +312,28 @@ func TestGrokPermissionDeniedContentRefusalDoesNotMutateOrFailover(t *testing.T)
 	require.False(t, svc.shouldFailoverGrokUpstreamError(http.StatusForbidden, body))
 }
 
+func TestHandleGrokAccountUpstreamErrorUnrecognized403DoesNotCooldownOrFailover(t *testing.T) {
+	bodies := [][]byte{
+		nil,
+		[]byte(""),
+		[]byte("<html>403 Forbidden</html>"),
+		[]byte(`{"error":{"message":"upstream returned an unknown response"}}`),
+		[]byte(`{"code":"permission-denied","error":"Access to the chat endpoint is denied"}`),
+	}
+	for i, body := range bodies {
+		repo := &grokQuotaAccountRepo{}
+		svc := &OpenAIGatewayService{accountRepo: repo}
+		account := &Account{ID: int64(9300 + i), Platform: PlatformGrok, Type: AccountTypeOAuth}
+
+		svc.handleGrokAccountUpstreamError(context.Background(), account, http.StatusForbidden, nil, body)
+
+		require.Zero(t, repo.tempUnschedCalls, string(body))
+		require.Zero(t, repo.rateLimitedCalls, string(body))
+		require.False(t, svc.isOpenAIAccountRuntimeBlocked(account), string(body))
+		require.False(t, svc.shouldFailoverGrokUpstreamError(http.StatusForbidden, body), string(body))
+	}
+}
+
 func TestHandleGrokAccountUpstreamErrorUnrecognized402DoesNotQuarantine(t *testing.T) {
 	for _, body := range [][]byte{
 		nil,
@@ -381,9 +403,12 @@ func TestHandleGrokAccountUpstreamErrorDefaultCooldownsRespectPoolMode(t *testin
 					"pool_mode": true,
 				},
 			}
-			body := []byte(`{"error":{"message":"grok access or entitlement denied"}}`)
+			body := []byte(`{"error":{"code":"account_suspended","message":"account suspended"}}`)
 			if statusCode == http.StatusPaymentRequired {
 				body = []byte(`{"error":{"message":"You have run out of credits or need a Grok subscription"}}`)
+			}
+			if statusCode != http.StatusForbidden && statusCode != http.StatusPaymentRequired {
+				body = []byte(`{"error":{"message":"grok access or entitlement denied"}}`)
 			}
 
 			svc.handleGrokAccountUpstreamError(
