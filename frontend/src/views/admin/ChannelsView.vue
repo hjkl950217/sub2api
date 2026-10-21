@@ -324,9 +324,9 @@
               </div>
             </div>
 
-            <!-- FORK-ANCHOR: ag-hub-websearch-toggle (二开：聚合中转渠道也能启用 web search 模拟) -->
-            <!-- Web Search Emulation (Anthropic + 聚合中转, hidden when global disabled) -->
-            <div v-if="(section.platform === 'anthropic' || section.platform === 'ag_hub') && webSearchGlobalEnabled" class="border-t border-gray-200 pt-3 dark:border-dark-600">
+            <!-- FORK-ANCHOR: ag-hub-websearch-toggle (二开：web search 模拟开关按网关平台显示，覆盖国产供应商与聚合中转) -->
+            <!-- Web Search Emulation (Anthropic + OpenAI-gateway platforms, hidden when global disabled) -->
+            <div v-if="supportsWebSearchEmulation(section.platform) && webSearchGlobalEnabled" class="border-t border-gray-200 pt-3 dark:border-dark-600">
               <div class="flex items-center justify-between">
                 <div>
                   <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
@@ -640,7 +640,7 @@ import { apiIntervalsToForm, apiTimePricingToForm, createDefaultTimePricingForm,
 import type { AdminGroup, GroupPlatform } from '@/types'
 import type { Column } from '@/components/common/types'
 import { platformTextClass, platformBadgeLightClass, platformLabel as catalogPlatformLabel } from '@/utils/platformColors'
-import { listPlatformIds, supportsPricingModelSync } from '@/constants/platformCatalog'
+import { getPlatformSpec, listPlatformIds, supportsPricingModelSync } from '@/constants/platformCatalog'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -779,6 +779,14 @@ function formatDate(value: string): string {
 
 // ── Platform section helpers ──
 const activePlatforms = computed(() => form.platforms.filter(s => s.enabled).map(s => s.platform))
+
+// FORK-ANCHOR: channel-websearch-platforms (二开：web search 模拟适用于 Anthropic 与 OpenAI 网关下的平台)
+// 后端在 /v1/messages 入口按账号 platform 读取该开关；国产供应商、聚合中转等
+// 没有原生搜索的 API Key 平台都能用它。
+function supportsWebSearchEmulation(platform: string): boolean {
+  const gateway = getPlatformSpec(platform)?.gateway
+  return gateway === 'anthropic' || gateway === 'openai'
+}
 
 function addPlatformSection(platform: GroupPlatform) {
   form.platforms.push({
@@ -1151,14 +1159,14 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
   }
   const uniqueGroupIds = Array.from(new Set(group_ids))
 
-  // Collect web_search_emulation (Anthropic 与聚合中转；后端按账号 platform 读取)
-  // FORK-ANCHOR: ag-hub-websearch-save (二开：保存聚合中转的 web search 开关)
+  // Collect web_search_emulation (Anthropic 与 OpenAI 网关平台；后端按账号 platform 读取)
+  // FORK-ANCHOR: ag-hub-websearch-save (二开：保存各网关平台的 web search 开关)
   // Always write the key so that disabling in the UI correctly sets platform to false,
   // rather than leaving a stale true value from the cloned features_config.
   const wsEmulation: Record<string, boolean> = {}
   for (const section of form.platforms) {
     if (!section.enabled) continue
-    if (section.platform === 'anthropic' || section.platform === 'ag_hub') {
+    if (supportsWebSearchEmulation(section.platform)) {
       wsEmulation[section.platform] = !!section.web_search_emulation
     }
   }
