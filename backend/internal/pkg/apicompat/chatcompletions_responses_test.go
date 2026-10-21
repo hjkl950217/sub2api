@@ -133,15 +133,17 @@ func TestChatCompletionsToResponses_MessageTypesWithReasoningAndTools(t *testing
 		assert.Equal(t, want.typ, items[i].Type, "input item %d type", i)
 		assert.Equal(t, want.role, items[i].Role, "input item %d role", i)
 	}
-	require.Len(t, items[2].Summary, 1)
-	assert.Equal(t, "summary_text", items[2].Summary[0].Type)
-	assert.Equal(t, "Need to inspect the directory.", items[2].Summary[0].Text)
+	require.NotNil(t, items[2].Summary)
+	require.Len(t, *items[2].Summary, 1)
+	assert.Equal(t, "summary_text", (*items[2].Summary)[0].Type)
+	assert.Equal(t, "Need to inspect the directory.", (*items[2].Summary)[0].Text)
 	var assistantContent []ResponsesContentPart
 	require.NoError(t, json.Unmarshal(items[3].Content, &assistantContent))
 	require.Len(t, assistantContent, 1)
 	assert.Equal(t, "I will check.", assistantContent[0].Text)
-	require.Len(t, items[6].Summary, 1)
-	assert.Equal(t, "The tool returned /tmp.", items[6].Summary[0].Text)
+	require.NotNil(t, items[6].Summary)
+	require.Len(t, *items[6].Summary, 1)
+	assert.Equal(t, "The tool returned /tmp.", (*items[6].Summary)[0].Text)
 	assert.Equal(t, "call_1", items[4].CallID)
 	assert.Equal(t, "call_1", items[5].CallID)
 }
@@ -890,9 +892,10 @@ func TestChatCompletionsToResponses_AssistantThinkingBecomesReasoningItem(t *tes
 	require.NoError(t, json.Unmarshal(resp.Input, &items))
 	require.Len(t, items, 3)
 	assert.Equal(t, "reasoning", items[1].Type)
-	require.Len(t, items[1].Summary, 1)
-	assert.Equal(t, "summary_text", items[1].Summary[0].Type)
-	assert.Equal(t, "internal plan", items[1].Summary[0].Text)
+	require.NotNil(t, items[1].Summary)
+	require.Len(t, *items[1].Summary, 1)
+	assert.Equal(t, "summary_text", (*items[1].Summary)[0].Type)
+	assert.Equal(t, "internal plan", (*items[1].Summary)[0].Text)
 
 	var parts []ResponsesContentPart
 	require.NoError(t, json.Unmarshal(items[2].Content, &parts))
@@ -921,8 +924,9 @@ func TestChatCompletionsToResponses_AssistantReasoningBecomesReasoningItem(t *te
 	require.NoError(t, json.Unmarshal(resp.Input, &items))
 	require.Len(t, items, 3)
 	assert.Equal(t, "reasoning", items[1].Type)
-	require.Len(t, items[1].Summary, 1)
-	assert.Equal(t, "internal plan", items[1].Summary[0].Text)
+	require.NotNil(t, items[1].Summary)
+	require.Len(t, *items[1].Summary, 1)
+	assert.Equal(t, "internal plan", (*items[1].Summary)[0].Text)
 
 	var parts []ResponsesContentPart
 	require.NoError(t, json.Unmarshal(items[2].Content, &parts))

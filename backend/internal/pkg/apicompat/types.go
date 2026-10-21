@@ -284,14 +284,12 @@ type ResponsesInputItem struct {
 
 	// type=reasoning (multi-turn replay of encrypted reasoning)
 	EncryptedContent string `json:"encrypted_content,omitempty"`
-	// A reasoning input requires summary, including [] when no visible summary
-	// exists. A pointer keeps this field absent on other input item types.
-	Summary *[]ResponsesSummary `json:"summary,omitempty"`
 
 	// FORK-ANCHOR: reasoning-input-summary (二开：reasoning 输入项支持纯文本 summary)
 	// type=reasoning 的纯文本载体，供无密文的推理使用（DeepSeek 等）。上游要求
 	// reasoning 项带 summary 字段，缺失会报 400 "Missing required parameter input[N].summary"。
-	Summary []ResponsesSummary `json:"summary,omitempty"`
+	// 指针让“仅有密文”的 reasoning 项也能显式发送 summary: []。
+	Summary *[]ResponsesSummary `json:"summary,omitempty"`
 
 	// type=function_call
 	CallID    string `json:"call_id,omitempty"`

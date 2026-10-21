@@ -265,7 +265,7 @@ func chatAssistantToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
 	if reasoning != "" {
 		items = append(items, ResponsesInputItem{
 			Type:    "reasoning",
-			Summary: []ResponsesSummary{{Type: "summary_text", Text: reasoning}},
+			Summary: &[]ResponsesSummary{{Type: "summary_text", Text: reasoning}},
 		})
 	}
 
