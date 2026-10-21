@@ -195,7 +195,8 @@ func TestHandleUpstreamError_KimiExplicitQuotaBypassesBroadTempRule(t *testing.T
 	svc := NewRateLimitService(accountRepo, nil, &config.Config{}, nil, nil)
 	svc.SetSettingService(NewSettingService(newMockSettingRepo(), &config.Config{}))
 	now := time.Now()
-	reset := now.Add(3 * time.Hour)
+	// 本 fork 对快照冷却有 2h 上限，窗口重置点要落在上限以内才能原样生效。
+	reset := now.Add(90 * time.Minute)
 	account := &Account{
 		ID: 50, Platform: PlatformKimi, Type: AccountTypeAPIKey,
 		Credentials: map[string]any{
