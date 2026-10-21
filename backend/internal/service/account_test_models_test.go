@@ -291,3 +291,42 @@ func TestFetchOpenAIAccountModelsMappingChangesReuseRawCache(t *testing.T) {
 	require.Equal(t, original, after.Body, "projection must not mutate the shared catalog")
 	require.EqualValues(t, 1, calls.Load(), "both mappings must reuse the same discovery cache")
 }
+
+// 二开：测试列表保留上游目录缺失的已配置模型（锚点见 account_test_service.go
+// 的 account-test-picker-configured-models）。
+// 上游 /models 返回带日期后缀的 ID、或只列出部分模型时，显式配置的映射左侧名
+// 仍应出现在测试下拉里，管理员才能选中并实际验证（issue #8081）。
+func TestForkFetchOpenAIAccountModelsKeepsConfiguredModelsAbsentUpstream(t *testing.T) {
+	gateway := newCodexModelsAPIKeyTestService(&codexModelsHTTPUpstreamStub{do: func(_ *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+		return ordinaryModelsUpstreamResponse(`{"data":[
+			{"id":"deepseek-v4-pro-260425","owned_by":"provider"},
+			{"id":"direct-model","owned_by":"provider"}
+		]}`), nil
+	}})
+	svc := &AccountTestService{openaiGatewayService: gateway}
+	account := newCodexModelsAPIKeyTestAccount("https://models.example/v1")
+	account.Credentials["model_mapping"] = map[string]any{
+		"deepseek-v4-pro": "deepseek-v4-pro",
+		"glm-5.3":         "glm-5.3",
+		"direct-model":    "direct-model",
+	}
+
+	models, err := svc.FetchOpenAIAccountModels(context.Background(), account)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"deepseek-v4-pro", "glm-5.3", "direct-model"}, pickerModelIDs(models))
+}
+
+// 透传账号不应用映射，测试列表保持上游目录原样。
+func TestForkFetchOpenAIAccountModelsPassthroughIgnoresConfiguredModels(t *testing.T) {
+	gateway := newCodexModelsAPIKeyTestService(&codexModelsHTTPUpstreamStub{do: func(_ *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+		return ordinaryModelsUpstreamResponse(`{"data":[{"id":"upstream-only","owned_by":"provider"}]}`), nil
+	}})
+	svc := &AccountTestService{openaiGatewayService: gateway}
+	account := newCodexModelsAPIKeyTestAccount("https://models.example/v1")
+	account.Extra = map[string]any{"openai_passthrough": true}
+	account.Credentials["model_mapping"] = map[string]any{"configured-only": "configured-only"}
+
+	models, err := svc.FetchOpenAIAccountModels(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, []string{"upstream-only"}, pickerModelIDs(models))
+}

@@ -22,6 +22,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -276,7 +277,45 @@ func (s *AccountTestService) FetchOpenAIAccountModels(ctx context.Context, accou
 			seen[publicID] = true
 		}
 	}
-	return payload.Data, nil
+	return appendMissingConfiguredModels(payload.Data, account), nil
+}
+
+// FORK-ANCHOR: account-test-picker-configured-models (二开：测试列表保留上游目录缺失的已配置模型)
+// appendMissingConfiguredModels 把显式配置、但上游目录里不存在的映射左侧名补进
+// 测试下拉：上游 /models 常返回带日期后缀的 ID 或只列部分模型，投影阶段会按
+// 目标缺失把这些条目丢掉（issue #8081）。只影响测试列表，不改共享目录与缓存。
+// OAuth 账号的 Codex 目录另有图片模型补充规则，不在此改动。
+func appendMissingConfiguredModels(models []openai.Model, account *Account) []openai.Model {
+	if account == nil || account.IsOpenAIPassthroughEnabled() || account.IsOpenAIOAuthLike() {
+		return models
+	}
+	mapping := account.GetModelMapping()
+	if len(mapping) == 0 {
+		return models
+	}
+	seen := make(map[string]struct{}, len(models)+len(mapping))
+	for _, model := range models {
+		seen[model.ID] = struct{}{}
+	}
+	names := make([]string, 0, len(mapping))
+	for name := range mapping {
+		if strings.Contains(name, "*") {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		models = append(models, openai.Model{
+			ID: name, Object: "model", Type: "model", OwnedBy: "openai",
+			DisplayName: openaiCodexDisplayName(name),
+		})
+		seen[name] = struct{}{}
+	}
+	return models
 }
 
 // NewAccountTestService creates a new AccountTestService
