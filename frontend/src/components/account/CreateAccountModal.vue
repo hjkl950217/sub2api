@@ -3558,9 +3558,9 @@
         </div>
       </div>
 
-      <!-- Anthropic API Key: Web Search Emulation (hidden when global disabled) -->
+      <!-- Anthropic / OpenAI / DeepSeek / 聚合中转 API Key: Web Search Emulation (hidden when global disabled) -->
       <div
-        v-if="form.platform === 'anthropic' && accountCategory === 'apikey' && webSearchGlobalEnabled"
+        v-if="supportsAccountWebSearchEmulation(form.platform) && accountCategory === 'apikey' && webSearchGlobalEnabled"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -4336,6 +4336,7 @@ import {
   providerNativeProtocols,
   providerRoutesByModel,
   resolveProviderAccountMode,
+  supportsAccountWebSearchEmulation,
   validateHeaderOverrideRows,
   type CnAccountMode,
   type CnApiProtocol,
@@ -6253,12 +6254,21 @@ const buildAnthropicExtra = (base?: Record<string, unknown>): Record<string, unk
   } else {
     delete extra.anthropic_apikey_auth_scheme
   }
+
+  return Object.keys(extra).length > 0 ? extra : undefined
+}
+
+// FORK-ANCHOR: create-websearch-emulation-extra (二开：web search 模拟开关对 /v1/messages 接入平台统一落 extra)
+const buildWebSearchEmulationExtra = (base?: Record<string, unknown>): Record<string, unknown> | undefined => {
+  if (accountCategory.value !== 'apikey' || !supportsAccountWebSearchEmulation(form.platform)) {
+    return base
+  }
+  const extra: Record<string, unknown> = { ...(base || {}) }
   if (webSearchEmulationMode.value === 'default') {
     delete extra.web_search_emulation
   } else {
     extra.web_search_emulation = webSearchEmulationMode.value
   }
-
   return Object.keys(extra).length > 0 ? extra : undefined
 }
 
@@ -6690,7 +6700,7 @@ const handleSubmit = async () => {
   }
 
   form.credentials = credentials
-  const extra = buildAnthropicExtra(buildOpenAIExtra())
+  const extra = buildWebSearchEmulationExtra(buildAnthropicExtra(buildOpenAIExtra()))
 
   await doCreateAccount({
     ...form,

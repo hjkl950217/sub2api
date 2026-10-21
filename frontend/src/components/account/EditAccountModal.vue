@@ -205,8 +205,8 @@
           <p class="input-hint">{{ t(`admin.accounts.cnProviders.accountMode.${editAccountMode}Desc`) }}</p>
         </div>
         <!-- FORK-ANCHOR: edit-ag-hub-balance-probe (二开：聚合中转余额探测配置区) -->
-        <!-- 聚合中转余额探测（可选）：端点与 JSON 结构按站点覆盖 -->
-        <div v-if="account.platform === 'ag_hub'" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+        <!-- 聚合中转余额探测（可选）：端点与 JSON 结构按站点覆盖。保存逻辑在 isCNApiKeyAccount 分支内，这里同步收窄。 -->
+        <div v-if="account.platform === 'ag_hub' && isCNApiKeyAccount" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
           <label class="flex items-center justify-between gap-3">
             <span>
               <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.cnProviders.balanceProbe.title') }}</span>
@@ -393,7 +393,7 @@
               type="button"
               data-testid="api-key-reveal-toggle"
               class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 disabled:opacity-50 dark:hover:text-gray-300"
-              :disabled="apiKeyRevealLoading"
+              :disabled="apiKeyRevealLoading || !apiKeyHasStored"
               :title="apiKeyRevealed ? t('admin.accounts.apiKeyHide') : t('admin.accounts.apiKeyReveal')"
               @click="toggleApiKeyReveal"
             >
@@ -1111,7 +1111,7 @@
               type="button"
               data-testid="api-key-reveal-toggle"
               class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 disabled:opacity-50 dark:hover:text-gray-300"
-              :disabled="apiKeyRevealLoading"
+              :disabled="apiKeyRevealLoading || !apiKeyHasStored"
               :title="apiKeyRevealed ? t('admin.accounts.apiKeyHide') : t('admin.accounts.apiKeyReveal')"
               @click="toggleApiKeyReveal"
             >
@@ -2425,9 +2425,9 @@
         </div>
       </div>
 
-      <!-- Anthropic / OpenAI API Key: Web Search Emulation (hidden when global disabled) -->
+      <!-- Anthropic / OpenAI / DeepSeek / 聚合中转 API Key: Web Search Emulation (hidden when global disabled) -->
       <div
-        v-if="(account?.platform === 'anthropic' || account?.platform === 'openai') && account?.type === 'apikey' && webSearchGlobalEnabled"
+        v-if="supportsAccountWebSearchEmulation(account?.platform ?? '') && account?.type === 'apikey' && webSearchGlobalEnabled"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -3485,6 +3485,7 @@ import {
   openAIProtocolsFromResponsesMode,
   HEADER_OVERRIDE_ENABLED_CREDENTIAL_KEY,
   HEADER_OVERRIDES_CREDENTIAL_KEY,
+  supportsAccountWebSearchEmulation,
   type CnAccountMode,
   type CnApiProtocol,
   type CnNativeApiProtocol,
@@ -4883,7 +4884,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       ? 'authorization_bearer'
       : 'x_api_key'
   }
-  if ((newAccount.platform === 'anthropic' || newAccount.platform === 'openai') && newAccount.type === 'apikey') {
+  if (supportsAccountWebSearchEmulation(newAccount.platform) && newAccount.type === 'apikey') {
     // 三态：string "default"/"enabled"/"disabled"，向后兼容旧 bool
     const wsVal = extra?.web_search_emulation
     if (wsVal === 'enabled' || wsVal === 'disabled') {
@@ -6449,11 +6450,6 @@ const handleSubmit = async () => {
       } else {
         delete newExtra.anthropic_apikey_auth_scheme
       }
-      if (webSearchEmulationMode.value === 'default') {
-        delete newExtra.web_search_emulation
-      } else {
-        newExtra.web_search_emulation = webSearchEmulationMode.value
-      }
       updatePayload.extra = newExtra
     }
 
@@ -6508,11 +6504,6 @@ const handleSubmit = async () => {
           newExtra.images_url_to_b64_json = true
         } else {
           delete newExtra.images_url_to_b64_json
-        }
-        if (webSearchEmulationMode.value === 'default') {
-          delete newExtra.web_search_emulation
-        } else {
-          newExtra.web_search_emulation = webSearchEmulationMode.value
         }
 		}
 		if (autoPause5hThreshold.value != null && autoPause5hThreshold.value > 0) {
@@ -6587,6 +6578,19 @@ const handleSubmit = async () => {
         }
       }
 
+      updatePayload.extra = newExtra
+    }
+
+    // FORK-ANCHOR: edit-websearch-emulation-save (二开：web search 模拟开关对 /v1/messages 接入平台统一落 extra)
+    // 放在各平台 extra 分支之后，读回已合并的 extra 再写，避免每个平台分支各写一遍。
+    if (supportsAccountWebSearchEmulation(props.account.platform) && props.account.type === 'apikey') {
+      const currentExtra = (updatePayload.extra as Record<string, unknown>) || (props.account.extra as Record<string, unknown>) || {}
+      const newExtra: Record<string, unknown> = { ...currentExtra }
+      if (webSearchEmulationMode.value === 'default') {
+        delete newExtra.web_search_emulation
+      } else {
+        newExtra.web_search_emulation = webSearchEmulationMode.value
+      }
       updatePayload.extra = newExtra
     }
 

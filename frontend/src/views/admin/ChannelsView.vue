@@ -326,7 +326,7 @@
 
             <!-- FORK-ANCHOR: ag-hub-websearch-toggle (二开：web search 模拟开关只对 /v1/messages 接入平台显示) -->
             <!-- Web Search Emulation (Anthropic / DeepSeek / 聚合中转, hidden when global disabled) -->
-            <div v-if="supportsWebSearchEmulation(section.platform) && webSearchGlobalEnabled" class="border-t border-gray-200 pt-3 dark:border-dark-600">
+            <div v-if="supportsChannelWebSearchEmulation(section.platform) && webSearchGlobalEnabled" class="border-t border-gray-200 pt-3 dark:border-dark-600">
               <div class="flex items-center justify-between">
                 <div>
                   <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
@@ -634,6 +634,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { adminAPI } from '@/api/admin'
+import { supportsChannelWebSearchEmulation } from '@/components/account/credentialsBuilder'
 import type { Channel, ChannelModelPricing, CreateChannelRequest, UpdateChannelRequest, AccountStatsPricingRule } from '@/api/admin/channels'
 import type { PricingFormEntry } from '@/components/admin/channel/types'
 import { apiIntervalsToForm, apiTimePricingToForm, createDefaultTimePricingForm, findModelConflict, formIntervalsToAPI, formReasoningEffortMultipliersToAPI, formTimePricingToAPI, isValidPositiveMultiplier, mTokToPerToken, perTokenToMTok, validateIntervals, validateReasoningEffortMultipliers, validateTimePricing } from '@/components/admin/channel/types'
@@ -781,13 +782,7 @@ function formatDate(value: string): string {
 const activePlatforms = computed(() => form.platforms.filter(s => s.enabled).map(s => s.platform))
 
 // FORK-ANCHOR: channel-websearch-platforms (二开：web search 模拟只对实际提供 /v1/messages 接入的平台开放)
-// 后端在 /v1/messages 入口按账号 platform 读取该开关；目前站点只在这三个平台使用
-// Claude Code 入口，其余平台主要走 chat completions / responses，不展示开关。
-const WEB_SEARCH_EMULATION_PLATFORMS = ['anthropic', 'deepseek', 'ag_hub']
-
-function supportsWebSearchEmulation(platform: string): boolean {
-  return WEB_SEARCH_EMULATION_PLATFORMS.includes(platform)
-}
+// 平台清单见 credentialsBuilder 的 CHANNEL_WEB_SEARCH_EMULATION_PLATFORMS。
 
 function addPlatformSection(platform: GroupPlatform) {
   form.platforms.push({
@@ -1167,7 +1162,7 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
   const wsEmulation: Record<string, boolean> = {}
   for (const section of form.platforms) {
     if (!section.enabled) continue
-    if (supportsWebSearchEmulation(section.platform)) {
+    if (supportsChannelWebSearchEmulation(section.platform)) {
       wsEmulation[section.platform] = !!section.web_search_emulation
     }
   }

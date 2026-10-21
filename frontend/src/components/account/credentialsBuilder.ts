@@ -282,6 +282,21 @@ export function isMultiProtocolApiKeyPlatform(platform: string): boolean {
   return !!getProviderProfile(platform)
 }
 
+// FORK-ANCHOR: websearch-emulation-platforms (二开：web search 模拟的平台范围)
+// 渠道级：后端按账号 platform 读 features_config.web_search_emulation[platform]，
+// 只给实际提供 /v1/messages 入口的平台落配置。
+export const CHANNEL_WEB_SEARCH_EMULATION_PLATFORMS = ['anthropic', 'deepseek', 'ag_hub'] as const
+
+export function supportsChannelWebSearchEmulation(platform: string): boolean {
+  return (CHANNEL_WEB_SEARCH_EMULATION_PLATFORMS as readonly string[]).includes(platform)
+}
+
+// 账号级：openai 平台账号同样有 /v1/messages 入口（OpenAI 网关的 messages 路径），
+// 沿用原有选项，不随渠道级清单收窄。
+export function supportsAccountWebSearchEmulation(platform: string): boolean {
+  return platform === 'openai' || supportsChannelWebSearchEmulation(platform)
+}
+
 // FORK-ANCHOR: openai-protocols-from-responses-mode (二开：从旧 responses_mode 反推 openai 协议勾选)
 /** 由 extra.openai_responses_mode 反推 openai 复选勾选集，兼容未配置 api_protocols 的存量账号。 */
 export function openAIProtocolsFromResponsesMode(mode: unknown): CnNativeApiProtocol[] {

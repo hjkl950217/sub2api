@@ -404,7 +404,7 @@ export default {
         balanceProbe: {
           title: '余额探测',
           description: '聚合中转站点余额接口各不相同，开启后按下方规则探测。',
-          urlPlaceholder: '余额接口完整地址（留空按 base_url + /api/user/self）',
+          urlPlaceholder: '余额接口完整地址（留空按站点根地址 + /api/user/self）',
           pathPlaceholder: '余额字段 JSON 路径（默认 data.quota）',
           currencyPlaceholder: '币种（默认 USD）',
           divisorPlaceholder: '换算除数（默认 500000，one-api 约定）',

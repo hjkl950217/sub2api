@@ -1,3 +1,4 @@
+// FORK: 余额探测适配器单测（二开新增文件）。
 package service
 
 import (
@@ -76,6 +77,10 @@ func TestAggregateHubBalanceProbe_DisabledByDefault(t *testing.T) {
 
 func TestAggregateHubBalanceProbe_URLDefaultsToBase(t *testing.T) {
 	account := newAggregateHubBalanceProbeAccount()
+	require.Equal(t, "https://relay.example.com/api/user/self", aggregateHubBalanceURL(account))
+
+	// 中转站的 OpenAI 端点通常带 /v1，余额接口仍在站点根路径。
+	account.Credentials["base_url"] = "https://relay.example.com/v1/"
 	require.Equal(t, "https://relay.example.com/api/user/self", aggregateHubBalanceURL(account))
 
 	account.Credentials[aggregateHubBalanceURLKey] = "https://relay.example.com/custom/balance"

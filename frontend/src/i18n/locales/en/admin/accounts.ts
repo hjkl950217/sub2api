@@ -200,7 +200,7 @@ export default {
         balanceProbe: {
           title: 'Balance probe',
           description: 'Relay sites expose different balance APIs; enable and configure the rule below.',
-          urlPlaceholder: 'Full balance endpoint URL (empty = base_url + /api/user/self)',
+          urlPlaceholder: 'Full balance endpoint URL (empty = site root + /api/user/self)',
           pathPlaceholder: 'Balance field JSON path (default data.quota)',
           currencyPlaceholder: 'Currency (default USD)',
           divisorPlaceholder: 'Divisor (default 500000, one-api convention)',

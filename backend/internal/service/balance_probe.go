@@ -1,3 +1,5 @@
+// FORK: 余额探测适配器登记表（二开新增文件）。各平台的余额端点与返回结构差异
+// 集中在这里，探测流程复用 cn_provider_balance_service.go。
 package service
 
 import (
@@ -113,6 +115,8 @@ func aggregateHubBalanceURL(account *Account) string {
 		return raw
 	}
 	base := strings.TrimRight(strings.TrimSpace(account.GetOpenAIFormatBaseURL()), "/")
+	// one-api/new-api 的 OpenAI 端点通常带 /v1，余额接口在站点根路径上。
+	base = strings.TrimSuffix(base, "/v1")
 	if base == "" {
 		return ""
 	}
