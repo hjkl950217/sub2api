@@ -284,9 +284,9 @@ func (s *AccountTestService) FetchOpenAIAccountModels(ctx context.Context, accou
 // appendMissingConfiguredModels 把显式配置、但上游目录里不存在的映射左侧名补进
 // 测试下拉：上游 /models 常返回带日期后缀的 ID 或只列部分模型，投影阶段会按
 // 目标缺失把这些条目丢掉（issue #8081）。只影响测试列表，不改共享目录与缓存。
-// OAuth 账号的 Codex 目录另有图片模型补充规则，不在此改动。
+// 透传账号不应用映射，保持上游目录原样。
 func appendMissingConfiguredModels(models []openai.Model, account *Account) []openai.Model {
-	if account == nil || account.IsOpenAIPassthroughEnabled() || account.IsOpenAIOAuthLike() {
+	if account == nil || account.IsOpenAIPassthroughEnabled() {
 		return models
 	}
 	mapping := account.GetModelMapping()
@@ -299,7 +299,7 @@ func appendMissingConfiguredModels(models []openai.Model, account *Account) []op
 	}
 	names := make([]string, 0, len(mapping))
 	for name := range mapping {
-		if strings.Contains(name, "*") {
+		if strings.TrimSpace(name) == "" || strings.Contains(name, "*") {
 			continue
 		}
 		names = append(names, name)
@@ -311,7 +311,7 @@ func appendMissingConfiguredModels(models []openai.Model, account *Account) []op
 		}
 		models = append(models, openai.Model{
 			ID: name, Object: "model", Type: "model", OwnedBy: "openai",
-			DisplayName: openaiCodexDisplayName(name),
+			DisplayName: name,
 		})
 		seen[name] = struct{}{}
 	}

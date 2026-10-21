@@ -199,12 +199,8 @@ func TestFetchOpenAIAccountModelsOAuthImageNamesMappedToText(t *testing.T) {
 
 				models, err := svc.FetchOpenAIAccountModels(context.Background(), account)
 				require.NoError(t, err)
-				if target == "text-target-missing" {
-					require.Empty(t, models, "a missing text target must not be synthesized as an image choice")
-					return
-				}
 				require.Equal(t, []string{publicID}, pickerModelIDs(models))
-				require.Equal(t, publicID, models[0].DisplayName, "a real text target uses the projected alias label")
+				require.Equal(t, publicID, models[0].DisplayName, "configured aliases remain testable even when the target is missing")
 			})
 		}
 	}
