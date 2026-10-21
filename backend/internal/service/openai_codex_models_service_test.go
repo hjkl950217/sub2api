@@ -271,7 +271,9 @@ func TestNewConfiguredCodexModelDescriptorUsesProviderMetadataAndSafeFallback(t 
 	require.Equal(t, "high", *deepSeek.DefaultReasoningLevel)
 	require.Equal(t, []configuredCodexReasoningLevel{
 		{Effort: "low", Description: "Fast responses with lighter reasoning"},
+		{Effort: "medium", Description: "Balanced reasoning for coding tasks"},
 		{Effort: "high", Description: "Greater reasoning depth for coding and agent tasks"},
+		{Effort: "xhigh", Description: "Extended reasoning for complex tasks"},
 		{Effort: "max", Description: "Maximum reasoning depth for complex tasks"},
 	}, deepSeek.SupportedReasoningLevels)
 	require.True(t, deepSeek.SupportsParallelToolCalls)
@@ -1180,7 +1182,7 @@ func TestBuildCodexModelsManifestForGroupMappedDeepSeekAliasUsesDeepSeekCapabili
 	require.Equal(t, false, model["use_responses_lite"], "mapped DeepSeek aliases must opt out of GPT Responses Lite")
 	require.Equal(t, "unified_exec", model["shell_type"])
 	require.Equal(t, "high", model["default_reasoning_level"])
-	require.Equal(t, []string{"low", "high", "max"}, effortsFromManifestModel(t, model))
+	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, effortsFromManifestModel(t, model))
 }
 
 func TestBuildCodexModelsManifestForGroupFallsBackWhenCapabilityLookupFails(t *testing.T) {
@@ -1248,7 +1250,7 @@ func TestMergeGroupConfiguredCodexModelsInjectsCurrentGroupAliases(t *testing.T)
 	require.EqualValues(t, 1_000_000, models[1]["context_window"])
 	require.EqualValues(t, 1_000_000, models[1]["max_context_window"])
 	require.Equal(t, "high", models[1]["default_reasoning_level"])
-	require.Len(t, models[1]["supported_reasoning_levels"], 3)
+	require.Len(t, models[1]["supported_reasoning_levels"], 5)
 	require.NotContains(t, string(manifest.Body), "other-group-model")
 	require.Equal(t, codexModelsManifestBodyETag(manifest.Body), manifest.ETag)
 }
