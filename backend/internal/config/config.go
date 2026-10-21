@@ -1175,10 +1175,14 @@ type GatewayGrokConfig struct {
 //   - balance_check_enabled: 是否启用周期余额检测（默认 true）
 //   - balance_threshold: 余额低于此值（账户货币单位，默认 0.5）触发临时停调
 //   - balance_check_interval_minutes: 余额检测周期（分钟，默认 10）
+//   - balance_check_paused_interval_minutes: 手动关调度账号的余额刷新周期（分钟，默认 120；
+//     <=0 表示不刷新）。这些账号不参与调度，只低频刷新快照供列表展示。
 type GatewayCNProvidersConfig struct {
 	BalanceCheckEnabled         bool    `mapstructure:"balance_check_enabled"`
 	BalanceThreshold            float64 `mapstructure:"balance_threshold"`
 	BalanceCheckIntervalMinutes int     `mapstructure:"balance_check_interval_minutes"`
+	// FORK-ANCHOR: cn-balance-paused-interval-config (二开：关调度账号低频刷新余额的周期配置)
+	BalanceCheckPausedIntervalMinutes int `mapstructure:"balance_check_paused_interval_minutes"`
 }
 
 type GatewayLiveConfig struct {
@@ -2523,6 +2527,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.cn_providers.balance_check_enabled", true)
 	viper.SetDefault("gateway.cn_providers.balance_threshold", 0.5)
 	viper.SetDefault("gateway.cn_providers.balance_check_interval_minutes", 10)
+	// FORK-ANCHOR: cn-balance-paused-interval-default (二开：关调度账号余额刷新默认 120 分钟)
+	viper.SetDefault("gateway.cn_providers.balance_check_paused_interval_minutes", 120)
 	viper.SetDefault("gateway.image_concurrency.enabled", false)
 	viper.SetDefault("gateway.image_concurrency.max_concurrent_requests", 0)
 	viper.SetDefault("gateway.image_concurrency.overflow_mode", ImageConcurrencyOverflowModeReject)

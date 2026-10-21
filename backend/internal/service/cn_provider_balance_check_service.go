@@ -70,6 +70,10 @@ func (s *CNProviderBalanceCheckService) Start() {
 		return
 	}
 	log.Printf("[CNBalance] started (interval=%s threshold=%.2f)", s.interval, s.cfg.Gateway.CNProviders.BalanceThreshold)
+	pausedInterval := s.pausedBalanceInterval()
+	if pausedInterval > 0 {
+		log.Printf("[CNBalance] paused accounts refresh interval=%s", pausedInterval)
+	}
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
@@ -86,6 +90,25 @@ func (s *CNProviderBalanceCheckService) Start() {
 			}
 		}
 	}()
+
+	// FORK-ANCHOR: cn-balance-paused-interval-loop (二开：关调度账号按慢周期刷新余额快照)
+	// 手动关调度的账号不进 runOnce 的 payg 队列，另起一条慢周期轮询刷新快照。
+	if pausedInterval > 0 {
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			ticker := time.NewTicker(pausedInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					s.runPausedOnce()
+				case <-s.stopCh:
+					return
+				}
+			}
+		}()
+	}
 }
 
 func (s *CNProviderBalanceCheckService) Stop() {
@@ -228,6 +251,76 @@ func (s *CNProviderBalanceCheckService) runOnce() {
 	if paused > 0 || cleared > 0 {
 		log.Printf("[CNBalance] paused=%d cleared=%d (threshold=%.2f)", paused, cleared, threshold)
 	}
+}
+
+// pausedBalanceInterval 返回「手动关调度」账号的余额刷新周期。
+// 配置 <= 0 表示不刷新这些账号。
+// FORK-ANCHOR: cn-balance-paused-interval (二开：关调度账号按配置的慢周期刷新余额快照)
+func (s *CNProviderBalanceCheckService) pausedBalanceInterval() time.Duration {
+	if s.cfg == nil {
+		return 0
+	}
+	minutes := s.cfg.Gateway.CNProviders.BalanceCheckPausedIntervalMinutes
+	if minutes <= 0 {
+		return 0
+	}
+	return time.Duration(minutes) * time.Minute
+}
+
+// runPausedOnce 只刷新手动关调度账号的余额快照：这些账号不参与调度，
+// 低频探测只为让列表里的余额不至于长期停在旧值，不据此停调或恢复。
+// FORK-ANCHOR: cn-balance-paused-run-once (二开：关调度账号余额快照刷新)
+func (s *CNProviderBalanceCheckService) runPausedOnce() {
+	if s == nil || s.accountRepo == nil || s.balanceService == nil || s.cfg == nil {
+		return
+	}
+	targets := s.collectPausedPayGTargets()
+	if len(targets) == 0 {
+		return
+	}
+	// 与 runOnce 的 payg 队列同一预算口径：每账号 5s，下限 30s 上限 300s。
+	timeout := 30*time.Second + time.Duration(len(targets))*5*time.Second
+	if timeout > 300*time.Second {
+		timeout = 300 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	threshold := s.cfg.Gateway.CNProviders.BalanceThreshold
+	for _, account := range targets {
+		s.checkOne(ctx, account, threshold)
+	}
+}
+
+// collectPausedPayGTargets 选出激活但手动关调度的 payg 账号（kimi/deepseek/聚合中转）。
+// 判定口径与 runOnce 的 payg 分支一致，只是把 Schedulable 条件反过来。
+func (s *CNProviderBalanceCheckService) collectPausedPayGTargets() []*Account {
+	var targets []*Account
+	for _, platform := range s.platforms() {
+		accounts, err := s.accountRepo.ListByPlatform(context.Background(), platform)
+		if err != nil {
+			log.Printf("[CNBalance] list %s paused accounts failed: %v", platform, err)
+			continue
+		}
+		for i := range accounts {
+			account := &accounts[i]
+			if !account.IsActive() || account.Schedulable {
+				continue
+			}
+			if IsOllamaCloudUsageAccount(account) {
+				continue
+			}
+			// coding 账号走额度探测，余额端点不适用；DeepSeek 残留 coding 标记除外。
+			if account.IsCodingPlan() && account.Platform != PlatformDeepseek {
+				continue
+			}
+			if platform == PlatformAggregateHub && !aggregateHubBalanceProbeEnabled(account) {
+				continue
+			}
+			targets = append(targets, account)
+		}
+	}
+	return targets
 }
 
 // accountProbeCheck 是走账号接口探测的平台的周期检测函数。
