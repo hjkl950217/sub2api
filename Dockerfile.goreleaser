@@ -22,7 +22,7 @@ FROM ${POSTGRES_IMAGE} AS pg-client
 # 用独立构建阶段而不是在 alpine 里连网装：依赖解析只发生在构建期一次，
 # 最终镜像只多一个 nodejs 包，运行镜像里不留 npm 缓存与构建工具。
 # 版本钉死（长空 2026-10-15 定）：上游升版时手动改，保证同一提交产出同一镜像。
-ARG FINGERPRINT_CLI_VERSION=0.0.1791910275841
+ARG FINGERPRINT_CLI_VERSION=0.0.1792416845676
 FROM ${NODE_IMAGE} AS lm-detector
 ARG FINGERPRINT_CLI_VERSION
 WORKDIR /build
