@@ -611,6 +611,7 @@ export default {
         baseUrlPlaceholder: 'https://api.anthropic.com or https://api.openai.com',
         baseUrlNotice: 'Applies to API Key accounts and the forwarding endpoint of Grok OAuth accounts; leave empty to keep existing value',
         submit: 'Update Accounts',
+        submitFiltered: 'Update all {count} filtered account(s)',
         updating: 'Updating...',
         success: 'Updated {count} account(s)',
         successWithInherited: 'Updated {count} account(s). {inherited} selected shadow account(s) still follow their parent account.',

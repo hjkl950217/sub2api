@@ -729,6 +729,7 @@ export default {
         baseUrlPlaceholder: 'https://api.anthropic.com 或 https://api.openai.com',
         baseUrlNotice: '适用于 API Key 账号及 Grok OAuth 账号的转发端点，留空则不修改',
         submit: '批量更新',
+        submitFiltered: '按当前筛选批量更新 {count} 个账号',
         updating: '更新中...',
         success: '成功更新 {count} 个账号',
         successWithInherited: '成功更新 {count} 个账号；其中 {inherited} 个影子账号仍跟随母账号。',

@@ -56,8 +56,10 @@
         >{{ t('admin.accounts.batchTest.button') }}</button>
         <button @click="$emit('edit-selected')" class="btn btn-primary btn-sm">{{ t('admin.accounts.bulkActions.edit') }}</button>
       </template>
-      <button @click="$emit('edit-filtered')" class="btn btn-primary btn-sm">
-        {{ t('admin.accounts.bulkEdit.submit') }}
+      <!-- FORK-ANCHOR: bulk-edit-filtered-only-without-selection (二开：有勾选时隐藏「按筛选批量更新」，避免误改筛选内全部账号)
+           两个入口原本都叫「批量更新」，issue #8108 里用户只勾了两个却把同筛选的三个一起改了。 -->
+      <button v-if="selectedIds.length === 0" @click="$emit('edit-filtered')" class="btn btn-primary btn-sm">
+        {{ t('admin.accounts.bulkEdit.submitFiltered', { count: totalResults }) }}
       </button>
     </div>
   </div>
