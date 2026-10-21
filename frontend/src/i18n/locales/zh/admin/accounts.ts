@@ -400,6 +400,16 @@ export default {
           endpointsHint: '只显示已勾选的协议。新勾选的协议会默认沿用上一个协议的地址，很多站点三个协议共用同一地址，按需单独修改。',
           endpointFallbackHint: '只有第一个端点地址需要填写；留空的端点会跟随第一个地址。确实不同再单独填写。',
         },
+        // FORK-ANCHOR: i18n-ag-hub-balance-probe-zh (聚合中转余额探测文案)
+        balanceProbe: {
+          title: '余额探测',
+          description: '聚合中转站点余额接口各不相同，开启后按下方规则探测。',
+          urlPlaceholder: '余额接口完整地址（留空按 base_url + /api/user/self）',
+          pathPlaceholder: '余额字段 JSON 路径（默认 data.quota）',
+          currencyPlaceholder: '币种（默认 USD）',
+          divisorPlaceholder: '换算除数（默认 500000，one-api 约定）',
+          hint: '数组类响应把路径写到数组后按下标取第一项，例如 data.0.quota。探测失败会保留上次快照并显示错误。',
+        },
         zhipuTeam: {
           title: '团队版组织 / 项目 ID',
           organization: '组织 ID（团队版可选）',

@@ -324,8 +324,9 @@
               </div>
             </div>
 
-            <!-- Web Search Emulation (Anthropic only, hidden when global disabled) -->
-            <div v-if="section.platform === 'anthropic' && webSearchGlobalEnabled" class="border-t border-gray-200 pt-3 dark:border-dark-600">
+            <!-- FORK-ANCHOR: ag-hub-websearch-toggle (二开：聚合中转渠道也能启用 web search 模拟) -->
+            <!-- Web Search Emulation (Anthropic + 聚合中转, hidden when global disabled) -->
+            <div v-if="(section.platform === 'anthropic' || section.platform === 'ag_hub') && webSearchGlobalEnabled" class="border-t border-gray-200 pt-3 dark:border-dark-600">
               <div class="flex items-center justify-between">
                 <div>
                   <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
@@ -1150,13 +1151,14 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
   }
   const uniqueGroupIds = Array.from(new Set(group_ids))
 
-  // Collect web_search_emulation (only anthropic platform supports it)
+  // Collect web_search_emulation (Anthropic 与聚合中转；后端按账号 platform 读取)
+  // FORK-ANCHOR: ag-hub-websearch-save (二开：保存聚合中转的 web search 开关)
   // Always write the key so that disabling in the UI correctly sets platform to false,
   // rather than leaving a stale true value from the cloned features_config.
   const wsEmulation: Record<string, boolean> = {}
   for (const section of form.platforms) {
     if (!section.enabled) continue
-    if (section.platform === 'anthropic') {
+    if (section.platform === 'anthropic' || section.platform === 'ag_hub') {
       wsEmulation[section.platform] = !!section.web_search_emulation
     }
   }

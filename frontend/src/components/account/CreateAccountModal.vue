@@ -669,6 +669,27 @@
         </div>
       </div>
 
+      <!-- FORK-ANCHOR: create-ag-hub-balance-probe (二开：聚合中转余额探测配置区) -->
+      <!-- 聚合中转余额探测（可选）：端点与 JSON 结构按站点覆盖 -->
+      <div v-if="form.platform === 'ag_hub'" class="mt-4 rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+        <label class="flex items-center justify-between gap-3">
+          <span>
+            <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.cnProviders.balanceProbe.title') }}</span>
+            <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.cnProviders.balanceProbe.description') }}</span>
+          </span>
+          <input v-model="balanceProbeEnabled" type="checkbox" class="h-4 w-4" />
+        </label>
+        <div v-if="balanceProbeEnabled" class="mt-3 space-y-2">
+          <input v-model="balanceProbeURL" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.urlPlaceholder')" />
+          <input v-model="balanceProbePath" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.pathPlaceholder')" />
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <input v-model="balanceProbeCurrency" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.currencyPlaceholder')" />
+            <input v-model.number="balanceProbeDivisor" type="number" min="0" step="any" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.divisorPlaceholder')" />
+          </div>
+          <p class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.hint') }}</p>
+        </div>
+      </div>
+
       <!-- API Protocol Selection (Kimi / Zhipu / DeepSeek / OpenCode) -->
       <div v-if="isMultiProtocolPlatform || isOpenAIProtocolSelectPlatform" class="mt-4">
         <!-- FORK-ANCHOR: create-cn-protocol-multiselect (国产供应商协议改为多选卡片，opencode_go 保持原单选 UI；openai API Key 复用同一多选) -->
@@ -4539,6 +4560,14 @@ const apiProtocol = ref<CnApiProtocol>('adaptive')
 // FORK-ANCHOR: create-cn-protocol-state (国产供应商协议多选 + 兜底转发协议状态)
 const apiProtocols = ref<CnNativeApiProtocol[]>([])
 const fallbackProtocol = ref<CnNativeApiProtocol | ''>('')
+// FORK-ANCHOR: create-ag-hub-balance-probe-state (二开：聚合中转余额探测配置状态)
+// 聚合中转余额探测（可选）：默认按 one-api/new-api 的 /api/user/self 约定，
+// 允许覆盖端点与 JSON 路径；默认关闭，避免对不支持的站点发请求。
+const balanceProbeEnabled = ref(false)
+const balanceProbeURL = ref('')
+const balanceProbePath = ref('')
+const balanceProbeCurrency = ref('')
+const balanceProbeDivisor = ref<number | null>(null)
 const openCodeGoProtocolRules = ref<OpenCodeGoProtocolRule[]>(
   cloneOpenCodeGoProtocolRules(defaultOpenCodeProtocolRules('zen'))
 )
@@ -6003,6 +6032,12 @@ const resetForm = () => {
   // FORK-ANCHOR: create-cn-protocol-reset-form (重置表单时清空协议勾选与兜底)
   apiProtocols.value = []
   fallbackProtocol.value = ''
+  // FORK-ANCHOR: create-ag-hub-balance-probe-reset (二开：重置聚合中转余额探测配置)
+  balanceProbeEnabled.value = false
+  balanceProbeURL.value = ''
+  balanceProbePath.value = ''
+  balanceProbeCurrency.value = ''
+  balanceProbeDivisor.value = null
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
   showApiKeyValue.value = false
@@ -6544,6 +6579,16 @@ const handleSubmit = async () => {
           protocolBaseUrls[selectedFallback as CnNativeApiProtocol] ||
           apiKeyBaseUrl.value.trim()
       credentials.api_protocol = legacyProtocolFromSelection(selectedProtocols, selectedFallback)
+      // FORK-ANCHOR: create-ag-hub-balance-probe-credentials (二开：保存聚合中转余额探测凭据)
+      if (form.platform === 'ag_hub') {
+        credentials.balance_probe_enabled = balanceProbeEnabled.value
+        if (balanceProbeEnabled.value) {
+          if (balanceProbeURL.value.trim()) credentials.balance_probe_url = balanceProbeURL.value.trim()
+          if (balanceProbePath.value.trim()) credentials.balance_probe_path = balanceProbePath.value.trim()
+          if (balanceProbeCurrency.value.trim()) credentials.balance_probe_currency = balanceProbeCurrency.value.trim()
+          if (balanceProbeDivisor.value) credentials.balance_probe_divisor = balanceProbeDivisor.value
+        }
+      }
     } else if (apiProtocol.value === 'adaptive') {
       const defaults = defaultCNAdaptiveBaseUrls(
         form.platform,

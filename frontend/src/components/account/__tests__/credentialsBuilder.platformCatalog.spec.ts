@@ -227,6 +227,10 @@ describe('credentialsBuilder built-in Command Code provider', () => {
     expect(cnBalanceCellVisible(account({ account_mode: 'payg' }, 'oauth'))).toBe(false)
     expect(cnQuotaCellVisible({ platform: 'deepseek', type: 'apikey', credentials: { account_mode: 'payg' } })).toBe(false)
     expect(cnBalanceCellVisible({ platform: 'zhipu', type: 'apikey', credentials: { account_mode: 'payg' } })).toBe(false)
+    // 聚合中转默认关闭余额探测，显式开启后才显示；DeepSeek 无 coding 套餐，残留标记不隐藏。
+    expect(cnBalanceCellVisible({ platform: 'ag_hub', type: 'apikey', credentials: {} })).toBe(false)
+    expect(cnBalanceCellVisible({ platform: 'ag_hub', type: 'apikey', credentials: { balance_probe_enabled: true } })).toBe(true)
+    expect(cnBalanceCellVisible({ platform: 'deepseek', type: 'apikey', credentials: { account_mode: 'coding' } })).toBe(true)
   })
 })
 

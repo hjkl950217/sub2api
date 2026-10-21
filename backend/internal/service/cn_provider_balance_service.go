@@ -12,7 +12,6 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/tidwall/gjson"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -130,7 +129,9 @@ func (s *CNProviderBalanceService) queryBalanceForAccount(ctx context.Context, a
 		return s.queryClineBalance(ctx, account)
 	}
 	provider := account.Platform
-	if provider != PlatformKimi && provider != PlatformDeepseek {
+	// FORK-ANCHOR: balance-probe-registry (二开：余额端点与解析改由 balance_probe.go 的适配器登记表提供)
+	spec, ok := lookupBalanceProbe(account)
+	if !ok {
 		return nil, infraerrors.New(http.StatusBadRequest, "CN_BALANCE_NO_ENDPOINT", "account provider has no balance endpoint")
 	}
 
@@ -139,7 +140,7 @@ func (s *CNProviderBalanceService) queryBalanceForAccount(ctx context.Context, a
 		return nil, infraerrors.New(http.StatusBadRequest, "CN_BALANCE_NO_APIKEY", "account api_key is empty")
 	}
 
-	targetURL := cnBalanceURL(account)
+	targetURL := spec.url(account)
 	// 探测发起前过出站 URL 安全策略（与网关转发/Grok 探测同一套校验）：
 	// DeepSeek 端点由账号 base_url 衍生，不得把 API key 发往策略外主机。
 	validatedURL, err := cnValidateProbeURL(s.cfg, targetURL)
@@ -182,42 +183,10 @@ func (s *CNProviderBalanceService) queryBalanceForAccount(ctx context.Context, a
 		return result, nil
 	}
 
-	var entries []CNProviderBalanceEntry
-	available := true
-	switch provider {
-	case PlatformKimi:
-		// Moonshot：code==0 成功；data.available_balance（number），单币种 CNY。
-		balance, _ := cnParseF64(gjson.GetBytes(bodyBytes, "data.available_balance").Value())
-		entries = append(entries, CNProviderBalanceEntry{Currency: "CNY", Balance: balance})
-	case PlatformDeepseek:
-		// is_available 缺省视为 true（健康）；显式存在时取其值。
-		if v := gjson.GetBytes(bodyBytes, "is_available"); v.Exists() {
-			available = v.Bool()
-		}
-		// balance_infos 逐条解析：双币种账号同时返回 CNY + USD（数组顺序即
-		// 主次序，首条为主币种）。
-		balanceInfos := gjson.GetBytes(bodyBytes, "balance_infos")
-		if !balanceInfos.Exists() || !balanceInfos.IsArray() {
-			result.Error = "Invalid balance response: missing balance_infos"
-			return result, nil
-		}
-		balanceInfos.ForEach(func(_, info gjson.Result) bool {
-			currency := strings.ToUpper(strings.TrimSpace(info.Get("currency").String()))
-			totalBalance := info.Get("total_balance")
-			balance, ok := cnParseF64(totalBalance.Value())
-			if !totalBalance.Exists() || !ok {
-				return true
-			}
-			if currency == "" {
-				currency = "CNY"
-			}
-			entries = append(entries, CNProviderBalanceEntry{Currency: currency, Balance: balance})
-			return true
-		})
-		if len(entries) == 0 {
-			result.Error = "Invalid balance response: no valid balance entries"
-			return result, nil
-		}
+	entries, available, parseErr := spec.parse(account, bodyBytes)
+	if parseErr != nil {
+		result.Error = "Invalid balance response: " + parseErr.Error()
+		return result, nil
 	}
 	result.Balances = entries
 	result.Balance = entries[0].Balance
@@ -286,11 +255,17 @@ func validatePayGAccount(account *Account) error {
 		}
 		return nil
 	}
-	if !account.IsCNProvider() {
+	// FORK-ANCHOR: balance-probe-platform-gate (二开：聚合中转按账号开关探测，DeepSeek 忽略残留 coding 标记)
+	spec, ok := lookupBalanceProbe(account)
+	if !ok {
 		return infraerrors.New(http.StatusBadRequest, "CN_BALANCE_INVALID_PLATFORM", "account is not a CN provider account")
 	}
-	// coding 账号走额度探测，余额端点不适用。
-	if account.IsCodingPlan() {
+	if spec.enabled != nil && !spec.enabled(account) {
+		return infraerrors.New(http.StatusBadRequest, "CN_BALANCE_DISABLED", "balance probe is disabled for this account")
+	}
+	// coding 账号走额度探测，余额端点不适用。DeepSeek 没有 coding 套餐，
+	// 存量账号上残留的 coding 标记不应挡住余额查询。
+	if account.IsCodingPlan() && account.Platform != PlatformDeepseek {
 		return infraerrors.New(http.StatusBadRequest, "CN_BALANCE_CODING_PLAN", "coding plan account has no balance endpoint; use quota probe")
 	}
 	return nil
@@ -310,26 +285,4 @@ func (s *CNProviderBalanceService) resolveProxyURL(ctx context.Context, account 
 		}
 	}
 	return ""
-}
-
-// cnBalanceURL 解析账号的余额端点。
-//
-//   - Kimi：固定 https://api.moonshot.cn/v1/users/me/balance（与 base_url 无关，Moonshot 仅此一处）
-//   - DeepSeek：基于 base_url 拼接 /user/balance（支持自定义域名）
-//   - 聚合中转：无统一余额端点，返回空串（前端已禁用余额查询）
-//
-// FORK-ANCHOR: ag-hub-balance-disabled (二开：聚合中转无余额端点，返回空串)
-func cnBalanceURL(account *Account) string {
-	switch account.Platform {
-	case PlatformKimi:
-		return "https://api.moonshot.cn/v1/users/me/balance"
-	case PlatformDeepseek:
-		// Anthropic 协议账号的凭证 base_url 指向 /anthropic 端点，余额探测需回退
-		// 到 OpenAI 格式 base（协议感知）再拼接 /user/balance。
-		return strings.TrimRight(account.GetOpenAIFormatBaseURL(), "/") + "/user/balance"
-	case PlatformAggregateHub:
-		return ""
-	default:
-		return ""
-	}
 }

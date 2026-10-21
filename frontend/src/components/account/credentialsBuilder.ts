@@ -696,10 +696,13 @@ export function cnQuotaCellVisible(account: CNUsageCellAccount): boolean {
 export function cnBalanceCellVisible(account: CNUsageCellAccount): boolean {
   const { platform } = account
   const mode = cnUsageCellAccountMode(account)
-  // FORK-ANCHOR: ag-hub-balance-disabled (二开：聚合中转无余额端点，前端不显示余额查询)
-  if (platform === 'ag_hub') return false
+  // FORK-ANCHOR: ag-hub-balance-probe (二开：聚合中转余额探测按账号开关显示；DeepSeek 不因残留 coding 标记隐藏)
+  // 聚合中转默认关闭余额探测：站点端点与返回结构不统一，按账号凭据显式开启。
+  if (platform === 'ag_hub') return account.credentials?.balance_probe_enabled === true
   if (OFFICIAL_ACCOUNT_API_PLATFORMS.includes(platform)) return officialAccountAPISupported(account, mode)
-  return (platform === 'kimi' || platform === 'deepseek') && mode !== 'coding'
+  // DeepSeek 没有 coding 套餐，存量账号上的 coding 标记不应隐藏余额入口。
+  if (platform === 'deepseek') return true
+  return platform === 'kimi' && mode !== 'coding'
 }
 
 /**

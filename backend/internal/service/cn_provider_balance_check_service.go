@@ -129,7 +129,11 @@ func (s *CNProviderBalanceCheckService) runOnce() {
 				continue
 			}
 			// payg 余额探测仅 kimi/deepseek（智谱 / MiniMax 无公开余额端点，
-			// payg 账号依赖响应式 402/429 处理）。
+			// payg 账号依赖响应式 402/429 处理）；聚合中转按账号开关加入。
+			// FORK-ANCHOR: ag-hub-balance-check (二开：聚合中转按账号开关纳入周期余额检测)
+			if platform == PlatformAggregateHub && !aggregateHubBalanceProbeEnabled(account) {
+				continue
+			}
 			if platform != PlatformZhipu && platform != PlatformMiniMax && account.Schedulable {
 				paygTargets = append(paygTargets, account)
 			}
@@ -357,7 +361,7 @@ func (s *CNProviderBalanceCheckService) applyBalanceResult(ctx context.Context, 
 }
 
 func (s *CNProviderBalanceCheckService) platforms() []string {
-	return []string{PlatformKimi, PlatformDeepseek}
+	return []string{PlatformKimi, PlatformDeepseek, PlatformAggregateHub}
 }
 
 // allCNBalancesBelowThreshold 判断全部币种余额是否均低于阈值。

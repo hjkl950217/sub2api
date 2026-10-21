@@ -196,6 +196,16 @@ export default {
           endpointsHint: 'Only selected protocols are listed. A newly selected protocol reuses the previous protocol’s URL by default — many sites share one URL across all three — and can be edited separately.',
           endpointFallbackHint: 'Only the first endpoint is required. Empty endpoints follow the first configured URL; fill them only when they actually differ.',
         },
+        // FORK-ANCHOR: i18n-ag-hub-balance-probe-en (aggregate hub balance probe copy)
+        balanceProbe: {
+          title: 'Balance probe',
+          description: 'Relay sites expose different balance APIs; enable and configure the rule below.',
+          urlPlaceholder: 'Full balance endpoint URL (empty = base_url + /api/user/self)',
+          pathPlaceholder: 'Balance field JSON path (default data.quota)',
+          currencyPlaceholder: 'Currency (default USD)',
+          divisorPlaceholder: 'Divisor (default 500000, one-api convention)',
+          hint: 'For array responses point the path at an element, e.g. data.0.quota. Failures keep the last snapshot and show the error.',
+        },
         zhipuTeam: {
           title: 'Team Plan Organization / Project ID',
           organization: 'Organization ID (team plan, optional)',

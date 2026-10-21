@@ -204,6 +204,26 @@
           </div>
           <p class="input-hint">{{ t(`admin.accounts.cnProviders.accountMode.${editAccountMode}Desc`) }}</p>
         </div>
+        <!-- FORK-ANCHOR: edit-ag-hub-balance-probe (二开：聚合中转余额探测配置区) -->
+        <!-- 聚合中转余额探测（可选）：端点与 JSON 结构按站点覆盖 -->
+        <div v-if="account.platform === 'ag_hub'" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+          <label class="flex items-center justify-between gap-3">
+            <span>
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.cnProviders.balanceProbe.title') }}</span>
+              <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.cnProviders.balanceProbe.description') }}</span>
+            </span>
+            <input v-model="editBalanceProbeEnabled" type="checkbox" class="h-4 w-4" />
+          </label>
+          <div v-if="editBalanceProbeEnabled" class="mt-3 space-y-2">
+            <input v-model="editBalanceProbeURL" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.urlPlaceholder')" />
+            <input v-model="editBalanceProbePath" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.pathPlaceholder')" />
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <input v-model="editBalanceProbeCurrency" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.currencyPlaceholder')" />
+              <input v-model.number="editBalanceProbeDivisor" type="number" min="0" step="any" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.divisorPlaceholder')" />
+            </div>
+            <p class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.hint') }}</p>
+          </div>
+        </div>
         <!-- API Protocol Selection (CN providers / OpenCode / OpenAI APIKey) -->
         <div v-if="isCNApiKeyAccount || isEditOpenAIProtocolSelectPlatform">
           <!-- FORK-ANCHOR: edit-cn-protocol-multiselect (CN 平台协议改为多选卡片 + 兜底转发协议下拉；openai API Key 复用同一多选) -->
@@ -3812,6 +3832,13 @@ const editOpenCodeGoProtocolRules = ref<OpenCodeGoProtocolRule[]>(cloneOpenCodeG
 // 多协议供应商（国产厂商与走通用表单的供应商）的接入模式；OpenCode 用 editOpenCodeAccountMode。
 const editAccountMode = ref<string>('payg')
 const editOpenCodeAccountMode = ref<OpenCodeAccountMode>('go')
+// FORK-ANCHOR: edit-ag-hub-balance-probe-state (二开：聚合中转余额探测配置状态)
+// 聚合中转余额探测（可选）：端点与 JSON 结构按站点覆盖。
+const editBalanceProbeEnabled = ref(false)
+const editBalanceProbeURL = ref('')
+const editBalanceProbePath = ref('')
+const editBalanceProbeCurrency = ref('')
+const editBalanceProbeDivisor = ref<number | null>(null)
 // 国产厂商的接入模式只有 payg / coding。
 const cnPresetMode = computed<CnAccountMode>(() => (editAccountMode.value === 'coding' ? 'coding' : 'payg'))
 function currentOpenCodeOrCNMode(): string {
@@ -4988,6 +5015,14 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       } else {
         editAccountMode.value = resolveProviderAccountMode(newAccount.platform, credentials.account_mode)
       }
+      // FORK-ANCHOR: edit-ag-hub-balance-probe-load (二开：回填聚合中转余额探测配置)
+      if (newAccount.platform === 'ag_hub') {
+        editBalanceProbeEnabled.value = credentials.balance_probe_enabled === true
+        editBalanceProbeURL.value = typeof credentials.balance_probe_url === 'string' ? credentials.balance_probe_url : ''
+        editBalanceProbePath.value = typeof credentials.balance_probe_path === 'string' ? credentials.balance_probe_path : ''
+        editBalanceProbeCurrency.value = typeof credentials.balance_probe_currency === 'string' ? credentials.balance_probe_currency : ''
+        editBalanceProbeDivisor.value = typeof credentials.balance_probe_divisor === 'number' ? credentials.balance_probe_divisor : null
+      }
       const storedProtocol = credentials.api_protocol
       editApiProtocol.value =
         storedProtocol === 'adaptive' ||
@@ -5894,6 +5929,20 @@ const handleSubmit = async () => {
               protocolBaseUrls[selectedFallback as CnNativeApiProtocol] ||
               newBaseUrl
           newCredentials.api_protocol = legacyProtocolFromSelection(selectedProtocols, selectedFallback)
+          // FORK-ANCHOR: edit-ag-hub-balance-probe-credentials (二开：保存聚合中转余额探测凭据)
+          if (props.account.platform === 'ag_hub') {
+            newCredentials.balance_probe_enabled = editBalanceProbeEnabled.value
+            if (editBalanceProbeEnabled.value) {
+              if (editBalanceProbeURL.value.trim()) newCredentials.balance_probe_url = editBalanceProbeURL.value.trim()
+              else delete newCredentials.balance_probe_url
+              if (editBalanceProbePath.value.trim()) newCredentials.balance_probe_path = editBalanceProbePath.value.trim()
+              else delete newCredentials.balance_probe_path
+              if (editBalanceProbeCurrency.value.trim()) newCredentials.balance_probe_currency = editBalanceProbeCurrency.value.trim()
+              else delete newCredentials.balance_probe_currency
+              if (editBalanceProbeDivisor.value) newCredentials.balance_probe_divisor = editBalanceProbeDivisor.value
+              else delete newCredentials.balance_probe_divisor
+            }
+          }
         } else if (editApiProtocol.value === 'adaptive') {
           const defaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, currentOpenCodeOrCNMode())
           const protocolBaseUrls: Record<string, string> = {}
