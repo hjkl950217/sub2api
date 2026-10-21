@@ -3558,9 +3558,9 @@
         </div>
       </div>
 
-      <!-- Anthropic / OpenAI / DeepSeek / 聚合中转 API Key: Web Search Emulation (hidden when global disabled) -->
+      <!-- Anthropic / DeepSeek / 聚合中转 API Key: Web Search Emulation (hidden when global disabled) -->
       <div
-        v-if="supportsAccountWebSearchEmulation(form.platform) && accountCategory === 'apikey' && webSearchGlobalEnabled"
+        v-if="supportsChannelWebSearchEmulation(form.platform) && accountCategory === 'apikey' && webSearchGlobalEnabled"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -4336,7 +4336,7 @@ import {
   providerNativeProtocols,
   providerRoutesByModel,
   resolveProviderAccountMode,
-  supportsAccountWebSearchEmulation,
+  supportsChannelWebSearchEmulation,
   validateHeaderOverrideRows,
   type CnAccountMode,
   type CnApiProtocol,
@@ -6260,7 +6260,7 @@ const buildAnthropicExtra = (base?: Record<string, unknown>): Record<string, unk
 
 // FORK-ANCHOR: create-websearch-emulation-extra (二开：web search 模拟开关对 /v1/messages 接入平台统一落 extra)
 const buildWebSearchEmulationExtra = (base?: Record<string, unknown>): Record<string, unknown> | undefined => {
-  if (accountCategory.value !== 'apikey' || !supportsAccountWebSearchEmulation(form.platform)) {
+  if (accountCategory.value !== 'apikey' || !supportsChannelWebSearchEmulation(form.platform)) {
     return base
   }
   const extra: Record<string, unknown> = { ...(base || {}) }
