@@ -119,7 +119,8 @@ func TestForwardResponses_ForceChatCompletionsPreservesNoneReasoningEffort(t *te
 	require.Equal(t, "none", gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Nil(t, result.ReasoningEffort)
+	require.NotNil(t, result.ReasoningEffort)
+	require.Equal(t, "none", *result.ReasoningEffort)
 }
 
 func TestForwardResponses_PassthroughFlagWithUnsupportedResponsesUsesAccountMapping(t *testing.T) {
