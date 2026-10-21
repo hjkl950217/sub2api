@@ -57,7 +57,7 @@ func TestApplyCNProviderReactive429_Quota429StillCoolsToSnapshotReset(t *testing
 		Credentials: map[string]any{"account_mode": AccountModeCoding},
 		Extra:       map[string]any{"minimax_5h_reset_at": resetAt.Format(time.RFC3339)},
 	}
-	body := []byte(`{"error":{"type":"rate_limit_error","message":"usage limit reached"}}`)
+	body := []byte(`{"error":{"type":"rate_limit_error","message":"You have reached the 5-hour usage limit; quota will reset at the window boundary"}}`)
 
 	require.True(t, svc.applyCNProviderReactive429(context.Background(), account, http.Header{}, body))
 	require.Equal(t, 1, repo.rateLimitedCalls)

@@ -398,9 +398,14 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 		}
 	}
 
+	// 国产 Coding Plan 明确报告 5h/weekly 配额耗尽时，窗口重置是上游给出的
+	// 恢复边界，不能被一个过宽的账号临时规则缩短；动态 429 才允许使用账号规则。
+	cnQuota429 := statusCode == http.StatusTooManyRequests && account != nil &&
+		account.IsCNProvider() && account.IsCodingPlan() &&
+		isCNProviderQuotaExhausted429(account, responseBody)
 	// 先尝试临时不可调度规则（401 仅限非凭据级且命中显式模型级规则）
 	// 如果匹配成功，直接返回，不执行后续禁用逻辑
-	if tempUnschedRulesApply(account, statusCode, responseBody, tempUnschedulableModel(ctx, requestedModel)) {
+	if !cnQuota429 && tempUnschedRulesApply(account, statusCode, responseBody, tempUnschedulableModel(ctx, requestedModel)) {
 		if s.tryTempUnschedulable(ctx, account, statusCode, responseBody, firstRequestedModel(requestedModel)) {
 			return true
 		}
