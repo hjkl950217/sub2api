@@ -971,8 +971,8 @@ func TestForwardAsChatCompletions_OAuthJsonObjectKeepsSystemMessageInInput(t *te
 	require.Equal(t, systemPrompt, gjson.GetBytes(upstreamBody, "instructions").String())
 	require.Equal(t, int64(2), gjson.GetBytes(upstreamBody, "input.#").Int())
 	require.Equal(t, "developer", gjson.GetBytes(upstreamBody, "input.0.role").String())
-	require.Equal(t, systemPrompt, gjson.GetBytes(upstreamBody, "input.0.content").String())
-	require.Equal(t, 2, strings.Count(string(upstreamBody), systemPrompt))
+	require.Equal(t, "Return a valid JSON object.", gjson.GetBytes(upstreamBody, "input.0.content").String())
+	require.Equal(t, 1, strings.Count(string(upstreamBody), systemPrompt))
 }
 
 func TestForwardAsChatCompletions_OAuthKeepsMixedSystemContentInInput(t *testing.T) {
