@@ -91,7 +91,7 @@ func TestDecompressZstdRequestBodyMatchesStreamingReader(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, fast := decodeZstdRequestBodyOfDeclaredSize(tc.raw); fast != tc.fast {
+			if _, fast := decodeZstdRequestBodyOfDeclaredSize(tc.raw, DefaultMaxDecompressedBodySize); fast != tc.fast {
 				t.Fatalf("declared-size path taken=%v, want %v", fast, tc.fast)
 			}
 			want, wantErr := decompressZstdWithStreamingReader(tc.raw)
@@ -125,7 +125,7 @@ func TestDecompressZstdRequestBodyKeepsNoReferenceToBodies(t *testing.T) {
 	// Repeating a random block compresses well enough to take the declared-size
 	// path for a 24 MiB body.
 	raw := enc.EncodeAll(bytes.Repeat(block, 12), nil)
-	if _, ok := zstdSingleFrameContentSize(raw); !ok {
+	if _, ok := zstdSingleFrameContentSize(raw, DefaultMaxDecompressedBodySize); !ok {
 		t.Fatal("repeated body does not qualify for the declared-size path")
 	}
 	corrupt := bytes.Clone(raw)
