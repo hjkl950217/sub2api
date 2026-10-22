@@ -1725,8 +1725,11 @@ func TestGPT6RawChatRejectsReasoningToolCalls(t *testing.T) {
 		account := &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"model_mapping": map[string]any{"public": model}}}
 		svc := &OpenAIGatewayService{}
 		_, err := svc.forwardAsRawChatCompletions(context.Background(), c, account, []byte(`{"model":"public","messages":[{"role":"user","content":"hello"}],"tools":[{"type":"function","function":{"name":"lookup"}}]}`), "")
-		require.ErrorContains(t, err, "requires Responses")
-		require.Equal(t, 400, rec.Code)
+		var failover *UpstreamFailoverError
+		require.ErrorAs(t, err, &failover)
+		require.Equal(t, http.StatusBadRequest, failover.StatusCode)
+		require.Contains(t, string(failover.ResponseBody), "requires Responses")
+		require.Empty(t, rec.Body.String(), "混合池先换号，不提前写客户端响应")
 	}
 }
 
@@ -1867,6 +1870,13 @@ func TestGPT61SolRejectsDisabledReasoningBeforeForwarding(t *testing.T) {
 		svc := &OpenAIGatewayService{cfg: &config.Config{}}
 		_, err := svc.forwardAsRawChatCompletions(context.Background(), c, account, body, "")
 		require.Error(t, err)
+		var failover *UpstreamFailoverError
+		if errors.As(err, &failover) {
+			require.Equal(t, http.StatusBadRequest, failover.StatusCode)
+			require.Contains(t, string(failover.ResponseBody), "gpt-6.1-sol")
+			require.Empty(t, rec.Body.String(), "工具请求先换号，不提前写客户端响应")
+			continue
+		}
 		require.Equal(t, http.StatusBadRequest, rec.Code)
 		require.Contains(t, rec.Body.String(), "gpt-6.1-sol")
 	}
@@ -1924,6 +1934,13 @@ func TestGPT61SolOnlyChatFallbackRejectsToolsAndDisabledReasoning(t *testing.T) 
 				_, err = svc.forwardAnthropicViaRawChatCompletions(context.Background(), c, account, []byte(body), "")
 			}
 			require.Error(t, err)
+			var failover *UpstreamFailoverError
+			if errors.As(err, &failover) {
+				require.Equal(t, http.StatusBadRequest, failover.StatusCode)
+				require.Contains(t, string(failover.ResponseBody), "gpt-6.1-sol")
+				require.Empty(t, rec.Body.String(), "工具请求先换号，不提前写客户端响应")
+				continue
+			}
 			require.Equal(t, http.StatusBadRequest, rec.Code)
 			require.Contains(t, rec.Body.String(), "gpt-6.1-sol")
 		}
