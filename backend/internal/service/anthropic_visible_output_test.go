@@ -32,7 +32,7 @@ func runAnthropicVisibleOutputStream(t *testing.T, payload string) (*streamingRe
 	}
 	defer func() { _ = resp.Body.Close() }()
 	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "public-model", "upstream-model", false)
-	return result, err, recorder
+	return result, recorder, err
 }
 
 // 服务端搜索不是客户端答案或待执行的工具调用；其 input delta 不能
