@@ -115,9 +115,9 @@ func TestForwardSystemOneAppliesAccountModelMapping(t *testing.T) {
 
 	svc := newSystemOneTestService(&systemOneHTTPUpstream{do: server.Client().Do})
 	account := &Account{
-		ID:       31,
-		Platform: PlatformTypeSafe,
-		Type:     AccountTypeAPIKey,
+		ID:          31,
+		Platform:    PlatformTypeSafe,
+		Type:        AccountTypeAPIKey,
 		Credentials: map[string]any{
 			"base_url":      server.URL,
 			"api_key":       "ts-secret",

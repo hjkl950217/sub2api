@@ -38,7 +38,7 @@ func TestForwardAsRawChatCompletions_ToolsRequireResponsesSwitchesAccount(t *tes
 	}
 	body := []byte(`{"model":"gpt-6.1-sol","messages":[{"role":"user","content":"hi"}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]}`)
 
-	_, err := svc.forwardAsRawChatCompletions(context.Background(), c, account, body, "", time.Now())
+	_, err := svc.forwardAsRawChatCompletions(context.Background(), c, account, body, "")
 	var failover *UpstreamFailoverError
 	require.ErrorAs(t, err, &failover)
 	require.Equal(t, http.StatusBadRequest, failover.StatusCode)

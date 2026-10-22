@@ -284,14 +284,6 @@ const (
 )
 
 // FORK-ANCHOR: grok-catalog-longcontext-backfill
-// xAI 官方长上下文价卡：整单输入（含缓存）达到 200K 即切高档，输入/输出均 2x，
-// 阈值含边界（与 GPT 的严格 >272K 不同）。远程 LiteLLM 目录的 grok 条目不带
-// 这些字段，由 applyGrokLongContextPolicy 在运行时从本地价卡回填。
-const (
-	xaiGrokLongContextInputThreshold   = 200000
-	xaiGrokLongContextInputMultiplier  = 2.0
-	xaiGrokLongContextOutputMultiplier = 2.0
-)
 
 // isDeepSeekModel 判断模型名是否为 DeepSeek 模型（大小写不敏感）。
 // 任意 deepseek- 前缀均视为 DeepSeek 模型：官方模型（v4-flash / v4-pro /
@@ -355,18 +347,18 @@ func NewBillingService(cfg *config.Config, pricingService *PricingService) *Bill
 // initFallbackPricing 初始化硬编码回退价格（当动态价格不可用时使用）
 // 价格单位：USD per token（与LiteLLM格式一致）
 func (s *BillingService) initFallbackPricing() {
-	// Claude 4.5 Opus
+	// Claude 4.5 Opus：$5 输入 / $25 输出，缓存写 $6.25，缓存读 $0.50（USD/MTok）。
 	// FORK-ANCHOR: opus-longcontext-tier
+	// Anthropic 1M 长上下文档：>200K 输入时 $10 / $37.50，缓存读随输入 2x（$1.00）。
+	// 4.6/4.7/4.8 继承本卡，避免超阈值时输出与缓存读按基础价少计。
 	s.fallbackPrices["claude-opus-4.5"] = &ModelPricing{
-		InputPricePerToken:         5e-6,    // $5 per MTok
-		OutputPricePerToken:        25e-6,   // $25 per MTok
-		CacheCreationPricePerToken: 6.25e-6, // $6.25 per MTok
-		CacheReadPricePerToken:     0.5e-6,  // $0.50 per MTok
-		SupportsCacheBreakdown:     false,
-		// Anthropic 1M 长上下文档：>200K 输入时 $10 / $37.50，缓存读随输入 2x
-		// （$1.00）。4.6/4.7/4.8 继承本卡，避免超阈值时输出与缓存读按基础价少计。
-		LongContextInputThreshold:  200000,
-		LongContextInputMultiplier: 2,
+		InputPricePerToken:          5e-6,
+		OutputPricePerToken:         25e-6,
+		CacheCreationPricePerToken:  6.25e-6,
+		CacheReadPricePerToken:      0.5e-6,
+		SupportsCacheBreakdown:      false,
+		LongContextInputThreshold:   200000,
+		LongContextInputMultiplier:  2,
 		LongContextOutputMultiplier: 1.5,
 	}
 
