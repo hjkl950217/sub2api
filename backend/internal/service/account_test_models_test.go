@@ -199,9 +199,15 @@ func TestFetchOpenAIAccountModelsOAuthImageNamesMappedToText(t *testing.T) {
 
 				models, err := svc.FetchOpenAIAccountModels(context.Background(), account)
 				require.NoError(t, err)
-				// 图片形态的公开名会驱动测试弹窗进入图片模式，目标不是图片模型时
-				// 不补回（PR #7689）；其他配置别名仍保留。
-				require.NotContains(t, pickerModelIDs(models), publicID)
+				ids := pickerModelIDs(models)
+				if target == "text-target-missing" {
+					// 图片形态的公开名会驱动测试弹窗进入图片模式，目标缺失时
+					// 不补回（PR #7689 的图片别名守卫）。
+					require.NotContains(t, ids, publicID)
+					return
+				}
+				// 目标在目录里时由映射投影带出别名，即使公开名是图片形态。
+				require.Contains(t, ids, publicID)
 			})
 		}
 	}
