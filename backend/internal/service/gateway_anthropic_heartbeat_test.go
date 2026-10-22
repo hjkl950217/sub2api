@@ -7,6 +7,7 @@ package service
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -115,7 +116,15 @@ func TestGatewayService_StreamingIntervalTimeoutFiresOnPingOnly(t *testing.T) {
 	select {
 	case r := <-ch:
 		require.Error(t, r.err)
-		require.Contains(t, r.err.Error(), "stream data interval timeout")
+		// 首可见输出前的空闲超时按空可见流处理，允许换号重试；
+		// 关键仍是心跳不能把 interval 无限续命。
+		var failover *UpstreamFailoverError
+		if errors.As(r.err, &failover) {
+			require.Contains(t, string(failover.ResponseBody), "empty_visible_output")
+			require.True(t, failover.SafeToFailoverAfterWrite)
+		} else {
+			require.Contains(t, r.err.Error(), "stream data interval timeout")
+		}
 	case <-time.After(8 * time.Second):
 		t.Fatal("handleStreamingResponse did not time out on ping-only upstream")
 	}

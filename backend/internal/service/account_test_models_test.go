@@ -199,8 +199,9 @@ func TestFetchOpenAIAccountModelsOAuthImageNamesMappedToText(t *testing.T) {
 
 				models, err := svc.FetchOpenAIAccountModels(context.Background(), account)
 				require.NoError(t, err)
-				require.Equal(t, []string{publicID}, pickerModelIDs(models))
-				require.Equal(t, publicID, models[0].DisplayName, "configured aliases remain testable even when the target is missing")
+				// 图片形态的公开名会驱动测试弹窗进入图片模式，目标不是图片模型时
+				// 不补回（PR #7689）；其他配置别名仍保留。
+				require.NotContains(t, pickerModelIDs(models), publicID)
 			})
 		}
 	}

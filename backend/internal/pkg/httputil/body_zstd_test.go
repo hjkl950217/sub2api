@@ -3,7 +3,6 @@ package httputil
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"math/rand"
 	"runtime"
 	"sync"
@@ -20,7 +19,7 @@ func decompressZstdWithStreamingReader(raw []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer dec.Close()
-	return io.ReadAll(io.LimitReader(dec, DefaultMaxDecompressedBodySize))
+	return readDecompressedBody(dec, DefaultMaxDecompressedBodySize)
 }
 
 func zstdStreamFrame(t *testing.T, body []byte) []byte {
