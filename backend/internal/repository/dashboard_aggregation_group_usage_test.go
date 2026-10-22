@@ -21,7 +21,10 @@ func TestDashboardAggregationRepositorySyncGroupUsageRollupsNoopsAtCurrentDate(t
 	todayStart := time.Date(2026, 8, 13, 16, 0, 0, 0, time.UTC)
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT closed_before::text, retained_from.*FOR UPDATE`).
+	// FORK-ANCHOR: rollup-avoid-usage-log-block (二开：水位读取改为 advisory lock + 无行锁)
+	mock.ExpectExec(`SELECT pg_advisory_xact_lock`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`SELECT closed_before::text, retained_from`).
 		WillReturnRows(sqlmock.NewRows([]string{"closed_before", "retained_from", "timezone_name"}).
 			AddRow("2026-08-14", time.Unix(0, 0).UTC(), "Asia/Shanghai"))
 	mock.ExpectCommit()
@@ -39,7 +42,10 @@ func TestDashboardAggregationRepositorySyncGroupUsageRollupsRebuildsWhenTimezone
 	retainedFrom := time.Date(2026, 3, 1, 5, 0, 0, 0, time.UTC)
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT closed_before::text, retained_from.*FOR UPDATE`).
+	// FORK-ANCHOR: rollup-avoid-usage-log-block (二开：水位读取改为 advisory lock + 无行锁)
+	mock.ExpectExec(`SELECT pg_advisory_xact_lock`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`SELECT closed_before::text, retained_from`).
 		WillReturnRows(sqlmock.NewRows([]string{"closed_before", "retained_from", "timezone_name"}).
 			AddRow("2026-03-09", time.Unix(0, 0).UTC(), "Asia/Shanghai"))
 	mock.ExpectQuery(`SELECT MIN\(created_at\) FROM usage_logs`).
@@ -68,7 +74,10 @@ func TestDashboardAggregationRepositorySyncGroupUsageRollupsPublishesWatermarkLa
 	rebuildStart := time.Date(2026, 8, 12, 16, 0, 0, 0, time.UTC)
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT closed_before::text, retained_from.*FOR UPDATE`).
+	// FORK-ANCHOR: rollup-avoid-usage-log-block (二开：水位读取改为 advisory lock + 无行锁)
+	mock.ExpectExec(`SELECT pg_advisory_xact_lock`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`SELECT closed_before::text, retained_from`).
 		WillReturnRows(sqlmock.NewRows([]string{"closed_before", "retained_from", "timezone_name"}).
 			AddRow("2026-08-13", time.Unix(0, 0).UTC(), "Asia/Shanghai"))
 	mock.ExpectQuery(`SELECT MIN\(created_at\) FROM usage_logs`).
@@ -95,7 +104,10 @@ func TestDashboardAggregationRepositorySyncGroupUsageRollupsRejectsFutureWaterma
 	todayStart := time.Date(2026, 8, 13, 16, 0, 0, 0, time.UTC)
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT closed_before::text, retained_from.*FOR UPDATE`).
+	// FORK-ANCHOR: rollup-avoid-usage-log-block (二开：水位读取改为 advisory lock + 无行锁)
+	mock.ExpectExec(`SELECT pg_advisory_xact_lock`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`SELECT closed_before::text, retained_from`).
 		WillReturnRows(sqlmock.NewRows([]string{"closed_before", "retained_from", "timezone_name"}).
 			AddRow("2026-08-15", time.Unix(0, 0).UTC(), "Asia/Shanghai"))
 	mock.ExpectRollback()
@@ -158,7 +170,10 @@ func TestDashboardAggregationRepositoryRecomputeRangeRebuildsGroupRollupsBeforeC
 	} {
 		mock.ExpectExec(query).WillReturnResult(sqlmock.NewResult(0, 1))
 	}
-	mock.ExpectQuery(`SELECT closed_before::text, retained_from.*FOR UPDATE`).
+	// FORK-ANCHOR: rollup-avoid-usage-log-block (二开：水位读取改为 advisory lock + 无行锁)
+	mock.ExpectExec(`SELECT pg_advisory_xact_lock`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`SELECT closed_before::text, retained_from`).
 		WillReturnRows(sqlmock.NewRows([]string{"closed_before", "retained_from", "timezone_name"}).
 			AddRow(startDate, time.Unix(0, 0).UTC(), "Asia/Shanghai"))
 	mock.ExpectQuery(`SELECT MIN\(created_at\) FROM usage_logs`).
@@ -203,7 +218,10 @@ func TestDashboardAggregationRepositoryCleanupUsageLogsNonPartitionedInvalidates
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT closed_before::text, retained_from.*FOR UPDATE`).
+	// FORK-ANCHOR: rollup-avoid-usage-log-block (二开：水位读取改为 advisory lock + 无行锁)
+	mock.ExpectExec(`SELECT pg_advisory_xact_lock`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`SELECT closed_before::text, retained_from`).
 		WillReturnRows(sqlmock.NewRows([]string{"closed_before", "retained_from", "timezone_name"}).
 			AddRow(service.GroupUsageDate(todayStart), time.Unix(0, 0).UTC(), "Asia/Shanghai"))
 	mock.ExpectCommit()
@@ -262,7 +280,10 @@ func TestDashboardAggregationRepositoryCleanupUsageLogsPartitionedSortsAndInvali
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT closed_before::text, retained_from.*FOR UPDATE`).
+	// FORK-ANCHOR: rollup-avoid-usage-log-block (二开：水位读取改为 advisory lock + 无行锁)
+	mock.ExpectExec(`SELECT pg_advisory_xact_lock`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`SELECT closed_before::text, retained_from`).
 		WillReturnRows(sqlmock.NewRows([]string{"closed_before", "retained_from", "timezone_name"}).
 			AddRow(service.GroupUsageDate(todayStart), time.Unix(0, 0).UTC(), "Asia/Shanghai"))
 	mock.ExpectCommit()
