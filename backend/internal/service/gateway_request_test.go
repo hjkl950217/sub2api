@@ -1751,3 +1751,61 @@ func TestNormalizeGLMOpenAIReasoningEffort(t *testing.T) {
 		})
 	}
 }
+
+// FORK-ANCHOR: glm-thinking-budget-map (二开：glm-5.3 系按 budget_tokens 映射 effort)
+func TestNormalizeGLM53AnthropicThinkingMapsBudgetTokens(t *testing.T) {
+	tests := []struct {
+		name       string
+		model      string
+		body       string
+		wantEffort string
+	}{
+		{name: "glm-5.3-flash budget 8000 -> low", model: "glm-5.3-flash", body: `{"thinking":{"type":"enabled","budget_tokens":8000}}`, wantEffort: "low"},
+		{name: "glm-5.3-flash budget 16000 -> high", model: "glm-5.3-flash", body: `{"thinking":{"type":"enabled","budget_tokens":16000}}`, wantEffort: "high"},
+		{name: "glm-5.3-flash budget 32000 -> max", model: "z-ai/glm-5.3-flash", body: `{"thinking":{"type":"enabled","budget_tokens":32000}}`, wantEffort: "max"},
+		{name: "explicit effort wins over budget", model: "glm-5.3", body: `{"output_config":{"effort":"low"},"thinking":{"type":"enabled","budget_tokens":32000}}`, wantEffort: "low"},
+		{name: "disabled keeps low when no budget", model: "glm-5.3", body: `{"thinking":{"type":"disabled"}}`, wantEffort: "low"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, applied := NormalizeGLM53AnthropicThinking([]byte(tt.body), tt.model)
+			require.True(t, applied)
+			require.Equal(t, tt.wantEffort, gjson.GetBytes(got, "output_config.effort").String())
+			require.Equal(t, "enabled", gjson.GetBytes(got, "thinking.type").String())
+		})
+	}
+}
+
+// FORK-ANCHOR: minimax-m31-thinking (二开：MiniMax M3.1 effort 归一化)
+func TestNormalizeMiniMaxM31Thinking(t *testing.T) {
+	tests := []struct {
+		name        string
+		body        string
+		wantEffort  string
+		wantType    string
+		wantApplied bool
+	}{
+		{name: "native effort kept", body: `{"output_config":{"effort":"high"},"thinking":{"type":"enabled"}}`, wantEffort: "high", wantType: "adaptive", wantApplied: true},
+		{name: "ultracode -> max", body: `{"output_config":{"effort":"ultracode"}}`, wantEffort: "max", wantApplied: true},
+		{name: "auto dropped", body: `{"output_config":{"effort":"auto"}}`, wantApplied: true},
+		{name: "disabled -> adaptive", body: `{"thinking":{"type":"disabled"}}`, wantType: "adaptive", wantApplied: true},
+		{name: "M3 disabled unchanged", body: `{"thinking":{"type":"disabled"}}`, wantType: "disabled", wantApplied: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := "MiniMax-M3.1-Flash-Preview"
+			if tt.name == "M3 disabled unchanged" {
+				model = "MiniMax-M3"
+			}
+			got, applied := NormalizeChineseLLMThinking([]byte(tt.body), model)
+			require.Equal(t, tt.wantApplied, applied)
+			require.Equal(t, tt.wantEffort, gjson.GetBytes(got, "output_config.effort").String())
+			require.Equal(t, tt.wantType, gjson.GetBytes(got, "thinking.type").String())
+		})
+	}
+}
+
+func TestDefaultEffortForMiniMaxM31(t *testing.T) {
+	require.Equal(t, "max", *DefaultEffortForThinkingEnabled("MiniMax-M3.1-Flash-Preview"))
+	require.Equal(t, "high", *DefaultEffortForThinkingEnabled("MiniMax-M3"))
+}

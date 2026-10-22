@@ -336,6 +336,10 @@ func anthropicToolsToChatTools(tools []AnthropicTool) []ChatTool {
 		if strings.HasPrefix(t.Type, "web_search") {
 			continue
 		}
+		// FORK-ANCHOR: responses-nested-function-tool (二开：无 name 的工具不能下发)
+		if strings.TrimSpace(t.Name) == "" {
+			continue
+		}
 		out = append(out, ChatTool{
 			Type: "function",
 			Function: &ChatFunction{

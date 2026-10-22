@@ -1650,6 +1650,11 @@ func DefaultEffortForThinkingEnabled(mappedModel string) *string {
 	if strings.HasPrefix(strings.ToLower(mappedModel), "deepseek-") {
 		return nil
 	}
+	// FORK-ANCHOR: minimax-m31-thinking (二开：M3.1 默认 effort 为 max)
+	if isMiniMaxM31Model(mappedModel) {
+		effort := "max"
+		return &effort
+	}
 	effort := "high"
 	return &effort
 }
@@ -1720,8 +1725,13 @@ func normalizeEffortToken(raw string) string {
 	return strings.NewReplacer("-", "", "_", "", " ", "").Replace(value)
 }
 
+// FORK-ANCHOR: glm-thinking-budget-map (二开：glm-5.3 系按 budget_tokens 映射 effort)
 func isGLM53Model(model string) bool {
-	return strings.EqualFold(strings.TrimSpace(model), "glm-5.3")
+	id := strings.ToLower(strings.TrimSpace(model))
+	if idx := strings.LastIndex(id, "/"); idx >= 0 {
+		id = id[idx+1:]
+	}
+	return id == "glm-5.3" || strings.HasPrefix(id, "glm-5.3-")
 }
 
 func normalizeGLMOpenAIReasoningEffort(raw string) string {
@@ -1754,15 +1764,31 @@ func NormalizeGLM53AnthropicThinking(body []byte, mappedModel string) ([]byte, b
 	}
 
 	var effort string
-	switch normalizeEffortToken(raw) {
-	case "disabled", "off", "none", "minimal", "low":
-		effort = "low"
-	case "enabled", "adaptive", "medium", "high":
-		effort = "high"
-	case "xhigh", "max", "ultra":
-		effort = "max"
-	default:
-		return body, false
+	// Claude 协议客户端通常只发 thinking.budget_tokens；GLM 忽略 budget，按档位
+	// 映射到 output_config.effort（FORK-ANCHOR: glm-thinking-budget-map）。
+	if strings.TrimSpace(gjson.GetBytes(body, "output_config.effort").String()) == "" &&
+		(normalizeEffortToken(raw) == "enabled" || normalizeEffortToken(raw) == "adaptive") {
+		switch budget := gjson.GetBytes(body, "thinking.budget_tokens").Int(); {
+		case budget <= 0:
+		case budget <= 8192:
+			effort = "low"
+		case budget <= 24576:
+			effort = "high"
+		default:
+			effort = "max"
+		}
+	}
+	if effort == "" {
+		switch normalizeEffortToken(raw) {
+		case "disabled", "off", "none", "minimal", "low":
+			effort = "low"
+		case "enabled", "adaptive", "medium", "high":
+			effort = "high"
+		case "xhigh", "max", "ultra":
+			effort = "max"
+		default:
+			return body, false
+		}
 	}
 
 	modified, err := sjson.SetBytes(body, "thinking.type", "enabled")
@@ -1891,10 +1917,64 @@ func RectifyThinkingBudget(body []byte) ([]byte, bool) {
 // if no rewrite was needed. Caller should be on the Anthropic forward path AFTER
 // FilterThinkingBlocks and BEFORE building the upstream request, only for
 // passback-required models (ResolveThinkingProtocol == PassbackRequired).
+// FORK-ANCHOR: minimax-m31-thinking (二开：MiniMax M3.1 effort 归一化)
+func isMiniMaxM31Model(model string) bool {
+	id := strings.ToLower(strings.TrimSpace(model))
+	if idx := strings.LastIndex(id, "/"); idx >= 0 {
+		id = id[idx+1:]
+	}
+	return strings.HasPrefix(id, "minimax-m3.1") || strings.HasPrefix(id, "minimax-m3-1")
+}
+
+// normalizeMiniMaxM31Effort 返回规范化后的 effort；drop 为 true 时表示该值
+// 不被 M3.1 接受，应删除字段走上游默认 max。
+func normalizeMiniMaxM31Effort(raw string) (effort string, drop bool) {
+	switch value := normalizeEffortToken(raw); value {
+	case "low", "medium", "high", "xhigh", "max":
+		return value, false
+	case "ultracode":
+		return "max", false
+	default:
+		return "", true
+	}
+}
+
+func normalizeMiniMaxM31Thinking(body []byte) ([]byte, bool) {
+	modified := body
+	changed := false
+
+	if raw := strings.TrimSpace(gjson.GetBytes(body, "output_config.effort").String()); raw != "" {
+		effort, drop := normalizeMiniMaxM31Effort(raw)
+		if drop {
+			if next, err := sjson.DeleteBytes(modified, "output_config.effort"); err == nil {
+				modified = next
+				changed = true
+			}
+		} else if effort != strings.ToLower(raw) {
+			if next, err := sjson.SetBytes(modified, "output_config.effort", effort); err == nil {
+				modified = next
+				changed = true
+			}
+		}
+	}
+
+	switch strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, "thinking.type").String())) {
+	case "disabled", "enabled":
+		if next, err := sjson.SetBytes(modified, "thinking.type", "adaptive"); err == nil {
+			modified = next
+			changed = true
+		}
+	}
+	return modified, changed
+}
+
 func NormalizeChineseLLMThinking(body []byte, mappedModel string) ([]byte, bool) {
 	modelLower := strings.ToLower(mappedModel)
 	if !strings.HasPrefix(modelLower, "minimax-m") {
 		return body, false
+	}
+	if isMiniMaxM31Model(mappedModel) {
+		return normalizeMiniMaxM31Thinking(body)
 	}
 	thinkingType := gjson.GetBytes(body, "thinking.type").String()
 	if thinkingType != "enabled" {

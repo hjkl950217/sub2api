@@ -75,3 +75,23 @@ func TestHasResolvableTokenPricing(t *testing.T) {
 	empty := &GatewayService{}
 	require.False(t, empty.hasResolvableTokenPricing(ctx, "claude-sonnet-4", apiKey))
 }
+
+// FORK-ANCHOR: requested-model-channel-price (二开：模型映射后优先用请求模型的显式渠道价)
+func TestRecordUsageBillingModelPrefersRequestedExplicitPrice(t *testing.T) {
+	billing := NewBillingService(&config.Config{}, nil)
+	svc := &GatewayService{billingService: billing, resolver: NewModelPricingResolver(nil, billing)}
+	price := 0.5
+	group := &Group{ID: 1, ModelPricing: []ChannelModelPricing{{
+		Models:     []string{"glm-5.3-flash"},
+		InputPrice: &price,
+	}}}
+	apiKey := &APIKey{Group: group, GroupID: &group.ID}
+	result := &ForwardResult{Model: "glm-5.3-flash", UpstreamModel: "z-ai/glm-5.3-flash"}
+	fields := ChannelUsageFields{
+		BillingModelSource: BillingModelSourceChannelMapped,
+		ChannelMappedModel: "z-ai/glm-5.3-flash",
+	}
+
+	got := svc.recordUsageBillingModel(context.Background(), apiKey, result, fields)
+	require.Equal(t, "glm-5.3-flash", got)
+}

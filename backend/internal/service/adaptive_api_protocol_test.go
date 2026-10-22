@@ -264,3 +264,21 @@ func TestFixedCNResponsesProtocolOverridesStaleChatMode(t *testing.T) {
 		})
 	}
 }
+
+// FORK-ANCHOR: glm-adaptive-image-passthrough (二开：#7270 自适应协议下图片走原生 Anthropic)
+func TestAdaptiveProtocolPreservesAnthropicImages(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"glm-5.3-flash","max_tokens":32,"messages":[{"role":"user","content":[{"type":"text","text":"what is this"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}}]}],"stream":false}`)
+	upstream := &httpUpstreamRecorder{err: errors.New("stop after capture")}
+	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig(), httpUpstream: upstream}
+	account := adaptiveProtocolTestAccount(PlatformZhipu, map[string]any{
+		APIProtocolChatCompletions: "http://chat.example",
+		APIProtocolAnthropic:       "http://anthropic.example",
+	})
+
+	_, err := svc.ForwardAsAnthropic(context.Background(), adaptiveProtocolTestContext("/v1/messages", body), account, body, "", "")
+	require.Error(t, err)
+	require.Equal(t, "http://anthropic.example/v1/messages", upstream.lastReq.URL.String())
+	require.Equal(t, "image", gjson.GetBytes(upstream.lastBody, "messages.0.content.1.type").String())
+	require.Equal(t, "aGk=", gjson.GetBytes(upstream.lastBody, "messages.0.content.1.source.data").String())
+}

@@ -1278,3 +1278,30 @@ func TestChatCompletionsChunkToResponsesEvents_FunctionToolStreamUnaffected(t *t
 	}
 	assert.True(t, sawArgsDelta, "function 工具应保持原有参数增量事件")
 }
+
+// FORK-ANCHOR: responses-nested-function-tool (二开：#8257 兼容 Chat 形状工具并丢弃无 name 工具)
+func TestResponsesToolUnmarshalAcceptsNestedFunction(t *testing.T) {
+	var tool ResponsesTool
+	require.NoError(t, json.Unmarshal([]byte(`{"type":"function","function":{"name":"lookup","description":"d","parameters":{"type":"object","properties":{}}}}`), &tool))
+	require.Equal(t, "function", tool.Type)
+	require.Equal(t, "lookup", tool.Name)
+	require.Equal(t, "d", tool.Description)
+	require.Contains(t, string(tool.Parameters), `"properties"`)
+}
+
+func TestResponsesToChatCompletionsRequest_SkipsUnnamedTools(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "deepseek-flash",
+		Input: json.RawMessage(`"hi"`),
+		Tools: []ResponsesTool{
+			{Type: "function"},
+			{Type: "custom"},
+			{Type: "function", Name: "keep", Parameters: json.RawMessage(`{"type":"object"}`)},
+		},
+	}
+
+	out, err := ResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.Len(t, out.Tools, 1)
+	require.Equal(t, "keep", out.Tools[0].Function.Name)
+}

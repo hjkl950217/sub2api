@@ -1116,6 +1116,10 @@ func responsesToolsToChatTools(tools []ResponsesTool) ([]ChatTool, error) {
 	for _, tool := range tools {
 		switch tool.Type {
 		case "function":
+			// FORK-ANCHOR: responses-nested-function-tool (二开：无 name 的工具不能下发，否则上游 422)
+			if strings.TrimSpace(tool.Name) == "" {
+				continue
+			}
 			out = append(out, ChatTool{
 				Type: "function",
 				Function: &ChatFunction{
@@ -1128,6 +1132,9 @@ func responsesToolsToChatTools(tools []ResponsesTool) ([]ChatTool, error) {
 		case "custom":
 			// codex 0.14x 的核心执行工具 exec 即为 custom 类型；丢弃它会让模型
 			// 无法执行任何命令，必须降级为 function 工具透传。
+			if strings.TrimSpace(tool.Name) == "" {
+				continue
+			}
 			out = append(out, ChatTool{
 				Type: "function",
 				Function: &ChatFunction{

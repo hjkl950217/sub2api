@@ -944,6 +944,18 @@ func (s *GatewayService) recordUsageBillingModel(ctx context.Context, apiKey *AP
 	}
 	// 通用兜底（与 OpenAI 路径的 usageBillingModelCandidates 语义对齐）：
 	// 选定模型查不到任何价格时回退到实际转发的具体模型。已定价流量不受影响。
+	if s.resolveChannelPricing(ctx, billingModel, apiKey) == nil {
+		// FORK-ANCHOR: requested-model-channel-price (二开：模型映射后优先用请求模型的显式渠道价)
+		for _, candidate := range []string{result.Model, fields.OriginalModel} {
+			candidate = strings.TrimSpace(candidate)
+			if candidate == "" || strings.EqualFold(candidate, billingModel) {
+				continue
+			}
+			if s.resolveChannelPricing(ctx, candidate, apiKey) != nil {
+				return candidate
+			}
+		}
+	}
 	return s.billableModelWithFallback(ctx, apiKey, billingModel, result.UpstreamModel, result.Model)
 }
 

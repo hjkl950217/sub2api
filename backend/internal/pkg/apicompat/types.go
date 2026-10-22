@@ -375,6 +375,32 @@ func (t *ResponsesTool) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &a); err != nil {
 		return err
 	}
+	// FORK-ANCHOR: responses-nested-function-tool (二开：容忍 Chat 形状的嵌套 function 工具)
+	if a.Name == "" {
+		var nested struct {
+			Function *struct {
+				Name        string          `json:"name"`
+				Description string          `json:"description"`
+				Parameters  json.RawMessage `json:"parameters"`
+				Strict      *bool           `json:"strict"`
+			} `json:"function"`
+		}
+		if json.Unmarshal(data, &nested) == nil && nested.Function != nil && nested.Function.Name != "" {
+			if a.Type == "" {
+				a.Type = "function"
+			}
+			a.Name = nested.Function.Name
+			if a.Description == "" {
+				a.Description = nested.Function.Description
+			}
+			if len(a.Parameters) == 0 {
+				a.Parameters = nested.Function.Parameters
+			}
+			if a.Strict == nil {
+				a.Strict = nested.Function.Strict
+			}
+		}
+	}
 	*t = ResponsesTool(a)
 	return nil
 }

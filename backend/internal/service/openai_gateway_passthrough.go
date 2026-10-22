@@ -2347,7 +2347,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	originalModel string,
 	mappedModel string,
 ) (*openaiNonStreamingResultPassthrough, error) {
-	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
+	body, err := s.readOpenAINonStreamingResponseBody(ctx, resp.Body, c, account, true)
 	if err != nil {
 		return nil, err
 	}
