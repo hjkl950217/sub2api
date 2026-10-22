@@ -504,7 +504,7 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 
 		// Forward received usage regardless of the client stream_options.
 		// The intermediate Responses converter synthesizes usage even when absent.
-		ccState.IncludeUsage = ccState.IncludeUsage || anthropicChatStreamHasUsage(&event, payload)
+		ccState.IncludeUsage = ccState.IncludeUsage || anthropicChatStreamHasUsage(&event, payload) || event.Usage != nil
 
 		stream.observe(&event, payload)
 		if stream.upstreamErrType != "" {

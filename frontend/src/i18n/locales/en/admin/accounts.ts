@@ -1698,6 +1698,7 @@ export default {
         failureReason: 'Failure reason'
       },
       selectTestModel: 'Select Test Model',
+      unlistedModelHint: 'Not listed upstream',
       testModel: 'Test model',
       // FORK-ANCHOR: test-modal-prompt-default-en (英文界面普通文本测试消息默认值)
       testPrompt: 'Prompt: "{prompt}"',

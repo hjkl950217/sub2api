@@ -2970,6 +2970,14 @@ func (h *AccountHandler) SetSchedulable(c *gin.Context) {
 
 // GetAvailableModels handles getting available models for an account
 // GET /api/v1/admin/accounts/:id/models
+// FORK-ANCHOR: account-models-local-fallback-header (二开：标记测试模型列表来自本地兜底)
+// 模型选择器尽量用共享的上游目录；发现失败时改用本地数据（账号映射或默认目录）。
+// 两者模型集合不同，过去这个切换不可见，现在用响应头标明本地兜底。
+const (
+	modelsListSourceHeader  = "X-Sub2API-Models-Source"
+	modelsListSourceLocally = "local-fallback"
+)
+
 func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -2988,26 +2996,40 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		// Prefer the shared, account-keyed upstream catalog. If discovery fails,
 		// retain the legacy local catalog below so the test dialog remains usable.
 		if h.accountTestService != nil {
-			if models, fetchErr := h.accountTestService.FetchOpenAIAccountModels(c.Request.Context(), account); fetchErr == nil {
+			models, fetchErr := h.accountTestService.FetchOpenAIAccountModels(c.Request.Context(), account)
+			if fetchErr == nil {
 				response.Success(c, models)
 				return
 			}
+			// 目录发现失败是预期结果（上游没有 /models、临时故障），但不能静默：
+			// 下面的分支改用本地数据，模型集合与目录不同。
+			slog.Warn("account_models_catalog_unavailable",
+				"account_id", accountID, "platform", account.Platform, "error", fetchErr)
 		}
 		// OpenAI 自动透传会绕过常规模型改写，测试/模型列表也应回落到默认模型集。
 		if account.IsOpenAIPassthroughEnabled() {
+			c.Header(modelsListSourceHeader, modelsListSourceLocally)
 			response.Success(c, openai.DefaultModels)
 			return
 		}
 
 		mapping := account.GetModelMapping()
 		if len(mapping) == 0 {
+			c.Header(modelsListSourceHeader, modelsListSourceLocally)
 			response.Success(c, openai.DefaultModels)
 			return
 		}
 
-		// Return mapped models
-		var models []openai.Model
+		// Return mapped models. 键排序保证两次相同请求返回相同顺序：
+		// 直接遍历 map 会让顺序随机。
+		requestedModels := make([]string, 0, len(mapping))
 		for requestedModel := range mapping {
+			requestedModels = append(requestedModels, requestedModel)
+		}
+		sort.Strings(requestedModels)
+
+		var models []openai.Model
+		for _, requestedModel := range requestedModels {
 			var found bool
 			for _, dm := range openai.DefaultModels {
 				if dm.ID == requestedModel {
@@ -3025,6 +3047,7 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 				})
 			}
 		}
+		c.Header(modelsListSourceHeader, modelsListSourceLocally)
 		response.Success(c, models)
 		return
 	}

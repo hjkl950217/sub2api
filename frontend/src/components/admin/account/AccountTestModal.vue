@@ -73,7 +73,19 @@
           value-key="id"
           label-key="display_name"
           :placeholder="loadingModels ? t('common.loading') + '...' : t('admin.accounts.selectTestModel')"
-        />
+        >
+          <!-- FORK-ANCHOR: test-modal-unlisted-model-badge (二开：标注上游目录未列出的映射模型) -->
+          <template #option="{ option, selected }">
+            <span class="select-option-label">{{ option.display_name || option.id }}</span>
+            <span
+              v-if="option.unlisted"
+              class="flex-shrink-0 text-xs text-amber-600 dark:text-amber-400"
+            >
+              {{ t('admin.accounts.unlistedModelHint') }}
+            </span>
+            <Icon v-if="selected" name="check" size="sm" class="text-primary-500" :stroke-width="2" />
+          </template>
+        </Select>
       </div>
 
       <div v-if="isOpenAIAccount" class="space-y-1.5">

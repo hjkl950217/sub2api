@@ -24,6 +24,12 @@ import (
 // 未启用时，客户端断开后继续读取上游的读间隔上限，与该配置项的默认值一致。
 var anthropicCompatDisconnectDrainInterval = 180 * time.Second
 
+// FORK-ANCHOR: anthropic-compat-terminal-usage-grace (二开：终态后固定尾窗口收敛迟到 usage)
+// anthropicCompatTerminalUsageGrace 是终态事件之后等待迟到 usage 的固定窗口。
+// 上游通常在 message_stop 前用 message_delta 报 usage，兼容上游可能在其后补发；
+// 固定窗口既保留这部分容错，也避免无限等待不关闭的上游连接。
+const anthropicCompatTerminalUsageGrace = 500 * time.Millisecond
+
 // anthropicCompatStream 是 Anthropic 上游经 chat/responses 兼容入口流式转发时的
 // 上游读取状态。上游请求 ctx 与客户端解绑，客户端断开后调用方停止向下游写入、
 // 继续读取上游以合并最终 usage。逐行读间隔受 gateway.stream_data_interval_timeout
@@ -104,7 +110,7 @@ func (st *anthropicCompatStream) nextLine() (string, bool) {
 		line, err := st.pump.nextOrClientGone(st.clientGone)
 		if err == nil {
 			if payload, ok := extractOpenAISSEDataLine(line); ok && strings.TrimSpace(payload) == "[DONE]" {
-				st.sawTerminal = true
+				st.markTerminal()
 			}
 			return line, true
 		}
@@ -141,6 +147,15 @@ func (st *anthropicCompatStream) nextLine() (string, bool) {
 	}
 }
 
+// markTerminal 记录终态并启动固定尾窗口，重复终态不能延长窗口。
+func (st *anthropicCompatStream) markTerminal() {
+	if st.sawTerminal {
+		return
+	}
+	st.sawTerminal = true
+	st.pump.setDeadline(anthropicCompatTerminalUsageGrace)
+}
+
 // observe 记录决定收尾方式的上游事件。收到上游 error 事件时关闭上游 body，
 // 调用方不再处理该事件并结束读取。
 func (st *anthropicCompatStream) observe(event *apicompat.AnthropicStreamEvent, payload string) {
@@ -148,10 +163,10 @@ func (st *anthropicCompatStream) observe(event *apicompat.AnthropicStreamEvent, 
 	case "message_start":
 		st.sawMessageStart = true
 	case "message_stop":
-		st.sawTerminal = true
+		st.markTerminal()
 	case "message_delta":
 		if event.Delta != nil && event.Delta.StopReason != "" {
-			st.sawTerminal = true
+			st.markTerminal()
 		}
 	case "error":
 		st.upstreamErrPayload = payload

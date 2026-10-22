@@ -309,9 +309,14 @@ func appendMissingConfiguredModels(models []openai.Model, account *Account) []op
 		if _, ok := seen[name]; ok {
 			continue
 		}
+		// FORK-ANCHOR: account-test-picker-unlisted-image-guard (二开：图片形态别名只在目标确为图片模型时补回)
+		// 图片形态的公开名会驱动测试弹窗进入图片模式，目标不是图片模型时不能补。
+		if IsGPTImageGenerationModel(name) && !IsGPTImageGenerationModel(account.GetMappedModel(name)) {
+			continue
+		}
 		models = append(models, openai.Model{
 			ID: name, Object: "model", Type: "model", OwnedBy: "openai",
-			DisplayName: name,
+			DisplayName: name, Unlisted: true,
 		})
 		seen[name] = struct{}{}
 	}

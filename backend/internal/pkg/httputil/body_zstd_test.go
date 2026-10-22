@@ -20,7 +20,7 @@ func decompressZstdWithStreamingReader(raw []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer dec.Close()
-	return io.ReadAll(io.LimitReader(dec, maxDecompressedBodySize))
+	return io.ReadAll(io.LimitReader(dec, DefaultMaxDecompressedBodySize))
 }
 
 func zstdStreamFrame(t *testing.T, body []byte) []byte {
@@ -58,7 +58,7 @@ func TestDecompressZstdRequestBodyMatchesStreamingReader(t *testing.T) {
 	image := zstdImageRequestBody(3 << 20)
 	frame := enc.EncodeAll(image, nil)
 	repetitive := bytes.Repeat([]byte(`{"type":"input_text","text":"same"},`), 1<<16)
-	oversized := bytes.Repeat([]byte{'A'}, maxDecompressedBodySize+1)
+	oversized := bytes.Repeat([]byte{'A'}, int(DefaultMaxDecompressedBodySize)+1)
 	noChecksum := newTestZstdEncoder(t, zstd.WithEncoderCRC(false))
 	// A skippable frame: magic 0x184D2A50, little-endian payload size, payload.
 	skippable := append([]byte{0x50, 0x2a, 0x4d, 0x18, 3, 0, 0, 0}, "pad"...)
@@ -95,7 +95,7 @@ func TestDecompressZstdRequestBodyMatchesStreamingReader(t *testing.T) {
 				t.Fatalf("declared-size path taken=%v, want %v", fast, tc.fast)
 			}
 			want, wantErr := decompressZstdWithStreamingReader(tc.raw)
-			got, err := decompressRequestBody("zstd", tc.raw)
+			got, err := decompressRequestBody("zstd", tc.raw, DefaultMaxDecompressedBodySize)
 			if (wantErr == nil) != (err == nil) {
 				t.Fatalf("error changed: streaming=%v got=%v", wantErr, err)
 			}
@@ -112,7 +112,7 @@ func TestDecompressZstdRequestBodyMatchesStreamingReader(t *testing.T) {
 
 //go:noinline
 func decodeZstdAndDrop(raw []byte) {
-	_, _ = decompressRequestBody("zstd", raw)
+	_, _ = decompressRequestBody("zstd", raw, DefaultMaxDecompressedBodySize)
 }
 
 func TestDecompressZstdRequestBodyKeepsNoReferenceToBodies(t *testing.T) {
@@ -189,7 +189,7 @@ func TestDecompressZstdRequestBodyOfDeclaredSizeAllocatesResultOnce(t *testing.T
 		raw := enc.EncodeAll(body, nil)
 		t.Run(fmt.Sprintf("bytes_%d", len(body)), func(t *testing.T) {
 			allocated := minAllocatedBytes(func() {
-				got, err := decompressRequestBody("zstd", raw)
+				got, err := decompressRequestBody("zstd", raw, DefaultMaxDecompressedBodySize)
 				if err != nil || !bytes.Equal(got, body) {
 					t.Fatalf("decoded body changed: err=%v", err)
 				}

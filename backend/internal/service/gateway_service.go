@@ -778,6 +778,8 @@ func (e *UpstreamFailoverError) ShouldReportAccountScheduleFailure() bool {
 // 提取 RawData 并构造 UpstreamFailoverError.ResponseBody。
 type sseStreamErrorEventError struct {
 	RawData string
+	// FORK-ANCHOR: sse-error-safe-after-comment-write (二开：只写过传输注释时可安全切换账号)
+	SafeToFailoverAfterWrite bool
 }
 
 func (e *sseStreamErrorEventError) Error() string { return "have error in stream" }

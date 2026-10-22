@@ -22,6 +22,11 @@ type Model struct {
 	// local catalog. Both are omitted when unknown.
 	ContextWindow    int64 `json:"context_window,omitempty"`
 	MaxContextWindow int64 `json:"max_context_window,omitempty"`
+	// FORK-ANCHOR: account-test-picker-unlisted-model (二开：标记上游目录未列出的映射模型)
+	// Unlisted 标记账号映射里配置了、但上游目录没列出的模型。网关按映射路由、
+	// 不查目录，这类模型仍可用；该标记只解释管理端测试下拉为何显示它，
+	// 其他接口 omitempty 保持 /v1/models 原样。
+	Unlisted bool `json:"unlisted,omitempty"`
 }
 
 // DefaultModels OpenAI models list

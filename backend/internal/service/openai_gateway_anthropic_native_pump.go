@@ -46,6 +46,9 @@ type anthropicNativeLinePump struct {
 	done     chan struct{}
 	timer    *time.Timer
 	interval time.Duration
+	// FORK-ANCHOR: anthropic-pump-terminal-deadline (二开：终态后固定尾窗口收敛迟到 usage)
+	deadlineTimer *time.Timer
+	deadlineCh    <-chan time.Time
 }
 
 // newAnthropicNativeLinePump 启动泵 goroutine；调用方 defer pump.stop()。
@@ -95,6 +98,9 @@ func (p *anthropicNativeLinePump) nextOrClientGone(clientGone <-chan struct{}) (
 	select {
 	case ev, ok := <-p.events:
 		return p.deliver(ev, ok)
+	case <-p.deadlineCh:
+		// 终态后的固定尾窗口到期：即使上游连接未关闭也停止等待。
+		return "", io.EOF
 	case <-timeoutCh:
 		select {
 		case ev, ok := <-p.events:
@@ -147,6 +153,16 @@ func (p *anthropicNativeLinePump) resetTimer() {
 	p.timer.Reset(p.interval)
 }
 
+// setDeadline 在终态事件后启动一个不可延长的固定尾窗口，到期后 next 返回 io.EOF。
+// 只生效一次；仅能在调用 next 的 goroutine 中调用。
+func (p *anthropicNativeLinePump) setDeadline(d time.Duration) {
+	if p.deadlineTimer != nil || d <= 0 {
+		return
+	}
+	p.deadlineTimer = time.NewTimer(d)
+	p.deadlineCh = p.deadlineTimer.C
+}
+
 // stop 终止泵 goroutine。注意：goroutine 若正阻塞在 scanner.Read 上，需由
 // 调用方关闭 resp.Body（间隔超时分支已做）才能真正退出。
 func (p *anthropicNativeLinePump) stop() {
@@ -158,6 +174,9 @@ func (p *anthropicNativeLinePump) stop() {
 			default:
 			}
 		}
+	}
+	if p.deadlineTimer != nil {
+		p.deadlineTimer.Stop()
 	}
 }
 

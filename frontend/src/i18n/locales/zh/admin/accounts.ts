@@ -1785,6 +1785,7 @@ export default {
         failureReason: '失败原因'
       },
       selectTestModel: '选择测试模型',
+      unlistedModelHint: '上游未列出',
       testModel: '测试模型',
       // FORK-ANCHOR: test-modal-prompt-default-zh (中文普通文本测试消息默认值)
       testPrompt: '提示词："{prompt}"',

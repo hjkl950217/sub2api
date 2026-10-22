@@ -838,7 +838,8 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		if err != nil {
 			var sseErr *sseStreamErrorEventError
 			if errors.As(err, &sseErr) {
-				return nil, s.sseStreamErrorEventFailover(ctx, c, account, resp, sseErr.RawData, reqModel, c.Writer.Size() != writerSizeBeforeStream)
+				outputStarted := c.Writer.Size() != writerSizeBeforeStream && !sseErr.SafeToFailoverAfterWrite
+				return nil, s.sseStreamErrorEventFailover(ctx, c, account, resp, sseErr.RawData, reqModel, outputStarted, sseErr.SafeToFailoverAfterWrite)
 			}
 			// 流中断（缺失 terminal 事件、读错误、数据间隔超时等）时保留已观测到的
 			// usage 与错误一起返回，handler 在错误处理完成后照常提交 usage 记录。
@@ -1035,7 +1036,7 @@ func (s *GatewayService) isStickyAccountUpstreamRestricted(ctx context.Context, 
 // sseStreamErrorEventFailover 把上游 HTTP 200 + SSE 流体内的 event:error 帧转为
 // UpstreamFailoverError：尚未向客户端写出内容且错误类型为 overloaded_error 时按 529
 // 处理并触发账号侧副作用，其余按 403；同时登记 stream_error 运维记录。
-func (s *GatewayService) sseStreamErrorEventFailover(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, rawData, model string, outputStarted bool) *UpstreamFailoverError {
+func (s *GatewayService) sseStreamErrorEventFailover(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, rawData, model string, outputStarted, safeToFailoverAfterWrite bool) *UpstreamFailoverError {
 	body := []byte(rawData)
 	semanticStatus := http.StatusForbidden
 	if !outputStarted && gjson.GetBytes(body, "error.type").String() == "overloaded_error" {
@@ -1081,7 +1082,8 @@ func (s *GatewayService) sseStreamErrorEventFailover(ctx context.Context, c *gin
 	)
 
 	return &UpstreamFailoverError{
-		StatusCode:   semanticStatus,
-		ResponseBody: body,
+		StatusCode:               semanticStatus,
+		ResponseBody:             body,
+		SafeToFailoverAfterWrite: safeToFailoverAfterWrite,
 	}
 }

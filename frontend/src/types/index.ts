@@ -956,6 +956,9 @@ export interface ClaudeModel {
   type: string
   display_name: string
   created_at: string
+  // 账号测试选择器用：账号映射配置了、上游目录未列出。模型仍可路由，
+  // 该标记只解释为什么它出现在列表里。
+  unlisted?: boolean
 }
 
 export interface Proxy {
