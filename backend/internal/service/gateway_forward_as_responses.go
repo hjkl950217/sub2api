@@ -414,6 +414,7 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 	// Accumulate the final Anthropic response from streaming events
 	var finalResp *apicompat.AnthropicResponse
 	var usage ClaudeUsage
+	sawMessageStop := false
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -446,6 +447,9 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 		if event.Type == "message_start" && event.Message != nil {
 			finalResp = event.Message
 			mergeAnthropicUsage(&usage, event.Message.Usage)
+		}
+		if event.Type == "message_stop" {
+			sawMessageStop = true
 		}
 
 		// message_delta carries final usage and stop_reason
@@ -489,8 +493,24 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 	}
 
 	if finalResp == nil {
+		if !claudeUsageObserved(usage) {
+			return nil, newAnthropicCompatBufferedFailoverError("Upstream stream ended without a response")
+		}
 		writeResponsesError(c, http.StatusBadGateway, "server_error", "Upstream stream ended without a response")
-		return nil, fmt.Errorf("upstream stream ended without response")
+		return bufferedCompatPartialResult(resp, requestID, usage, originalModel, mappedModel, reasoningEffort, startTime),
+			fmt.Errorf("stream usage incomplete: upstream stream ended without response")
+	}
+
+	// 没有 message_stop 说明上游被截断：已计量 usage 时返回 502 并照常计费，
+	// FORK-ANCHOR: compat-buffered-truncation-responses
+	// 未计量时换号重试（issue #7797）。
+	if !sawMessageStop {
+		if !claudeUsageObserved(usage) {
+			return nil, newAnthropicCompatBufferedFailoverError("Upstream stream ended before completion")
+		}
+		writeResponsesError(c, http.StatusBadGateway, "server_error", "Upstream stream ended before completion")
+		return bufferedCompatPartialResult(resp, requestID, usage, originalModel, mappedModel, reasoningEffort, startTime),
+			fmt.Errorf("stream usage incomplete: missing terminal event")
 	}
 
 	// Update usage from accumulated delta

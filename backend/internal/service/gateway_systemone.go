@@ -11,6 +11,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/typesafe"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/sjson"
 )
 
 type SystemOneForwardResult struct {
@@ -42,6 +43,17 @@ func (s *GatewayService) ForwardSystemOne(ctx context.Context, c *gin.Context, a
 	baseURL, err := s.validateUpstreamBaseURL(account.GetTypeSafeBaseURL())
 	if err != nil {
 		return nil, err
+	}
+	// 入站协议固定 jev-latest；上游真实模型由账号 model_mapping 决定
+	// FORK-ANCHOR: typesafe-model-mapping
+	// （如百炼 decision-model-preview）。未配置映射时保持原样透传（issue #7985）。
+	upstreamModel := account.GetMappedModel(typesafe.JevLatestModel)
+	if upstreamModel != "" && upstreamModel != typesafe.JevLatestModel {
+		patchedBody, err := sjson.SetBytes(body, "model", upstreamModel)
+		if err != nil {
+			return nil, fmt.Errorf("apply typesafe model mapping: %w", err)
+		}
+		body = patchedBody
 	}
 	req, err := typesafe.NewSystemOneRequest(ctx, baseURL, key, body)
 	if err != nil {
@@ -91,6 +103,7 @@ func (s *GatewayService) ForwardSystemOne(ctx context.Context, c *gin.Context, a
 			UpstreamHeaders:       resp.Header.Clone(),
 			Usage:                 ClaudeUsage{InputTokens: decoded.Usage.InputTokens, OutputTokens: decoded.Usage.OutputTokens},
 			Model:                 typesafe.JevLatestModel,
+			UpstreamModel:         upstreamModel,
 			UpstreamResponseModel: decoded.Model,
 			Duration:              time.Since(started),
 		},

@@ -687,10 +687,18 @@ type ChatMessage struct {
 // ChatContentPart is a typed content part in a multi-modal message.
 type ChatContentPart struct {
 	PromptCacheBreakpoint json.RawMessage `json:"prompt_cache_breakpoint,omitempty"`
-	Type                  string          `json:"type"` // "text" | "image_url" | "file"
+	Type                  string          `json:"type"` // "text" | "image_url" | "file" | "input_audio"
 	Text                  string          `json:"text,omitempty"`
 	ImageURL              *ChatImageURL   `json:"image_url,omitempty"`
 	File                  *ChatFile       `json:"file,omitempty"`
+	InputAudio            *ChatInputAudio `json:"input_audio,omitempty"`
+}
+
+// ChatInputAudio is the OpenAI `input_audio` part: base64 payload plus container format.
+// FORK-ANCHOR: chat-input-audio-bridge
+type ChatInputAudio struct {
+	Data   string `json:"data"`
+	Format string `json:"format,omitempty"`
 }
 
 // ChatImageURL contains the URL for an image content part.

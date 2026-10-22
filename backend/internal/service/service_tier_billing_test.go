@@ -55,6 +55,26 @@ func TestApplyServiceTierBillingResolutionOnlyRewritesDowngrades(t *testing.T) {
 		require.Equal(t, "default", *result.ServiceTier)
 	})
 
+	t.Run("trusted chained sub2api keeps requested tier", func(t *testing.T) {
+		requested := "priority"
+		result := &OpenAIForwardResult{ServiceTier: &requested, UpstreamResponseServiceTier: "default"}
+		account := &Account{
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Credentials: map[string]any{"trust_upstream_billing_tier": true},
+		}
+		resolution := ApplyOpenAIServiceTierBillingResolution(account, result)
+		require.False(t, resolution.Downgraded)
+		require.Equal(t, "priority", *result.ServiceTier)
+	})
+
+	t.Run("untrusted api key still downgrades", func(t *testing.T) {
+		requested := "priority"
+		result := &OpenAIForwardResult{ServiceTier: &requested, UpstreamResponseServiceTier: "default"}
+		resolution := ApplyOpenAIServiceTierBillingResolution(&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, result)
+		require.True(t, resolution.Downgraded)
+	})
+
 	t.Run("openai honoured tier keeps pointer", func(t *testing.T) {
 		requested := "priority"
 		result := &OpenAIForwardResult{ServiceTier: &requested, UpstreamResponseServiceTier: "priority"}

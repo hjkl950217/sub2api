@@ -21,6 +21,31 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+// issue #8020：混合分组里只有 Chat Completions 的账号不能直接吞掉需要 Responses
+// 的工具请求；应返回可切换账号的错误，让 handler 先尝试池内的 Responses 账号。
+func TestForwardAsRawChatCompletions_ToolsRequireResponsesSwitchesAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	account := &Account{
+		ID:          91,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"base_url": "https://upstream.example/v1"},
+	}
+	body := []byte(`{"model":"gpt-6.1-sol","messages":[{"role":"user","content":"hi"}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]}`)
+
+	_, err := svc.forwardAsRawChatCompletions(context.Background(), c, account, body, "", time.Now())
+	var failover *UpstreamFailoverError
+	require.ErrorAs(t, err, &failover)
+	require.Equal(t, http.StatusBadRequest, failover.StatusCode)
+	require.Contains(t, string(failover.ResponseBody), "requires Responses")
+	require.Empty(t, rec.Body.String(), "failover decision must happen before any client write")
+}
+
 func TestBuildOpenAIChatCompletionsURL(t *testing.T) {
 	t.Parallel()
 

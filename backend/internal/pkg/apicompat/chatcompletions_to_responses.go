@@ -473,6 +473,23 @@ func convertChatContentPartsToResponses(parts []ChatContentPart) []ResponsesCont
 					FileID:                p.File.FileID,
 				})
 			}
+		case "input_audio":
+			// FORK-ANCHOR: chat-input-audio-bridge
+			// OpenAI 的 input_audio 在 Responses 协议里没有对应类型。音频输入目前
+			// 只在 Gemini/Antigravity 链路可用，而该链路会把带 audio/* MIME 的
+			// data URI 作为 inline data 下发，因此这里转成 input_image 保留载荷，
+			// 避免静默丢弃（issue #7859）。
+			if p.InputAudio != nil && strings.TrimSpace(p.InputAudio.Data) != "" {
+				format := strings.ToLower(strings.TrimSpace(p.InputAudio.Format))
+				if format == "" {
+					format = "wav"
+				}
+				responseParts = append(responseParts, ResponsesContentPart{
+					PromptCacheBreakpoint: p.PromptCacheBreakpoint,
+					Type:                  "input_image",
+					ImageURL:              "data:audio/" + format + ";base64," + p.InputAudio.Data,
+				})
+			}
 		}
 	}
 	return responseParts

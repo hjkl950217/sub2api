@@ -221,8 +221,16 @@ func isGrokNativeSearchOutputItem(item gjson.Result) bool {
 		return false
 	}
 	itemType := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
+	// FORK-ANCHOR: grok-server-tool-count
 	switch itemType {
-	case "web_search_call", "x_search_call":
+	// xAI 服务端工具调用（按次计费）。function_call / custom_tool_call 是客户端
+	// 执行，不计服务端工具费，因此不在白名单内。当前所有工具共用一个
+	// search_price_per_1k 价格桶（code_interpreter/file_search 与 web_search
+	// 同价档），分工具定价需要额外的价格列。
+	case "web_search_call", "x_search_call",
+		"code_interpreter_call", "code_execution_call",
+		"file_search_call", "collections_search_call",
+		"attachment_search":
 		return true
 	default:
 		return false

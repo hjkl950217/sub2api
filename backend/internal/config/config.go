@@ -1004,6 +1004,10 @@ type GatewayConfig struct {
 	MaxDecompressedBodySize int64 `mapstructure:"max_decompressed_body_size"`
 	// TextMaxBodySize limits endpoints that cannot carry inline image/video payloads.
 	TextMaxBodySize int64 `mapstructure:"text_max_body_size"`
+	// ContextLengthLimitBytes：声明 Content-Length 超过该值时，在读取正文前直接
+	// 返回 context_length_exceeded（400），让 Codex CLI 自动压缩会话（#7692）。
+	// 0 表示不启用；必须不大于 max_body_size。
+	ContextLengthLimitBytes int64 `mapstructure:"context_length_limit_bytes"`
 	// 非流式上游响应体读取上限（字节），用于防止无界读取导致内存放大
 	UpstreamResponseReadMaxBytes int64 `mapstructure:"upstream_response_read_max_bytes"`
 	// 上游模型列表响应体读取上限（字节）
@@ -2128,7 +2132,8 @@ func setDefaults() {
 	viper.SetDefault("security.csp.enabled", true)
 	viper.SetDefault("security.csp.policy", DefaultCSPPolicy)
 	viper.SetDefault("security.proxy_probe.insecure_skip_verify", false)
-	viper.SetDefault("security.trust_forwarded_ip_for_api_key_acl", true)
+	// FORK-ANCHOR: trust-forwarded-ip-opt-in
+	viper.SetDefault("security.trust_forwarded_ip_for_api_key_acl", false)
 
 	// Security - disable direct fallback on proxy error
 	viper.SetDefault("security.proxy_fallback.allow_direct_on_error", false)
@@ -2543,6 +2548,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.max_body_size", int64(256*1024*1024))
 	viper.SetDefault("gateway.max_decompressed_body_size", httputil.DefaultMaxDecompressedBodySize)
 	viper.SetDefault("gateway.text_max_body_size", int64(32*1024*1024))
+	viper.SetDefault("gateway.context_length_limit_bytes", int64(0))
 	viper.SetDefault("gateway.upstream_response_read_max_bytes", DefaultUpstreamResponseReadMaxBytes)
 	viper.SetDefault("gateway.models_list_read_max_bytes", DefaultModelsListReadMaxBytes)
 	viper.SetDefault("gateway.proxy_probe_response_read_max_bytes", int64(1024*1024))
@@ -3368,6 +3374,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.TextMaxBodySize <= 0 || c.Gateway.TextMaxBodySize > c.Gateway.MaxBodySize {
 		return fmt.Errorf("gateway.text_max_body_size must be positive and no greater than gateway.max_body_size")
+	}
+	if c.Gateway.ContextLengthLimitBytes < 0 || c.Gateway.ContextLengthLimitBytes > c.Gateway.MaxBodySize {
+		return fmt.Errorf("gateway.context_length_limit_bytes must be 0 or no greater than gateway.max_body_size")
 	}
 	if c.Gateway.UpstreamResponseReadMaxBytes <= 0 {
 		return fmt.Errorf("gateway.upstream_response_read_max_bytes must be positive")

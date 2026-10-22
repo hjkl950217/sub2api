@@ -39,8 +39,13 @@ func (s *AccountTestService) testTypeSafeAccountConnection(c *gin.Context, accou
 	if state == "" {
 		state = typeSafeTestDefaultState
 	}
+	// 与网关转发一致：上游真实模型取账号 model_mapping（issue #7985）。
+	upstreamModel := account.GetMappedModel(typesafe.JevLatestModel)
+	if upstreamModel == "" {
+		upstreamModel = typesafe.JevLatestModel
+	}
 	payload, err := json.Marshal(map[string]any{
-		"model": typesafe.JevLatestModel,
+		"model": upstreamModel,
 		"state": state,
 		"questions": map[string]any{
 			typeSafeTestQuestionID: map[string]any{

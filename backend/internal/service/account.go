@@ -997,6 +997,21 @@ func (a *Account) GetMappedModel(requestedModel string) string {
 	return mappedModel
 }
 
+// TrustsUpstreamBillingTier allows an API-key credential whose upstream is
+// FORK-ANCHOR: trust-upstream-billing-tier
+// another sub2api instance to keep the requested Fast/priority tier when that
+// upstream reports "default". The inner instance may have billed priority for
+// an OAuth account while its public response declares default (#7770), so the
+// outer instance must not silently downgrade. Opt-in per account because a
+// generic upstream's "default" is normally authoritative.
+func (a *Account) TrustsUpstreamBillingTier() bool {
+	if a == nil {
+		return false
+	}
+	trusted, _ := a.Credentials["trust_upstream_billing_tier"].(bool)
+	return trusted
+}
+
 // ResolveMappedModel 获取映射后的模型名，并返回是否命中了账号级映射。
 // matched=true 表示命中了精确映射或通配符映射，即使映射结果与原模型名相同。
 func (a *Account) ResolveMappedModel(requestedModel string) (mappedModel string, matched bool) {

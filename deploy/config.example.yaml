@@ -247,6 +247,12 @@ gateway:
   # Pure-text endpoint body limit (embeddings and alpha/search), default 32 MiB.
   # 纯文本端点请求体上限（embeddings、alpha/search），默认 32 MiB。
   text_max_body_size: 33554432
+  # Reject declared request bodies above this size before reading them with
+  # 400 context_length_exceeded, so Codex CLI compacts its session instead of
+  # retrying the same oversized body. 0 disables the check.
+  # 声明正文超过该字节数时在读取前返回 400 context_length_exceeded（默认 0=关闭）。
+  # 环境变量：GATEWAY_CONTEXT_LENGTH_LIMIT_BYTES
+  context_length_limit_bytes: 0
   # Max bytes to read for non-stream upstream responses (default: 8MB)
   # 非流式上游响应体读取上限（默认 8MB）
   upstream_response_read_max_bytes: 8388608

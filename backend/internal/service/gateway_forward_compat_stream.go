@@ -247,6 +247,43 @@ func finishAnthropicCompatStreamFailure(c *gin.Context, writerSizeBeforeStream i
 	return result, failure.err
 }
 
+// claudeUsageObserved 判断上游是否已经上报过任何可计费 token。
+func claudeUsageObserved(usage ClaudeUsage) bool {
+	return usage.InputTokens > 0 || usage.OutputTokens > 0 ||
+		usage.CacheReadInputTokens > 0 || usage.CacheCreationInputTokens > 0
+}
+
+// newAnthropicCompatBufferedFailoverError 让缓冲（非流式）兼容路径在上游
+// 未产生任何 usage 就截断时换号重试，而不是把半截结果当成功（issue #7797）。
+func newAnthropicCompatBufferedFailoverError(message string) *UpstreamFailoverError {
+	body, err := json.Marshal(map[string]any{
+		"error": map[string]any{"type": "server_error", "message": message},
+	})
+	if err != nil {
+		body = []byte(`{"error":{"type":"server_error","message":"Upstream stream ended before completion"}}`)
+	}
+	return &UpstreamFailoverError{
+		StatusCode:      http.StatusBadGateway,
+		ResponseBody:    body,
+		ResponseHeaders: http.Header{"Content-Type": []string{"application/json"}},
+	}
+}
+
+// bufferedCompatPartialResult 构造带部分 usage 的结果，供 handler 在 502 错误
+// 路径上照常记录一次用量。
+func bufferedCompatPartialResult(resp *http.Response, requestID string, usage ClaudeUsage, originalModel, mappedModel string, reasoningEffort *string, startTime time.Time) *ForwardResult {
+	return &ForwardResult{
+		RequestID:       requestID,
+		UpstreamHeaders: resp.Header,
+		Usage:           usage,
+		Model:           originalModel,
+		UpstreamModel:   mappedModel,
+		ReasoningEffort: reasoningEffort,
+		Stream:          false,
+		Duration:        time.Since(startTime),
+	}
+}
+
 // writeAnthropicCompatCCStreamFailure 向 Chat Completions 流写出终止错误帧，
 // 并标记响应已提交，handler 不再追加兜底错误。
 func writeAnthropicCompatCCStreamFailure(c *gin.Context, failure *anthropicCompatStreamFailure) {

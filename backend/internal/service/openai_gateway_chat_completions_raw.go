@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -96,14 +97,14 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletionsWithStartTime(
 		grokCacheIdentity = resolveGrokCacheIdentity(c, body, "", upstreamModel)
 	}
 	if openai.IsGPT61SolModelSpelling(upstreamModel) && (len(gjson.GetBytes(body, "tools").Array()) > 0 || len(gjson.GetBytes(body, "functions").Array()) > 0) {
-		err := fmt.Errorf("gpt-6.1-sol requires Responses for tool calls; this account only supports Chat Completions")
-		writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
-		return nil, err
+		// 当前账号只有 Chat Completions 端点，但该模型带工具时只能走 Responses。
+		// 池里可能还有 Responses 账号，因此按可切换账号的错误返回而不是直接 400；
+		// 切换耗尽后由 handler 用同一段文案回写客户端。
+		return nil, newGPT61SolRequiresResponsesFailoverError()
 	}
 	if openai.IsGPT6SolOrLunaModelSpelling(upstreamModel) && (len(gjson.GetBytes(body, "tools").Array()) > 0 || len(gjson.GetBytes(body, "functions").Array()) > 0) && gjson.GetBytes(body, "reasoning_effort").String() != "none" {
-		err := fmt.Errorf("%s requires Responses for tool calls with reasoning; this account only supports Chat Completions. Use reasoning_effort=none or a Responses-capable account", upstreamModel)
-		writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
-		return nil, err
+		msg := fmt.Sprintf("%s requires Responses for tool calls with reasoning; this account only supports Chat Completions. Use reasoning_effort=none or a Responses-capable account", upstreamModel)
+		return nil, newModelRequiresResponsesFailoverError(msg)
 	}
 	// 3. Rewrite model in body (no protocol conversion)
 	upstreamBody := body
@@ -630,4 +631,29 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 // 与 buildOpenAIResponsesURL 是姐妹函数。
 func buildOpenAIChatCompletionsURL(base string) string {
 	return buildOpenAIEndpointURL(base, "/v1/chat/completions")
+}
+
+// newGPT61SolRequiresResponsesFailoverError 把「模型需要 Responses、当前账号只有
+// FORK-ANCHOR: model-requires-responses-failover
+// Chat Completions」编码成可切换账号的错误（issue #8020）。同一分组里只要有
+// Responses 账号，handler 会换号重试；全部耗尽时客户端收到同样的 400 文案。
+func newGPT61SolRequiresResponsesFailoverError() *UpstreamFailoverError {
+	return newModelRequiresResponsesFailoverError("gpt-6.1-sol requires Responses for tool calls; this account only supports Chat Completions")
+}
+
+func newModelRequiresResponsesFailoverError(message string) *UpstreamFailoverError {
+	body, err := json.Marshal(map[string]any{
+		"error": map[string]any{
+			"type":    "invalid_request_error",
+			"message": message,
+		},
+	})
+	if err != nil {
+		body = []byte(`{"error":{"type":"invalid_request_error","message":"this model requires Responses for tool calls"}}`)
+	}
+	return &UpstreamFailoverError{
+		StatusCode:      http.StatusBadRequest,
+		ResponseBody:    body,
+		ResponseHeaders: http.Header{"Content-Type": []string{"application/json"}},
+	}
 }

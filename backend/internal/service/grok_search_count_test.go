@@ -102,6 +102,20 @@ func TestCountGrokNativeSearchCallsExcludesClientTools(t *testing.T) {
 	}
 }
 
+// xAI 按次计费的服务端工具都要计入：code_interpreter / file_search /
+// collections_search / attachment_search（issue #7690 的漏计部分）。
+func TestCountGrokNativeSearchCallsCountsServerSideTools(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"output":[
+		{"type":"code_interpreter_call","id":"ci1"},
+		{"type":"code_execution_call","id":"ce1"},
+		{"type":"file_search_call","id":"fs1"},
+		{"type":"collections_search_call","id":"cs1"},
+		{"type":"attachment_search","id":"as1"}
+	]}`)
+	require.Equal(t, 5, countGrokNativeSearchCallsFromJSONBytes(body))
+}
+
 func stringsJoin(lines ...string) string {
 	out := ""
 	for _, l := range lines {

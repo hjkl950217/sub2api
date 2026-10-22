@@ -32,7 +32,15 @@ func RegisterGatewayRoutes(
 ) {
 	mediaBodyLimit := middleware.RequestBodyLimitWithDecompression(cfg.Gateway.MaxBodySize, cfg.Gateway.MaxDecompressedBodySize)
 	textBodyLimit := middleware.RequestBodyLimitWithDecompression(cfg.Gateway.TextMaxBodySize, cfg.Gateway.MaxDecompressedBodySize)
+	contextLengthLimit := func(c *gin.Context) bool {
+		return middleware.RejectContextLengthExceeded(c, cfg.Gateway.ContextLengthLimitBytes)
+	}
 	bodyLimit := func(c *gin.Context) {
+		// 超过上下文阈值的请求在读取正文前直接以 context_length_exceeded 拒绝，
+		// 让 Codex CLI 自动压缩会话而不是反复重传同一个超大请求（#7692）。
+		if contextLengthLimit(c) {
+			return
+		}
 		// 分组中间件可能提前解压正文，因此纯文本限制必须在白名单和合成路由读体前生效。
 		switch c.FullPath() {
 		case "/v1/systemone", "/v1/embeddings", "/v1/alpha/search", "/backend-api/codex/alpha/search":
