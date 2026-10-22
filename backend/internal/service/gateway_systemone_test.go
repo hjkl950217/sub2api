@@ -149,6 +149,7 @@ func TestForwardSystemOneWithoutMappingPassesModelThrough(t *testing.T) {
 	require.Equal(t, requestBody, got)
 }
 
+func TestForwardSystemOneAllowsSuccessfulResponseWithoutModel(t *testing.T) {
 	responseBody := []byte(`{"answers":{"q":{"type":"noul","answer":"ok"}},"usage":{"input_tokens":12}}`)
 	upstream := &systemOneHTTPUpstream{do: func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(string(responseBody)))}, nil
