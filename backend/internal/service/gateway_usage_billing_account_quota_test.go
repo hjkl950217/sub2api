@@ -10,11 +10,12 @@ func TestBuildUsageBillingCommand_AccountQuotaPeriodHints(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		extra      map[string]any
-		wantQuota  bool
-		wantDaily  bool
-		wantWeekly bool
+		name        string
+		accountType string
+		extra       map[string]any
+		wantQuota   bool
+		wantDaily   bool
+		wantWeekly  bool
 	}{
 		{name: "no_limits", extra: map[string]any{}},
 		{name: "total_only", extra: map[string]any{"quota_limit": 10.0}, wantQuota: true},
@@ -30,16 +31,32 @@ func TestBuildUsageBillingCommand_AccountQuotaPeriodHints(t *testing.T) {
 			extra:     map[string]any{"quota_limit": 10.0, "quota_daily_limit": 0.0, "quota_weekly_limit": -1.0},
 			wantQuota: true,
 		},
+		{
+			name:        "service_account_total_only",
+			accountType: AccountTypeServiceAccount,
+			extra:       map[string]any{"quota_limit": 10.0},
+			wantQuota:   true,
+		},
+		{
+			name:        "service_account_daily",
+			accountType: AccountTypeServiceAccount,
+			extra:       map[string]any{"quota_limit": 10.0, "quota_daily_limit": 5.0},
+			wantQuota:   true, wantDaily: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			accountType := tt.accountType
+			if accountType == "" {
+				accountType = AccountTypeAPIKey
+			}
 			p := &postUsageBillingParams{
 				Cost:                  &CostBreakdown{TotalCost: 1, ActualCost: 1},
 				User:                  &User{ID: 1},
 				APIKey:                &APIKey{ID: 2},
-				Account:               &Account{ID: 3, Type: AccountTypeAPIKey, Extra: tt.extra},
+				Account:               &Account{ID: 3, Type: accountType, Extra: tt.extra},
 				AccountRateMultiplier: 1,
 			}
 
