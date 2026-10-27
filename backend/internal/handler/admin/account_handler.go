@@ -3015,7 +3015,7 @@ func (h *AccountHandler) respondAvailableModels(c *gin.Context, account *service
 			// 目录发现失败是预期结果（上游没有 /models、临时故障），但不能静默：
 			// 下面的分支改用本地数据，模型集合与目录不同。
 			slog.Warn("account_models_catalog_unavailable",
-				"account_id", accountID, "platform", account.Platform, "error", fetchErr)
+				"account_id", account.ID, "platform", account.Platform, "error", fetchErr)
 		}
 		// OpenAI 自动透传会绕过常规模型改写，测试/模型列表也应回落到默认模型集。
 		if account.IsOpenAIPassthroughEnabled() {
