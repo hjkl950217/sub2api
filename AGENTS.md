@@ -1183,9 +1183,10 @@ python -c "import yaml; yaml.safe_load(open('.github/workflows/release.yml', enc
 Go 工具链装在 `工具/管理_sub2api/子任务/二开sub2api/临时文件/go/go/bin/go.exe`（1.27.0），能编译。
 用法与踩坑见子任务 `旧补丁/记录_20261003_国产供应商协议复选与兜底转发协议.md` 第 5 节。两条现状：
 
-- 上游 `backend/go.mod` 已要求 **go 1.27.2**，本机工具链是 1.27.0，必须把 `GOTOOLCHAIN` 设成 `auto`
-  让它自己把 1.27.2 拉到 `临时文件/gopath/pkg/mod/golang.org/toolchain@...`；设 `local` 直接报
-  `go.mod requires go >= 1.27.2`。
+- 上游 `backend/go.mod` 已要求 **go 1.27.3**（0.2.19 起），本机工具链是 1.27.0，必须把 `GOTOOLCHAIN` 设成 `auto`
+  让它自己把 1.27.3 拉到 `临时文件/gomodcache/golang.org/toolchain@...`；设 `local` 直接报
+  `go.mod requires go >= 1.27.3`。`proxy.golang.org` 在本机连不上，拉工具链前要先设
+  `$env:GOPROXY='https://goproxy.cn,direct'`。
 - **后端测试在 CI 跑，不在本机跑**（长空 2026-10-16 定，理由是本机内存不够）。
   本仓库 push/PR 触发的工作流从来不运行（CI / CLA Assistant / Security Scan 的运行数都是 0，
   只有手动触发的 Release 有记录，根因未查到），所以用：
