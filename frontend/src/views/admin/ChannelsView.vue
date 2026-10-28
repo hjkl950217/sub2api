@@ -661,6 +661,8 @@ const { t } = useI18n()
 const appStore = useAppStore()
 
 // Web Search global enabled state (loaded once on mount)
+// 平台清单由 credentialsBuilder 的 CHANNEL_WEB_SEARCH_EMULATION_PLATFORMS 决定，
+// 见下方 FORK-ANCHOR: channel-websearch-platforms。
 const webSearchGlobalEnabled = ref(false)
 async function loadWebSearchGlobalState() {
   try {
@@ -1155,16 +1157,14 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
   }
   const uniqueGroupIds = Array.from(new Set(group_ids))
 
-  // Collect web_search_emulation (Anthropic / DeepSeek / 聚合中转；后端按账号 platform 读取)
+  // Collect web_search_emulation（whitelist platforms only: the UI is the single
+  // source of truth, so every supported section is written explicitly — false
+  // included — to avoid leaving a stale `true` behind for disabled sections）.
   // FORK-ANCHOR: ag-hub-websearch-save (二开：只保存 /v1/messages 接入平台的 web search 开关)
-  // Always write the key so that disabling in the UI correctly sets platform to false,
-  // rather than leaving a stale true value from the cloned features_config.
   const wsEmulation: Record<string, boolean> = {}
   for (const section of form.platforms) {
-    if (!section.enabled) continue
-    if (supportsChannelWebSearchEmulation(section.platform)) {
-      wsEmulation[section.platform] = !!section.web_search_emulation
-    }
+    if (!supportsChannelWebSearchEmulation(section.platform)) continue
+    wsEmulation[section.platform] = section.enabled ? !!section.web_search_emulation : false
   }
   if (Object.keys(wsEmulation).length > 0) {
     featuresConfig.web_search_emulation = wsEmulation

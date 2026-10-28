@@ -127,6 +127,7 @@ describe('PlatformTypeBadge MiniMax', () => {
     expect(wrapper.text()).toContain('MiniMax')
     expect(wrapper.text()).toContain('Key')
     expect(wrapper.text()).not.toContain('Gemini')
-    expect(wrapper.html()).toContain('bg-rose-100')
+    // FORK-ANCHOR: platform-badge-light-class-test (二开：徽章配色改走 platformBadgeLightClass)
+    expect(wrapper.html()).toContain('bg-rose-500/10')
   })
 })

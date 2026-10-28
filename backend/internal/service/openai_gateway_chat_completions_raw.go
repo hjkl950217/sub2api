@@ -96,11 +96,12 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletionsWithStartTime(
 		// anchored to the client's stable conversation prefix.
 		grokCacheIdentity = resolveGrokCacheIdentity(c, body, "", upstreamModel)
 	}
-	if openai.IsGPT61SolModelSpelling(upstreamModel) && (len(gjson.GetBytes(body, "tools").Array()) > 0 || len(gjson.GetBytes(body, "functions").Array()) > 0) {
+	if openai.RequiresResponsesForToolCalls(upstreamModel) && (len(gjson.GetBytes(body, "tools").Array()) > 0 || len(gjson.GetBytes(body, "functions").Array()) > 0) {
+		// FORK-ANCHOR: model-requires-responses-failover-cc
 		// 当前账号只有 Chat Completions 端点，但该模型带工具时只能走 Responses。
 		// 池里可能还有 Responses 账号，因此按可切换账号的错误返回而不是直接 400；
 		// 切换耗尽后由 handler 用同一段文案回写客户端。
-		return nil, newGPT61SolRequiresResponsesFailoverError()
+		return nil, newModelRequiresResponsesFailoverError(fmt.Sprintf("%s requires Responses for tool calls; this account only supports Chat Completions", normalizeKnownOpenAICodexModel(upstreamModel)))
 	}
 	if openai.IsGPT6SolOrLunaModelSpelling(upstreamModel) && (len(gjson.GetBytes(body, "tools").Array()) > 0 || len(gjson.GetBytes(body, "functions").Array()) > 0) && gjson.GetBytes(body, "reasoning_effort").String() != "none" {
 		msg := fmt.Sprintf("%s requires Responses for tool calls with reasoning; this account only supports Chat Completions. Use reasoning_effort=none or a Responses-capable account", upstreamModel)
