@@ -184,6 +184,20 @@ func cnProviderResponseIndicatesFrequencyLimit(body []byte) bool {
 	return true
 }
 
+// cnProviderResponseIndicatesQuotaExhaustion 判断响应体是否带额度耗尽类文案。
+func cnProviderResponseIndicatesQuotaExhaustion(body []byte) bool {
+	if len(body) == 0 {
+		return false
+	}
+	s := strings.ToLower(string(body))
+	for _, marker := range cnQuotaExhaustionMarkers {
+		if strings.Contains(s, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 // cnProviderQuotaSnapshotNearExhausted 判断 Coding Plan 账号的滚动窗口用量快照
 // 是否已接近耗尽（任一窗口 >= percent）。快照完全缺失（额度探测还没跑过或
 // 解析失败）时返回 true：此时无法证明 429 与额度无关，保守沿用窗口冷却。
@@ -439,16 +453,22 @@ func (s *RateLimitService) applyCNProviderReactive429(
 		)
 		return false
 	}
-	// 3) 只有响应体明确表示窗口额度耗尽时，才冷却到 5h/weekly reset：
+	// 3) 额度类文案：冷却到 5h/weekly 窗口重置点。
+	if account.IsCodingPlan() && cnProviderResponseIndicatesQuotaExhaustion(responseBody) {
+		if s.cooldownCNProviderToQuotaSnapshotReset(ctx, account, "429", "cn_coding_plan_rate_limited") != nil {
+			return true
+		}
+	}
+	// 4) 既非频控也非额度文案（动态分配 / 并发限制）：走秒级兜底冷却。
 	// 动态分配、并发和短时资源限流也会返回 429，不能因为快照里存在未来 reset
 	// 时间就把账号停调近几小时。
-	if account.IsCodingPlan() &&
-		isCNProviderQuotaExhausted429(account, responseBody) &&
-		s.cooldownCNProviderToQuotaSnapshotReset(ctx, account, "429", "cn_coding_plan_rate_limited") != nil {
+	if account.IsCodingPlan() && !cnProviderResponseIndicatesFrequencyLimit(responseBody) {
+		s.apply429FallbackRateLimit(ctx, account, "cn_dynamic_429")
 		return true
 	}
-	if account.IsCodingPlan() {
-		s.apply429FallbackRateLimit(ctx, account, "cn_dynamic_429")
+	// 5) 频控文案但快照接近耗尽：按窗口冷却。
+	if account.IsCodingPlan() &&
+		s.cooldownCNProviderToQuotaSnapshotReset(ctx, account, "429", "cn_coding_plan_rate_limited") != nil {
 		return true
 	}
 	return false

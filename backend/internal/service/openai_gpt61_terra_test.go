@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -134,8 +135,16 @@ func TestGPT61TerraChatFallbackRejectsTools(t *testing.T) {
 				case "messages":
 					_, err = service.forwardAnthropicViaRawChatCompletions(context.Background(), ginContext, account, []byte(body), "")
 				}
-				require.ErrorContains(t, err, "gpt-6.1-terra requires Responses")
-				require.Equal(t, http.StatusBadRequest, recorder.Code)
+				// FORK-ANCHOR: model-requires-responses-failover-test (二开：Chat Completions 侧
+				// 返回可换号错误，不直接回写 400；换号耗尽后由 handler 回写同一段文案)
+				var failover *UpstreamFailoverError
+				if errors.As(err, &failover) {
+					require.Equal(t, http.StatusBadRequest, failover.StatusCode)
+					require.Contains(t, string(failover.ResponseBody), "gpt-6.1-terra requires Responses")
+				} else {
+					require.ErrorContains(t, err, "gpt-6.1-terra requires Responses")
+					require.Equal(t, http.StatusBadRequest, recorder.Code)
+				}
 			})
 		}
 	}

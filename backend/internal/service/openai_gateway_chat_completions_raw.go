@@ -634,14 +634,10 @@ func buildOpenAIChatCompletionsURL(base string) string {
 	return buildOpenAIEndpointURL(base, "/v1/chat/completions")
 }
 
-// newGPT61SolRequiresResponsesFailoverError 把「模型需要 Responses、当前账号只有
+// newModelRequiresResponsesFailoverError 把「模型需要 Responses、当前账号只有
 // FORK-ANCHOR: model-requires-responses-failover
 // Chat Completions」编码成可切换账号的错误（issue #8020）。同一分组里只要有
 // Responses 账号，handler 会换号重试；全部耗尽时客户端收到同样的 400 文案。
-func newGPT61SolRequiresResponsesFailoverError() *UpstreamFailoverError {
-	return newModelRequiresResponsesFailoverError("gpt-6.1-sol requires Responses for tool calls; this account only supports Chat Completions")
-}
-
 func newModelRequiresResponsesFailoverError(message string) *UpstreamFailoverError {
 	body, err := json.Marshal(map[string]any{
 		"error": map[string]any{
