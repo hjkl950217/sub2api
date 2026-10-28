@@ -184,6 +184,21 @@ func cnProviderResponseIndicatesFrequencyLimit(body []byte) bool {
 	return true
 }
 
+// cnProviderResponseHasFrequencyMarker 判断响应体是否带「请求频率/速率限制」字样
+// （不看是否同时带额度字样）。
+func cnProviderResponseHasFrequencyMarker(body []byte) bool {
+	if len(body) == 0 {
+		return false
+	}
+	s := strings.ToLower(string(body))
+	for _, marker := range cnFrequencyLimitMarkers {
+		if strings.Contains(s, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 // cnProviderResponseIndicatesQuotaExhaustion 判断响应体是否带额度耗尽类文案。
 func cnProviderResponseIndicatesQuotaExhaustion(body []byte) bool {
 	if len(body) == 0 {
@@ -453,16 +468,20 @@ func (s *RateLimitService) applyCNProviderReactive429(
 		)
 		return false
 	}
-	// 3) 额度类文案：冷却到 5h/weekly 窗口重置点。
-	if account.IsCodingPlan() && cnProviderResponseIndicatesQuotaExhaustion(responseBody) {
+	// 3) 明确额度耗尽的 429：冷却到 5h/weekly 窗口重置点。
+	// 包括两类文案：显式窗口耗尽文案（isCNProviderQuotaExhausted429），
+	// 以及「速率限制」与额度字样同时出现（如「已达速率限制：本月额度已用尽」）。
+	quotaWordingWithFrequency := cnProviderResponseHasFrequencyMarker(responseBody) &&
+		cnProviderResponseIndicatesQuotaExhaustion(responseBody)
+	if account.IsCodingPlan() && (isCNProviderQuotaExhausted429(account, responseBody) || quotaWordingWithFrequency) {
 		if s.cooldownCNProviderToQuotaSnapshotReset(ctx, account, "429", "cn_coding_plan_rate_limited") != nil {
 			return true
 		}
 	}
-	// 4) 既非频控也非额度文案（动态分配 / 并发限制）：走秒级兜底冷却。
+	// 4) 没有任何频控文案（动态分配 / 并发限制）：走秒级兜底冷却。
 	// 动态分配、并发和短时资源限流也会返回 429，不能因为快照里存在未来 reset
 	// 时间就把账号停调近几小时。
-	if account.IsCodingPlan() && !cnProviderResponseIndicatesFrequencyLimit(responseBody) {
+	if account.IsCodingPlan() && !cnProviderResponseHasFrequencyMarker(responseBody) {
 		s.apply429FallbackRateLimit(ctx, account, "cn_dynamic_429")
 		return true
 	}
