@@ -633,8 +633,6 @@
         :account="account"
         @updated="handleOpenCodeGoUsageUpdated"
       />
-      <!-- FORK-ANCHOR: balance-cell-platform-agnostic (二开：余额探测与平台解耦，任意 API Key 账号显示) -->
-      <CNProviderBalanceCell :account="account" />
       <!-- Today stats row (requests, tokens, cost, user_cost) -->
       <div
         v-if="todayStats"
@@ -691,9 +689,12 @@
         color="purple"
       />
 
+      <!-- FORK-ANCHOR: balance-cell-platform-agnostic (二开：余额探测与平台解耦，任意 API Key 账号显示在用量窗口下方) -->
+      <CNProviderBalanceCell :account="account" />
+
       <!-- No data at all -->
       <div
-        v-if="!todayStats && !todayStatsLoading && !hasApiKeyQuota && !account.ollama_cloud_usage?.eligible && !account.opencode_go_usage?.eligible"
+        v-if="!todayStats && !todayStatsLoading && !hasApiKeyQuota && !cnBalanceCellVisible && !account.ollama_cloud_usage?.eligible && !account.opencode_go_usage?.eligible"
         class="text-xs text-gray-400"
       >-</div>
     </div>

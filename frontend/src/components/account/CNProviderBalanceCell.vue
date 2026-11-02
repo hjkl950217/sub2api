@@ -17,13 +17,11 @@
       >
         {{ t('admin.accounts.cnProviders.balanceLow') }}
       </span>
-    </div>
 
-    <!-- Explicit refresh action (aligned with the OpenAI "Query" / Grok "Probe"
-         buttons): the old chip doubled as the data display and a hidden click
-         target, which users could not discover. The verb label makes the
-         affordance explicit. -->
-    <div class="flex flex-wrap items-center gap-1.5">
+      <!-- Explicit refresh action (aligned with the OpenAI "Query" / Grok "Probe"
+           buttons): the old chip doubled as the data display and a hidden click
+           target, which users could not discover. The verb label makes the
+           affordance explicit. -->
       <button
         type="button"
         data-test="cn-provider-balance-probe"
