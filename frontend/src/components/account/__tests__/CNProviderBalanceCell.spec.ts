@@ -73,4 +73,17 @@ describe('CNProviderBalanceCell', () => {
     expect(wrapper.text()).toContain('CNY 12.50')
     expect(wrapper.text()).toContain('HTTP 401')
   })
+
+  it('shows the persisted probe failure without any manual query', () => {
+    const failed = {
+      ...account,
+      credentials: { account_mode: 'payg', balance_probe_enabled: true },
+      extra: { kimi_balance_error: 'Invalid balance response: missing hard_limit_usd' }
+    } as Account
+
+    const wrapper = mount(CNProviderBalanceCell, { props: { account: failed } })
+
+    expect(queryBalance).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('missing hard_limit_usd')
+  })
 })

@@ -708,12 +708,59 @@ export function cnQuotaCellVisible(account: CNUsageCellAccount): boolean {
   return (platform === 'kimi' || platform === 'zhipu' || platform === 'minimax') && mode === 'coding'
 }
 
+// FORK-ANCHOR: balance-probe-platform-agnostic (二开：余额探测脚本与平台解耦)
+/** 余额探测脚本：auto 首次逐个尝试并由后端记住命中项。 */
+export type BalanceProbeScript = 'auto' | 'kimi' | 'deepseek' | 'newapi' | 'sub2api' | 'custom'
+
+export const BALANCE_PROBE_SCRIPT_OPTIONS: { value: BalanceProbeScript; labelKey: string }[] = [
+  { value: 'auto', labelKey: 'auto' },
+  { value: 'newapi', labelKey: 'newapi' },
+  { value: 'sub2api', labelKey: 'sub2api' },
+  { value: 'deepseek', labelKey: 'deepseek' },
+  { value: 'kimi', labelKey: 'kimi' },
+  { value: 'custom', labelKey: 'custom' },
+]
+
+export function defaultBalanceProbeScript(platform: string): BalanceProbeScript {
+  if (platform === 'kimi') return 'kimi'
+  if (platform === 'deepseek') return 'deepseek'
+  return 'auto'
+}
+
+/** 读取账号已保存的脚本；存量手填端点/字段按自定义处理。 */
+export function resolveBalanceProbeScript(
+  credentials: Record<string, unknown> | undefined,
+  platform: string
+): BalanceProbeScript {
+  const raw = typeof credentials?.balance_probe_script === 'string'
+    ? credentials.balance_probe_script.trim().toLowerCase()
+    : ''
+  if (BALANCE_PROBE_SCRIPT_OPTIONS.some(option => option.value === raw)) {
+    return raw as BalanceProbeScript
+  }
+  for (const key of ['balance_probe_url', 'balance_probe_path', 'balance_probe_currency', 'balance_probe_divisor']) {
+    const value = credentials?.[key]
+    if (value != null && value !== '') return 'custom'
+  }
+  return defaultBalanceProbeScript(platform)
+}
+
+/** 开关默认值：显式值优先；kimi / deepseek 沿用接入脚本前的默认开启。 */
+export function defaultBalanceProbeEnabled(
+  credentials: Record<string, unknown> | undefined,
+  platform: string
+): boolean {
+  if (typeof credentials?.balance_probe_enabled === 'boolean') return credentials.balance_probe_enabled
+  return platform === 'kimi' || platform === 'deepseek'
+}
+
 export function cnBalanceCellVisible(account: CNUsageCellAccount): boolean {
   const { platform } = account
+  // 显式开关优先：任意 apikey 账号开启后都显示余额（脚本与平台解耦）。
+  if (account.type === 'apikey' && typeof account.credentials?.balance_probe_enabled === 'boolean') {
+    return account.credentials.balance_probe_enabled
+  }
   const mode = cnUsageCellAccountMode(account)
-  // FORK-ANCHOR: ag-hub-balance-probe (二开：聚合中转余额探测按账号开关显示；DeepSeek 不因残留 coding 标记隐藏)
-  // 聚合中转默认关闭余额探测：站点端点与返回结构不统一，按账号凭据显式开启。
-  if (platform === 'ag_hub') return account.credentials?.balance_probe_enabled === true
   if (OFFICIAL_ACCOUNT_API_PLATFORMS.includes(platform)) return officialAccountAPISupported(account, mode)
   // DeepSeek 没有 coding 套餐，存量账号上的 coding 标记不应隐藏余额入口。
   if (platform === 'deepseek') return true

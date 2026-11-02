@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 )
 
 // cnQuotaProber 抽象额度探测（*CNProviderQuotaService 实现，测试可替换）。
@@ -156,10 +157,9 @@ func (s *CNProviderBalanceCheckService) runOnce() {
 					continue
 				}
 			}
-			// payg 余额探测仅 kimi/deepseek（智谱 / MiniMax 无公开余额端点，
-			// payg 账号依赖响应式 402/429 处理）；聚合中转按账号开关加入。
-			// FORK-ANCHOR: ag-hub-balance-check (二开：聚合中转按账号开关纳入周期余额检测)
-			if platform == PlatformAggregateHub && !aggregateHubBalanceProbeEnabled(account) {
+			// payg 余额探测：脚本与平台解耦后统一按账号开关纳入。
+			// FORK-ANCHOR: balance-check-platform-agnostic (二开：余额脚本与平台解耦)
+			if !balanceProbeEnabled(account) {
 				continue
 			}
 			if platform != PlatformZhipu && platform != PlatformMiniMax && account.Schedulable {
@@ -184,6 +184,39 @@ func (s *CNProviderBalanceCheckService) runOnce() {
 				continue
 			}
 			collect(platform, accounts)
+		}
+	}
+
+	// 平台无关补扫：脚本与平台解耦后，任意平台的账号只要显式开启
+	// balance_probe_enabled 都纳入周期余额探测（额度探测仍只走 CN 平台）。
+	// FORK-ANCHOR: balance-check-platform-agnostic (二开：余额脚本与平台解耦)
+	covered := make(map[string]struct{}, len(s.platforms())+2)
+	for _, platform := range s.platforms() {
+		covered[platform] = struct{}{}
+	}
+	covered[PlatformZhipu] = struct{}{}
+	covered[PlatformMiniMax] = struct{}{}
+	for _, platform := range domain.ConcretePlatformIDs() {
+		if _, ok := covered[platform]; ok {
+			continue
+		}
+		accounts, err := s.accountRepo.ListByPlatform(context.Background(), platform)
+		if err != nil {
+			continue
+		}
+		for i := range accounts {
+			account := &accounts[i]
+			if !account.IsActive() || !account.Schedulable || !balanceProbeEnabled(account) {
+				continue
+			}
+			// coding 账号走额度探测，余额端点不适用（DeepSeek 残留标记除外）。
+			if account.IsCodingPlan() && account.Platform != PlatformDeepseek {
+				continue
+			}
+			if IsOllamaCloudUsageAccount(account) {
+				continue
+			}
+			paygTargets = append(paygTargets, account)
 		}
 	}
 
@@ -314,7 +347,7 @@ func (s *CNProviderBalanceCheckService) collectPausedPayGTargets() []*Account {
 			if account.IsCodingPlan() && account.Platform != PlatformDeepseek {
 				continue
 			}
-			if platform == PlatformAggregateHub && !aggregateHubBalanceProbeEnabled(account) {
+			if !balanceProbeEnabled(account) {
 				continue
 			}
 			targets = append(targets, account)
@@ -430,8 +463,8 @@ func (s *CNProviderBalanceCheckService) checkOne(ctx context.Context, account *A
 // applyBalanceResult 按余额探测结果停调或恢复账号。
 func (s *CNProviderBalanceCheckService) applyBalanceResult(ctx context.Context, account *Account, result *CNProviderBalanceResult, threshold float64) cnBalanceCheckOutcome {
 	// 双币种（deepseek CNY+USD）任一币种余额达标即可继续调度；仅当全部低于
-	// 阈值（或不可用）才停调。
-	low := !result.Available || allCNBalancesBelowThreshold(result, threshold)
+	// 阈值（或不可用）才停调。脚本明确返回「不限额度」时同样视为健康。
+	low := !cnBalanceUnlimited(result) && (!result.Available || allCNBalancesBelowThreshold(result, threshold))
 	if low {
 		// 已被（任何来源）停调时不覆盖其 reason。
 		if !account.IsSchedulable() {
@@ -460,6 +493,24 @@ func (s *CNProviderBalanceCheckService) applyBalanceResult(ctx context.Context, 
 
 func (s *CNProviderBalanceCheckService) platforms() []string {
 	return []string{PlatformKimi, PlatformDeepseek, PlatformAggregateHub}
+}
+
+// activeAccountLister 已废弃的辅助接口（保留占位，勿在补扫里使用）。
+type activeAccountLister interface {
+	ListActive(ctx context.Context) ([]Account, error)
+}
+
+// cnBalanceUnlimited 报告结果是否明确为「不限额度」（new-api 无限 token）。
+func cnBalanceUnlimited(result *CNProviderBalanceResult) bool {
+	if result == nil {
+		return false
+	}
+	for _, entry := range result.Balances {
+		if entry.Unlimited {
+			return true
+		}
+	}
+	return false
 }
 
 // allCNBalancesBelowThreshold 判断全部币种余额是否均低于阈值。

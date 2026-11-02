@@ -397,17 +397,19 @@ func TestGetCodingPlanProvider_MiniMax(t *testing.T) {
 func TestCNBalanceURL(t *testing.T) {
 	t.Parallel()
 	kimi := &Account{Platform: PlatformKimi}
-	spec, ok := lookupBalanceProbe(kimi)
+	script, _, ok := lookupBalanceProbe(kimi)
 	require.True(t, ok)
-	require.Equal(t, "https://api.moonshot.cn/v1/users/me/balance", spec.url(kimi))
+	require.Equal(t, balanceProbeScriptKimi, script)
+	require.Equal(t, "https://api.moonshot.cn/v1/users/me/balance", kimiBalanceURL(kimi))
 
 	deepseek := &Account{
 		Platform:    PlatformDeepseek,
 		Credentials: map[string]any{"base_url": "https://api.deepseek.com"},
 	}
-	spec, ok = lookupBalanceProbe(deepseek)
+	script, _, ok = lookupBalanceProbe(deepseek)
 	require.True(t, ok)
-	require.Equal(t, "https://api.deepseek.com/user/balance", spec.url(deepseek))
+	require.Equal(t, balanceProbeScriptDeepSeek, script)
+	require.Equal(t, "https://api.deepseek.com/user/balance", deepseekBalanceURL(deepseek))
 }
 
 // TestCNProviderThresholdCandidates 从 Extra 快照读取 5h / weekly 候选。

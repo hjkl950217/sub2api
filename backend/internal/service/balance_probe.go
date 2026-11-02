@@ -1,44 +1,142 @@
-// FORK: 余额探测适配器登记表（二开新增文件）。各平台的余额端点与返回结构差异
-// 集中在这里，探测流程复用 cn_provider_balance_service.go。
+// FORK: 余额探测脚本登记表（二开新增文件）。探测脚本与平台解耦：
+// 账号凭据 balance_probe_script 选择脚本，auto 表示首次探测时逐个尝试并记住命中项。
 package service
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/tidwall/gjson"
 )
 
-// 余额探测适配器登记表。
-//
-// 每个适配器只描述三件事：该账号是否启用探测、余额端点、返回体里怎么取数。
-// 新增供应商时在这里加一条，探测流程（鉴权、出站 URL 校验、快照落盘、错误处理）
-// 复用 cn_provider_balance_service.go，不再复制。
+// balanceProbeSpec 一个探测脚本：完成取数与解析，返回统一的余额明细。
+// 需要多个端点的脚本（New API 的 subscription + usage）自己发请求，共用
+// CNProviderBalanceService.doBalanceGET 完成鉴权头、超时与出站 URL 校验。
 type balanceProbeSpec struct {
-	// enabled 为 nil 表示平台默认启用；非 nil 时由账号配置决定。
-	enabled func(*Account) bool
-	url     func(*Account) string
-	parse   func(*Account, []byte) ([]CNProviderBalanceEntry, bool, error)
+	probe func(ctx context.Context, s *CNProviderBalanceService, account *Account, apiKey string) (*CNProviderBalanceResult, error)
 }
 
-var balanceProbeSpecs = map[string]balanceProbeSpec{
-	PlatformKimi:     {url: kimiBalanceURL, parse: parseKimiBalance},
-	PlatformDeepseek: {url: deepseekBalanceURL, parse: parseDeepSeekBalance},
-	// 聚合中转没有统一余额端点：默认按 one-api/new-api 的 /api/user/self 约定探测，
-	// 账号可用 balance_probe_* 凭据覆盖端点与 JSON 路径。默认关闭，避免对不支持的站点发请求。
-	PlatformAggregateHub: {
-		enabled: aggregateHubBalanceProbeEnabled,
-		url:     aggregateHubBalanceURL,
-		parse:   parseAggregateHubBalance,
-	},
+const (
+	balanceProbeEnabledKey = "balance_probe_enabled"
+	balanceProbeScriptKey  = "balance_probe_script"
+
+	balanceProbeURLKey       = "balance_probe_url"
+	balanceProbePathKey      = "balance_probe_path"
+	balanceProbeCurrencyKey  = "balance_probe_currency"
+	balanceProbeDivisorKey   = "balance_probe_divisor"
+	balanceProbeAvailableKey = "balance_probe_available_path"
+
+	balanceProbeScriptAuto     = "auto"
+	balanceProbeScriptKimi     = "kimi"
+	balanceProbeScriptDeepSeek = "deepseek"
+	balanceProbeScriptNewAPI   = "newapi"
+	balanceProbeScriptSub2API  = "sub2api"
+	balanceProbeScriptCustom   = "custom"
+
+	defaultNewAPIBalancePath     = "data.quota"
+	defaultNewAPIBalanceCurrency = "USD"
+	defaultNewAPIBalanceDivisor  = 500000.0 // one-api/new-api：quota 500000 = $1
+	// new-api 对无限额度 token 返回固定的 hard_limit_usd 哨兵值。
+	newAPIUnlimitedHardLimit = 100000000.0
+	newAPIUsageStartDate     = "2020-01-01"
+)
+
+// balanceProbeScripts 脚本登记表。新增脚本只加一条，探测流程（鉴权、出站校验、
+// 快照落盘、错误处理）不复制。
+var balanceProbeScripts = map[string]balanceProbeSpec{
+	balanceProbeScriptKimi:     {probe: singleGETBalanceProbe(kimiBalanceURL, parseKimiBalance)},
+	balanceProbeScriptDeepSeek: {probe: singleGETBalanceProbe(deepseekBalanceURL, parseDeepSeekBalance)},
+	balanceProbeScriptNewAPI:   {probe: fetchNewAPIBalance},
+	balanceProbeScriptSub2API:  {probe: singleGETBalanceProbe(sub2APIBalanceURL, parseSub2APIBalance)},
+	balanceProbeScriptCustom:   {probe: singleGETBalanceProbe(customBalanceURL, parseCustomBalance)},
 }
 
-func lookupBalanceProbe(account *Account) (balanceProbeSpec, bool) {
+// balanceProbeAutoOrder auto 首次探测顺序：New API 最通用，Sub2API 其次，
+// DeepSeek 官网最后（前两者对官网只会多两次 404 请求）。
+var balanceProbeAutoOrder = []string{balanceProbeScriptNewAPI, balanceProbeScriptSub2API, balanceProbeScriptDeepSeek}
+
+// balanceProbePlatformDefaults 未显式配置脚本时按平台回退，保持既有行为。
+// 聚合中转不在此列：没有历史脚本的号按 auto 处理（auto 第一步就是 newapi，
+// 与旧行为一致，但站点是 sub2api 时能自动命中）。
+var balanceProbePlatformDefaults = map[string]string{
+	PlatformKimi:     balanceProbeScriptKimi,
+	PlatformDeepseek: balanceProbeScriptDeepSeek,
+}
+
+// resolveBalanceProbeScript 返回账号使用的脚本 ID（可能是 auto 或空）。
+func resolveBalanceProbeScript(account *Account) string {
 	if account == nil {
-		return balanceProbeSpec{}, false
+		return ""
 	}
-	spec, ok := balanceProbeSpecs[account.Platform]
-	return spec, ok
+	if raw := strings.ToLower(strings.TrimSpace(account.GetCredential(balanceProbeScriptKey))); raw != "" {
+		if raw == balanceProbeScriptAuto {
+			return raw
+		}
+		if _, ok := balanceProbeScripts[raw]; ok {
+			return raw
+		}
+	}
+	// 存量聚合中转账号：手填过端点/字段的按自定义脚本处理，否则沿用 one-api 约定。
+	if account.Platform == PlatformAggregateHub && hasCustomBalanceProbeConfig(account) {
+		return balanceProbeScriptCustom
+	}
+	if script := balanceProbePlatformDefaults[account.Platform]; script != "" {
+		return script
+	}
+	// 显式开启但没有脚本（老数据/直接改库）：按 auto 处理，首次探测会记住命中项。
+	if balanceProbeEnabled(account) {
+		return balanceProbeScriptAuto
+	}
+	return ""
+}
+
+// balanceProbeEnabled 余额探测开关：显式布尔值优先；未配置时仅 kimi/deepseek
+// 默认开启（保持接入脚本前的既有行为）。
+func balanceProbeEnabled(account *Account) bool {
+	if account == nil {
+		return false
+	}
+	if v, ok := account.Credentials[balanceProbeEnabledKey].(bool); ok {
+		return v
+	}
+	return account.Platform == PlatformKimi || account.Platform == PlatformDeepseek
+}
+
+func hasCustomBalanceProbeConfig(account *Account) bool {
+	for _, key := range []string{balanceProbeURLKey, balanceProbePathKey, balanceProbeCurrencyKey, balanceProbeDivisorKey, balanceProbeAvailableKey} {
+		if _, ok := account.Credentials[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// lookupBalanceProbe 解析账号的脚本与脚本实现。auto 返回空 spec（由调用方遍历）。
+func lookupBalanceProbe(account *Account) (string, balanceProbeSpec, bool) {
+	if account == nil {
+		return "", balanceProbeSpec{}, false
+	}
+	script := resolveBalanceProbeScript(account)
+	if script == "" {
+		return "", balanceProbeSpec{}, false
+	}
+	if script == balanceProbeScriptAuto {
+		return script, balanceProbeSpec{}, true
+	}
+	spec, ok := balanceProbeScripts[script]
+	return script, spec, ok
+}
+
+// singleGETBalanceProbe 单请求脚本：取 URL → 共享请求 → 脚本解析。
+func singleGETBalanceProbe(
+	urlOf func(*Account) string,
+	parse func(*Account, []byte) ([]CNProviderBalanceEntry, bool, error),
+) func(context.Context, *CNProviderBalanceService, *Account, string) (*CNProviderBalanceResult, error) {
+	return func(ctx context.Context, s *CNProviderBalanceService, account *Account, apiKey string) (*CNProviderBalanceResult, error) {
+		return s.runBalanceGET(ctx, account, apiKey, urlOf(account), parse)
+	}
 }
 
 func kimiBalanceURL(*Account) string {
@@ -89,29 +187,107 @@ func parseDeepSeekBalance(_ *Account, body []byte) ([]CNProviderBalanceEntry, bo
 	return entries, available, nil
 }
 
-// --- 聚合中转 ---
+// --- Sub2API ---
 
-const (
-	aggregateHubBalanceProbeEnabledKey = "balance_probe_enabled"
-	aggregateHubBalanceURLKey          = "balance_probe_url"
-	aggregateHubBalancePathKey         = "balance_probe_path"
-	aggregateHubBalanceCurrencyKey     = "balance_probe_currency"
-	aggregateHubBalanceDivisorKey      = "balance_probe_divisor"
-	aggregateHubBalanceAvailableKey    = "balance_probe_available_path"
-
-	defaultAggregateHubBalanceEndpoint = "/api/user/self"
-	defaultAggregateHubBalancePath     = "data.quota"
-	defaultAggregateHubBalanceCurrency = "USD"
-	defaultAggregateHubBalanceDivisor  = 500000.0 // one-api/new-api：quota 500000 = $1
-)
-
-func aggregateHubBalanceProbeEnabled(account *Account) bool {
-	enabled, _ := account.Credentials[aggregateHubBalanceProbeEnabledKey].(bool)
-	return enabled
+func sub2APIBalanceURL(account *Account) string {
+	base := strings.TrimSpace(account.GetOpenAIFormatBaseURL())
+	if base == "" {
+		return ""
+	}
+	// Sub2API 的 key 级余额端点：GET /v1/usage → {balance, remaining, unit}。
+	return buildOpenAIEndpointURL(base, "/v1/usage")
 }
 
-func aggregateHubBalanceURL(account *Account) string {
-	if raw := strings.TrimSpace(account.GetCredential(aggregateHubBalanceURLKey)); raw != "" {
+func parseSub2APIBalance(account *Account, body []byte) ([]CNProviderBalanceEntry, bool, error) {
+	raw := gjson.GetBytes(body, "balance")
+	if !raw.Exists() {
+		// 配额受限的 key 走 quota_limited 模式，余额字段是 remaining。
+		raw = gjson.GetBytes(body, "remaining")
+	}
+	if !raw.Exists() {
+		return nil, true, fmt.Errorf("missing balance")
+	}
+	value, ok := cnParseF64(raw.Value())
+	if !ok {
+		return nil, true, fmt.Errorf("balance is not a number")
+	}
+	currency := strings.ToUpper(strings.TrimSpace(account.GetCredential(balanceProbeCurrencyKey)))
+	if currency == "" {
+		currency = "USD"
+	}
+	available := true
+	if v := gjson.GetBytes(body, "isValid"); v.Exists() {
+		available = v.Bool()
+	}
+	return []CNProviderBalanceEntry{{Currency: currency, Balance: value}}, available, nil
+}
+
+// --- New API / One API ---
+//
+// API key 不能读 /api/user/self（那是用户 access token 的口径）。Key 可用的
+// OpenAI 兼容计费接口有两层：subscription 给总额度，usage 给已用额度。
+// hard_limit_usd 是无限额度哨兵时直接标记 unlimited。
+
+// newAPIBalanceURL 供测试与调试使用：New API 的总额度端点。
+func newAPIBalanceURL(account *Account) string {
+	base := strings.TrimSpace(account.GetOpenAIFormatBaseURL())
+	if base == "" {
+		return ""
+	}
+	return buildOpenAIEndpointURL(base, "/v1/dashboard/billing/subscription")
+}
+
+func fetchNewAPIBalance(ctx context.Context, s *CNProviderBalanceService, account *Account, apiKey string) (*CNProviderBalanceResult, error) {
+	base := strings.TrimRight(strings.TrimSpace(account.GetOpenAIFormatBaseURL()), "/")
+	if base == "" {
+		return nil, fmt.Errorf("base_url is empty")
+	}
+	currency := strings.ToUpper(strings.TrimSpace(account.GetCredential(balanceProbeCurrencyKey)))
+	if currency == "" {
+		currency = defaultNewAPIBalanceCurrency
+	}
+	result, err := s.runBalanceGET(ctx, account, apiKey, newAPIBalanceURL(account), func(_ *Account, body []byte) ([]CNProviderBalanceEntry, bool, error) {
+		hard, ok := cnParseF64(gjson.GetBytes(body, "hard_limit_usd").Value())
+		if !ok {
+			return nil, true, fmt.Errorf("missing hard_limit_usd")
+		}
+		if hard >= newAPIUnlimitedHardLimit {
+			return []CNProviderBalanceEntry{{Currency: currency, Unlimited: true}}, true, nil
+		}
+		return []CNProviderBalanceEntry{{Currency: currency, Balance: hard}}, true, nil
+	})
+	if err != nil || !result.Success {
+		return result, err
+	}
+	if result.Balances[0].Unlimited {
+		return result, nil
+	}
+	// 剩余 = 总额度 - 已用。usage 的时间范围按全量取（token 口径本身就是累计值）。
+	end := time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02")
+	usageURL := fmt.Sprintf("%s/v1/dashboard/billing/usage?start_date=%s&end_date=%s", base, newAPIUsageStartDate, end)
+	usage, err := s.runBalanceGET(ctx, account, apiKey, usageURL, func(_ *Account, body []byte) ([]CNProviderBalanceEntry, bool, error) {
+		used, ok := cnParseF64(gjson.GetBytes(body, "total_usage").Value())
+		if !ok {
+			return nil, true, fmt.Errorf("missing total_usage")
+		}
+		return []CNProviderBalanceEntry{{Currency: currency, Balance: used}}, true, nil
+	})
+	if err != nil || !usage.Success {
+		return usage, err
+	}
+	remaining := result.Balance - usage.Balance
+	if remaining < 0 {
+		remaining = 0
+	}
+	result.Balance = remaining
+	result.Balances = []CNProviderBalanceEntry{{Currency: currency, Balance: remaining}}
+	return result, nil
+}
+
+// --- 自定义（沿用聚合中转的手填端点/JSON 路径） ---
+
+func customBalanceURL(account *Account) string {
+	if raw := strings.TrimSpace(account.GetCredential(balanceProbeURLKey)); raw != "" {
 		return raw
 	}
 	base := strings.TrimRight(strings.TrimSpace(account.GetOpenAIFormatBaseURL()), "/")
@@ -120,13 +296,13 @@ func aggregateHubBalanceURL(account *Account) string {
 	if base == "" {
 		return ""
 	}
-	return base + defaultAggregateHubBalanceEndpoint
+	return base + "/api/user/self"
 }
 
-func parseAggregateHubBalance(account *Account, body []byte) ([]CNProviderBalanceEntry, bool, error) {
-	path := strings.TrimSpace(account.GetCredential(aggregateHubBalancePathKey))
+func parseCustomBalance(account *Account, body []byte) ([]CNProviderBalanceEntry, bool, error) {
+	path := strings.TrimSpace(account.GetCredential(balanceProbePathKey))
 	if path == "" {
-		path = defaultAggregateHubBalancePath
+		path = defaultNewAPIBalancePath
 	}
 	raw := gjson.GetBytes(body, path)
 	if !raw.Exists() {
@@ -136,17 +312,17 @@ func parseAggregateHubBalance(account *Account, body []byte) ([]CNProviderBalanc
 	if !ok {
 		return nil, true, fmt.Errorf("balance path %q is not a number", path)
 	}
-	divisor := defaultAggregateHubBalanceDivisor
-	if v, ok := credentialNumber(account, aggregateHubBalanceDivisorKey); ok && v > 0 {
+	divisor := defaultNewAPIBalanceDivisor
+	if v, ok := credentialNumber(account, balanceProbeDivisorKey); ok && v > 0 {
 		divisor = v
 	}
-	currency := strings.ToUpper(strings.TrimSpace(account.GetCredential(aggregateHubBalanceCurrencyKey)))
+	currency := strings.ToUpper(strings.TrimSpace(account.GetCredential(balanceProbeCurrencyKey)))
 	if currency == "" {
-		currency = defaultAggregateHubBalanceCurrency
+		currency = defaultNewAPIBalanceCurrency
 	}
 	available := true
-	if path := strings.TrimSpace(account.GetCredential(aggregateHubBalanceAvailableKey)); path != "" {
-		if v := gjson.GetBytes(body, path); v.Exists() {
+	if availablePath := strings.TrimSpace(account.GetCredential(balanceProbeAvailableKey)); availablePath != "" {
+		if v := gjson.GetBytes(body, availablePath); v.Exists() {
 			available = v.Bool()
 		}
 	}

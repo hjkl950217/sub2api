@@ -199,12 +199,23 @@ export default {
         // FORK-ANCHOR: i18n-ag-hub-balance-probe-en (aggregate hub balance probe copy)
         balanceProbe: {
           title: 'Balance probe',
-          description: 'Relay sites expose different balance APIs; enable and configure the rule below.',
+          description: 'Platform-independent: query this API key site balance with the selected script. Turning it off stops probing and keeps the configuration.',
+          autoHint: 'Auto: tries New API, Sub2API, then DeepSeek in order and remembers the script that worked.',
           urlPlaceholder: 'Full balance endpoint URL (empty = site root + /api/user/self)',
           pathPlaceholder: 'Balance field JSON path (default data.quota)',
           currencyPlaceholder: 'Currency (default USD)',
           divisorPlaceholder: 'Divisor (default 500000, one-api convention)',
           hint: 'For array responses point the path at an element, e.g. data.0.quota. Failures keep the last snapshot and show the error.',
+          scripts: {
+            auto: 'Auto (recommended)',
+            newapi: 'New API / One API',
+            sub2api: 'Sub2API',
+            deepseek: 'DeepSeek official',
+            kimi: 'Kimi official',
+            custom: 'Custom endpoint',
+          },
+          unlimited: 'Unlimited',
+          failed: 'Balance unavailable',
         },
         zhipuTeam: {
           title: 'Team Plan Organization / Project ID',

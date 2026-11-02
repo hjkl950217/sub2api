@@ -50,7 +50,7 @@
       </button>
     </div>
 
-    <div v-if="error" class="truncate text-[10px] text-red-600 dark:text-red-400" :title="error">
+    <div v-if="displayError" class="truncate text-[10px] text-red-600 dark:text-red-400" :title="displayError">
       {{ truncatedError }}
     </div>
   </div>
@@ -95,12 +95,18 @@ const snapshotBalances = computed<CNProviderBalanceEntry[]>(() => {
   if (!Array.isArray(v)) return []
   return v.flatMap((item): CNProviderBalanceEntry[] => {
     if (!item || typeof item !== 'object') return []
-    const { currency, balance } = item as Record<string, unknown>
+    const { currency, balance, unlimited } = item as Record<string, unknown>
     if (typeof currency !== 'string' || typeof balance !== 'number') return []
-    return [{ currency, balance }]
+    return [{ currency, balance, unlimited: unlimited === true }]
   })
 })
 const balanceLow = computed(() => props.account.extra?.[extraKey('balance_low')] === true)
+// 后端周期探测失败时落盘的失败原因：即便本地没点过「查询」也要显示出来。
+const snapshotError = computed(() => {
+  const reason = props.account.extra?.[extraKey('balance_error')]
+  return typeof reason === 'string' ? reason : ''
+})
+const displayError = computed(() => error.value || snapshotError.value)
 
 // 优先用探测结果，其次落库快照。多币种返回全部明细，否则主币种单条。
 const currentEntries = computed<CNProviderBalanceEntry[]>(() => {
@@ -116,6 +122,7 @@ const currentEntries = computed<CNProviderBalanceEntry[]>(() => {
 })
 
 const formatEntry = (entry: CNProviderBalanceEntry): string => {
+  if (entry.unlimited) return `${entry.currency || 'USD'} ${t('admin.accounts.cnProviders.balanceProbe.unlimited')}`
   const fixed = entry.balance >= 100 ? entry.balance.toFixed(0) : entry.balance.toFixed(2)
   return `${entry.currency || '¥'} ${fixed}`
 }
@@ -124,7 +131,10 @@ const balanceLabel = computed(() => {
   if (currentEntries.value.length === 0) {
     // 修复:此前误引 admin.accounts.grokBalance(实际嵌套在 usageWindow 下),
     // 未命中时渲染原始 key。CN 供应商使用自己的占位键。
-    return t('admin.accounts.cnProviders.balance')
+    // FORK-ANCHOR: balance-probe-agnostic (二开：探测过一次但失败时显示取不到，而非一直占位)
+    return displayError.value
+      ? t('admin.accounts.cnProviders.balanceProbe.failed')
+      : t('admin.accounts.cnProviders.balance')
   }
   return currentEntries.value.map(formatEntry).join(' · ')
 })
@@ -145,8 +155,9 @@ const extractErrorMessage = (e: unknown): string => {
 }
 
 const truncatedError = computed(() => {
-  if (!error.value) return ''
-  return error.value.length > 80 ? `${error.value.slice(0, 80)}...` : error.value
+  const text = displayError.value
+  if (!text) return ''
+  return text.length > 80 ? `${text.slice(0, 80)}...` : text
 })
 
 const handleProbe = async () => {

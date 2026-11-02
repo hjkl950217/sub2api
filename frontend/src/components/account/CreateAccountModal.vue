@@ -669,9 +669,9 @@
         </div>
       </div>
 
-      <!-- FORK-ANCHOR: create-ag-hub-balance-probe (二开：聚合中转余额探测配置区) -->
-      <!-- 聚合中转余额探测（可选）：端点与 JSON 结构按站点覆盖 -->
-      <div v-if="form.platform === 'ag_hub'" class="mt-4 rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+      <!-- FORK-ANCHOR: create-balance-probe-agnostic (二开：余额探测与平台解耦，任意 API Key 账号可配) -->
+      <!-- 新增时默认关闭；脚本默认 auto，首次探测成功后后端把命中脚本写回账号。 -->
+      <div v-if="form.type === 'apikey' && form.platform !== 'antigravity'" class="mt-4 rounded-lg border border-gray-200 p-3 dark:border-dark-600">
         <label class="flex items-center justify-between gap-3">
           <span>
             <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.cnProviders.balanceProbe.title') }}</span>
@@ -680,13 +680,21 @@
           <input v-model="balanceProbeEnabled" type="checkbox" class="h-4 w-4" />
         </label>
         <div v-if="balanceProbeEnabled" class="mt-3 space-y-2">
-          <input v-model="balanceProbeURL" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.urlPlaceholder')" />
-          <input v-model="balanceProbePath" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.pathPlaceholder')" />
-          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <input v-model="balanceProbeCurrency" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.currencyPlaceholder')" />
-            <input v-model.number="balanceProbeDivisor" type="number" min="0" step="any" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.divisorPlaceholder')" />
-          </div>
-          <p class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.hint') }}</p>
+          <select v-model="balanceProbeScript" class="input">
+            <option v-for="opt in balanceProbeScriptOptions" :key="opt.value" :value="opt.value">
+              {{ t(`admin.accounts.cnProviders.balanceProbe.scripts.${opt.labelKey}`) }}
+            </option>
+          </select>
+          <p v-if="balanceProbeScript === 'auto'" class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.autoHint') }}</p>
+          <template v-if="balanceProbeScript === 'custom'">
+            <input v-model="balanceProbeURL" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.urlPlaceholder')" />
+            <input v-model="balanceProbePath" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.pathPlaceholder')" />
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <input v-model="balanceProbeCurrency" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.currencyPlaceholder')" />
+              <input v-model.number="balanceProbeDivisor" type="number" min="0" step="any" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.divisorPlaceholder')" />
+            </div>
+            <p class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.hint') }}</p>
+          </template>
         </div>
       </div>
 
@@ -4316,7 +4324,10 @@ import {
   applyHeaderOverride,
   applyInterceptWarmup,
   applyOpenCodeGoProtocolRules,
+  BALANCE_PROBE_SCRIPT_OPTIONS,
   cloneOpenCodeGoProtocolRules,
+  defaultBalanceProbeScript,
+  type BalanceProbeScript,
   cnProtocolsFromLegacy,
   cnSupportsNativeResponses,
   CN_API_PROTOCOLS,
@@ -4562,10 +4573,11 @@ const apiProtocol = ref<CnApiProtocol>('adaptive')
 // FORK-ANCHOR: create-cn-protocol-state (国产供应商协议多选 + 兜底转发协议状态)
 const apiProtocols = ref<CnNativeApiProtocol[]>([])
 const fallbackProtocol = ref<CnNativeApiProtocol | ''>('')
-// FORK-ANCHOR: create-ag-hub-balance-probe-state (二开：聚合中转余额探测配置状态)
-// 聚合中转余额探测（可选）：默认按 one-api/new-api 的 /api/user/self 约定，
-// 允许覆盖端点与 JSON 路径；默认关闭，避免对不支持的站点发请求。
+// FORK-ANCHOR: create-balance-probe-state (二开：余额探测脚本状态，与平台解耦)
+// 默认关闭，避免对不支持的站点发请求；脚本默认按平台给初值（kimi/deepseek 用自家脚本）。
+const balanceProbeScriptOptions = BALANCE_PROBE_SCRIPT_OPTIONS
 const balanceProbeEnabled = ref(false)
+const balanceProbeScript = ref<BalanceProbeScript>('auto')
 const balanceProbeURL = ref('')
 const balanceProbePath = ref('')
 const balanceProbeCurrency = ref('')
@@ -5532,6 +5544,10 @@ watch(isOpenAIProtocolSelectPlatform, (enabled) => {
 watch(
   () => form.platform,
   (newPlatform) => {
+    // FORK-ANCHOR: create-balance-probe-script-reset (切换平台时脚本与默认开关回落到该平台默认值)
+    balanceProbeScript.value = defaultBalanceProbeScript(newPlatform)
+    // kimi / deepseek 接入脚本前就是默认开启，新建时保持一致。
+    balanceProbeEnabled.value = newPlatform === 'kimi' || newPlatform === 'deepseek'
     // Reset base URL based on platform
     if (isMultiProtocolApiKeyPlatform(newPlatform)) {
       const mode = newPlatform === 'opencode_go' ? openCodeAccountMode.value : accountMode.value
@@ -6034,8 +6050,9 @@ const resetForm = () => {
   // FORK-ANCHOR: create-cn-protocol-reset-form (重置表单时清空协议勾选与兜底)
   apiProtocols.value = []
   fallbackProtocol.value = ''
-  // FORK-ANCHOR: create-ag-hub-balance-probe-reset (二开：重置聚合中转余额探测配置)
+  // FORK-ANCHOR: create-balance-probe-reset (二开：重置余额探测配置)
   balanceProbeEnabled.value = false
+  balanceProbeScript.value = 'auto'
   balanceProbeURL.value = ''
   balanceProbePath.value = ''
   balanceProbeCurrency.value = ''
@@ -6590,16 +6607,6 @@ const handleSubmit = async () => {
           protocolBaseUrls[selectedFallback as CnNativeApiProtocol] ||
           apiKeyBaseUrl.value.trim()
       credentials.api_protocol = legacyProtocolFromSelection(selectedProtocols, selectedFallback)
-      // FORK-ANCHOR: create-ag-hub-balance-probe-credentials (二开：保存聚合中转余额探测凭据)
-      if (form.platform === 'ag_hub') {
-        credentials.balance_probe_enabled = balanceProbeEnabled.value
-        if (balanceProbeEnabled.value) {
-          if (balanceProbeURL.value.trim()) credentials.balance_probe_url = balanceProbeURL.value.trim()
-          if (balanceProbePath.value.trim()) credentials.balance_probe_path = balanceProbePath.value.trim()
-          if (balanceProbeCurrency.value.trim()) credentials.balance_probe_currency = balanceProbeCurrency.value.trim()
-          if (balanceProbeDivisor.value) credentials.balance_probe_divisor = balanceProbeDivisor.value
-        }
-      }
     } else if (apiProtocol.value === 'adaptive') {
       const defaults = defaultCNAdaptiveBaseUrls(
         form.platform,
@@ -6644,6 +6651,16 @@ const handleSubmit = async () => {
     credentials.api_protocols = selectedProtocols
     credentials.fallback_protocol = selectedFallback
     credentials.api_protocol = legacyProtocolFromSelection(selectedProtocols, selectedFallback)
+  }
+
+  // FORK-ANCHOR: create-balance-probe-credentials (二开：失败/关闭都写开关与脚本，配置不丢)
+  credentials.balance_probe_enabled = balanceProbeEnabled.value
+  credentials.balance_probe_script = balanceProbeScript.value
+  if (balanceProbeScript.value === 'custom') {
+    if (balanceProbeURL.value.trim()) credentials.balance_probe_url = balanceProbeURL.value.trim()
+    if (balanceProbePath.value.trim()) credentials.balance_probe_path = balanceProbePath.value.trim()
+    if (balanceProbeCurrency.value.trim()) credentials.balance_probe_currency = balanceProbeCurrency.value.trim()
+    if (balanceProbeDivisor.value) credentials.balance_probe_divisor = balanceProbeDivisor.value
   }
 
   // Add model mapping if configured（OpenAI 开启自动透传时不应用）

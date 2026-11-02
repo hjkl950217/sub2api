@@ -32,6 +32,8 @@ export interface CNProviderQuotaProbeResult {
 export interface CNProviderBalanceEntry {
   currency: string
   balance: number
+  /** 上游明确返回「不限额度」（new-api 无限 token），此时 balance 无意义。 */
+  unlimited?: boolean
 }
 
 /** payg 余额探测结果（kimi / deepseek），对齐后端 CNProviderBalanceResult。 */

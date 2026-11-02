@@ -41,8 +41,9 @@ func (u *cnBalanceResponseUpstream) DoWithTLS(
 
 type cnBalanceProbeRepo struct {
 	AccountRepository
-	account     *Account
-	extraWrites []map[string]any
+	account          *Account
+	extraWrites      []map[string]any
+	credentialWrites []map[string]any
 }
 
 func (r *cnBalanceProbeRepo) GetByID(_ context.Context, _ int64) (*Account, error) {
@@ -51,6 +52,12 @@ func (r *cnBalanceProbeRepo) GetByID(_ context.Context, _ int64) (*Account, erro
 
 func (r *cnBalanceProbeRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
 	r.extraWrites = append(r.extraWrites, updates)
+	return nil
+}
+
+func (r *cnBalanceProbeRepo) UpdateCredentials(_ context.Context, _ int64, credentials map[string]any) error {
+	r.credentialWrites = append(r.credentialWrites, credentials)
+	r.account.Credentials = credentials
 	return nil
 }
 
@@ -104,7 +111,11 @@ func TestCNProviderBalanceService_DeepSeekInvalidBalancePayloadDoesNotBecomeZero
 			require.False(t, result.Success)
 			require.Contains(t, result.Error, tt.wantError)
 			require.Empty(t, result.Balances)
-			require.Empty(t, repo.extraWrites, "invalid relay balance payload must not persist a synthetic zero balance")
+			// 失败原因要落盘给页面展示，但绝不能写入合成余额。
+			for _, updates := range repo.extraWrites {
+				require.NotContains(t, updates, "deepseek_balance")
+				require.NotContains(t, updates, "deepseek_balances")
+			}
 		})
 	}
 }

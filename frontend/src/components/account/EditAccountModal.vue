@@ -204,9 +204,9 @@
           </div>
           <p class="input-hint">{{ t(`admin.accounts.cnProviders.accountMode.${editAccountMode}Desc`) }}</p>
         </div>
-        <!-- FORK-ANCHOR: edit-ag-hub-balance-probe (二开：聚合中转余额探测配置区) -->
-        <!-- 聚合中转余额探测（可选）：端点与 JSON 结构按站点覆盖。保存逻辑在 isCNApiKeyAccount 分支内，这里同步收窄。 -->
-        <div v-if="account.platform === 'ag_hub' && isCNApiKeyAccount" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+        <!-- FORK-ANCHOR: edit-balance-probe-agnostic (二开：余额探测与平台解耦，任意 API Key 账号可配) -->
+        <!-- 开关只控制是否探测；下方配置在关闭时也保留，重新开启后仍在。 -->
+        <div v-if="account.type === 'apikey'" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
           <label class="flex items-center justify-between gap-3">
             <span>
               <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.cnProviders.balanceProbe.title') }}</span>
@@ -215,13 +215,21 @@
             <input v-model="editBalanceProbeEnabled" type="checkbox" class="h-4 w-4" />
           </label>
           <div v-if="editBalanceProbeEnabled" class="mt-3 space-y-2">
-            <input v-model="editBalanceProbeURL" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.urlPlaceholder')" />
-            <input v-model="editBalanceProbePath" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.pathPlaceholder')" />
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <input v-model="editBalanceProbeCurrency" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.currencyPlaceholder')" />
-              <input v-model.number="editBalanceProbeDivisor" type="number" min="0" step="any" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.divisorPlaceholder')" />
-            </div>
-            <p class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.hint') }}</p>
+            <select v-model="editBalanceProbeScript" class="input">
+              <option v-for="opt in balanceProbeScriptOptions" :key="opt.value" :value="opt.value">
+                {{ t(`admin.accounts.cnProviders.balanceProbe.scripts.${opt.labelKey}`) }}
+              </option>
+            </select>
+            <p v-if="editBalanceProbeScript === 'auto'" class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.autoHint') }}</p>
+            <template v-if="editBalanceProbeScript === 'custom'">
+              <input v-model="editBalanceProbeURL" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.urlPlaceholder')" />
+              <input v-model="editBalanceProbePath" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.pathPlaceholder')" />
+              <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <input v-model="editBalanceProbeCurrency" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.currencyPlaceholder')" />
+                <input v-model.number="editBalanceProbeDivisor" type="number" min="0" step="any" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.divisorPlaceholder')" />
+              </div>
+              <p class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.hint') }}</p>
+            </template>
           </div>
         </div>
         <!-- API Protocol Selection (CN providers / OpenCode / OpenAI APIKey) -->
@@ -3612,11 +3620,14 @@ import {
   applyInterceptWarmup,
   applyOpenCodeGoProtocolRules,
   applyPlanType,
+  BALANCE_PROBE_SCRIPT_OPTIONS,
   buildPlanTypeOptions,
   cloneOpenCodeGoProtocolRules,
+  defaultBalanceProbeEnabled,
   defaultOpenCodeProtocolRules,
   defaultProviderProtocolRules,
   isMultiProtocolApiKeyPlatform,
+  resolveBalanceProbeScript,
   parseOpenCodeGoProtocolRules,
   providerAccountModes,
   providerModeLabel,
@@ -3643,6 +3654,7 @@ import {
   HEADER_OVERRIDES_CREDENTIAL_KEY,
   supportsAccountWebSearchEmulation,
   type CnAccountMode,
+  type BalanceProbeScript,
   type CnApiProtocol,
   type CnNativeApiProtocol,
   type CnProviderPlatform,
@@ -3990,9 +4002,10 @@ const editOpenCodeGoProtocolRules = ref<OpenCodeGoProtocolRule[]>(cloneOpenCodeG
 // 多协议供应商（国产厂商与走通用表单的供应商）的接入模式；OpenCode 用 editOpenCodeAccountMode。
 const editAccountMode = ref<string>('payg')
 const editOpenCodeAccountMode = ref<OpenCodeAccountMode>('go')
-// FORK-ANCHOR: edit-ag-hub-balance-probe-state (二开：聚合中转余额探测配置状态)
-// 聚合中转余额探测（可选）：端点与 JSON 结构按站点覆盖。
+// FORK-ANCHOR: edit-balance-probe-state (二开：余额探测脚本与配置状态)
+const balanceProbeScriptOptions = BALANCE_PROBE_SCRIPT_OPTIONS
 const editBalanceProbeEnabled = ref(false)
+const editBalanceProbeScript = ref<BalanceProbeScript>('auto')
 const editBalanceProbeURL = ref('')
 const editBalanceProbePath = ref('')
 const editBalanceProbeCurrency = ref('')
@@ -5309,6 +5322,13 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   // Initialize API Key fields for apikey type
   if (newAccount.type === 'apikey' && newAccount.credentials) {
     const credentials = newAccount.credentials as Record<string, unknown>
+    // FORK-ANCHOR: edit-balance-probe-load (二开：回填余额探测配置，与平台无关)
+    editBalanceProbeEnabled.value = defaultBalanceProbeEnabled(credentials, newAccount.platform)
+    editBalanceProbeScript.value = resolveBalanceProbeScript(credentials, newAccount.platform)
+    editBalanceProbeURL.value = typeof credentials.balance_probe_url === 'string' ? credentials.balance_probe_url : ''
+    editBalanceProbePath.value = typeof credentials.balance_probe_path === 'string' ? credentials.balance_probe_path : ''
+    editBalanceProbeCurrency.value = typeof credentials.balance_probe_currency === 'string' ? credentials.balance_probe_currency : ''
+    editBalanceProbeDivisor.value = typeof credentials.balance_probe_divisor === 'number' ? credentials.balance_probe_divisor : null
     // 国产供应商：读取 account_mode 与 api_protocol 作为可编辑初始值
     // （编辑弹窗允许修正两者，用于修复早期存错默认值的账号）。
     if (isMultiProtocolApiKeyPlatform(newAccount.platform)) {
@@ -5318,14 +5338,6 @@ const syncFormFromAccount = (newAccount: Account | null) => {
         editAccountMode.value = credentials.account_mode === 'coding' ? 'coding' : 'payg'
       } else {
         editAccountMode.value = resolveProviderAccountMode(newAccount.platform, credentials.account_mode)
-      }
-      // FORK-ANCHOR: edit-ag-hub-balance-probe-load (二开：回填聚合中转余额探测配置)
-      if (newAccount.platform === 'ag_hub') {
-        editBalanceProbeEnabled.value = credentials.balance_probe_enabled === true
-        editBalanceProbeURL.value = typeof credentials.balance_probe_url === 'string' ? credentials.balance_probe_url : ''
-        editBalanceProbePath.value = typeof credentials.balance_probe_path === 'string' ? credentials.balance_probe_path : ''
-        editBalanceProbeCurrency.value = typeof credentials.balance_probe_currency === 'string' ? credentials.balance_probe_currency : ''
-        editBalanceProbeDivisor.value = typeof credentials.balance_probe_divisor === 'number' ? credentials.balance_probe_divisor : null
       }
       const storedProtocol = credentials.api_protocol
       editApiProtocol.value =
@@ -6184,6 +6196,20 @@ const handleSubmit = async () => {
         base_url: newBaseUrl
       }
 
+      // FORK-ANCHOR: edit-balance-probe-credentials (二开：开关只控制启用，配置始终写回)
+      newCredentials.balance_probe_enabled = editBalanceProbeEnabled.value
+      newCredentials.balance_probe_script = editBalanceProbeScript.value
+      if (editBalanceProbeScript.value === 'custom') {
+        if (editBalanceProbeURL.value.trim()) newCredentials.balance_probe_url = editBalanceProbeURL.value.trim()
+        else delete newCredentials.balance_probe_url
+        if (editBalanceProbePath.value.trim()) newCredentials.balance_probe_path = editBalanceProbePath.value.trim()
+        else delete newCredentials.balance_probe_path
+        if (editBalanceProbeCurrency.value.trim()) newCredentials.balance_probe_currency = editBalanceProbeCurrency.value.trim()
+        else delete newCredentials.balance_probe_currency
+        if (editBalanceProbeDivisor.value) newCredentials.balance_probe_divisor = editBalanceProbeDivisor.value
+        else delete newCredentials.balance_probe_divisor
+      }
+
       // FORK-ANCHOR: edit-openai-protocol-credentials (二开：openai API Key 协议复选按 CN 字段契约写入，不写分协议端点)
       if (isEditOpenAIProtocolSelectPlatform.value) {
         const selectedProtocols = normalizeCnProtocols(editApiProtocols.value, props.account.platform)
@@ -6233,20 +6259,6 @@ const handleSubmit = async () => {
               protocolBaseUrls[selectedFallback as CnNativeApiProtocol] ||
               newBaseUrl
           newCredentials.api_protocol = legacyProtocolFromSelection(selectedProtocols, selectedFallback)
-          // FORK-ANCHOR: edit-ag-hub-balance-probe-credentials (二开：保存聚合中转余额探测凭据)
-          if (props.account.platform === 'ag_hub') {
-            newCredentials.balance_probe_enabled = editBalanceProbeEnabled.value
-            if (editBalanceProbeEnabled.value) {
-              if (editBalanceProbeURL.value.trim()) newCredentials.balance_probe_url = editBalanceProbeURL.value.trim()
-              else delete newCredentials.balance_probe_url
-              if (editBalanceProbePath.value.trim()) newCredentials.balance_probe_path = editBalanceProbePath.value.trim()
-              else delete newCredentials.balance_probe_path
-              if (editBalanceProbeCurrency.value.trim()) newCredentials.balance_probe_currency = editBalanceProbeCurrency.value.trim()
-              else delete newCredentials.balance_probe_currency
-              if (editBalanceProbeDivisor.value) newCredentials.balance_probe_divisor = editBalanceProbeDivisor.value
-              else delete newCredentials.balance_probe_divisor
-            }
-          }
         } else if (editApiProtocol.value === 'adaptive') {
           const defaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, currentOpenCodeOrCNMode())
           const protocolBaseUrls: Record<string, string> = {}

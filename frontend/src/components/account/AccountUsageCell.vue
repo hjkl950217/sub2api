@@ -633,6 +633,8 @@
         :account="account"
         @updated="handleOpenCodeGoUsageUpdated"
       />
+      <!-- FORK-ANCHOR: balance-cell-platform-agnostic (二开：余额探测与平台解耦，任意 API Key 账号显示) -->
+      <CNProviderBalanceCell :account="account" />
       <!-- Today stats row (requests, tokens, cost, user_cost) -->
       <div
         v-if="todayStats"

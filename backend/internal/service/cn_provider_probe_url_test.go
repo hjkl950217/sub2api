@@ -74,6 +74,10 @@ func (r *fakeCNProbeAccountRepo) GetByID(ctx context.Context, id int64) (*Accoun
 	return r.account, nil
 }
 
+func (r *fakeCNProbeAccountRepo) UpdateExtra(ctx context.Context, id int64, updates map[string]any) error {
+	return nil
+}
+
 func TestCNProviderQuotaService_RejectsURLBlockedByPolicy(t *testing.T) {
 	repo := &fakeCNProbeAccountRepo{account: &Account{
 		ID: 1, Platform: PlatformKimi, Type: AccountTypeAPIKey, Status: StatusActive,
