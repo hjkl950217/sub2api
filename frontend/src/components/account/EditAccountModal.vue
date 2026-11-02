@@ -5763,8 +5763,8 @@ const buildTempUnschedRules = (rules: TempUnschedRuleForm[]) => {
 
 const applyTempUnschedConfig = (credentials: Record<string, unknown>) => {
   if (!tempUnschedEnabled.value) {
+    // 关闭只停用功能，保留已配置规则；重新开启可直接使用
     delete credentials.temp_unschedulable_enabled
-    delete credentials.temp_unschedulable_rules
     return true
   }
 

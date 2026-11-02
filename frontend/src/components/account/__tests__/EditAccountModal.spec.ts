@@ -2265,6 +2265,24 @@ describe('EditAccountModal temp-unschedulable rule scope', () => {
     expect(checkedScopes(wrapper)).toEqual(['temp-unsched-scope-model'])
     wrapper.unmount()
   })
+
+  it('关闭开关后保存仍保留已配置规则，只停用功能', async () => {
+    const rules = [{ error_code: 401, keywords: ['unauthorized'], duration_minutes: 10 }]
+    const account = buildAccountWithTempUnschedRules(rules)
+    updateAccountMock.mockResolvedValue(account)
+    const wrapper = mountModal(account)
+
+    const toggle = wrapper
+      .get('[data-testid="edit-account-panel-temp"]')
+      .findAll('button')[0]
+    await toggle!.trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    const credentials = updateAccountMock.mock.calls[0]?.[1]?.credentials
+    expect(credentials).not.toHaveProperty('temp_unschedulable_enabled')
+    expect(credentials.temp_unschedulable_rules).toEqual(rules)
+    wrapper.unmount()
+  })
 })
 
 // FORK-ANCHOR: test-edit-account-tabs (二开：编辑弹窗 tab 分区的行为测试)
