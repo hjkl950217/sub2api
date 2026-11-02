@@ -290,6 +290,8 @@ export interface PublicSettings {
   // 不渲染「模型指纹测试」区块。样本库定时更新不受这个开关影响。
   fingerprint_enabled?: boolean
   allow_user_view_error_requests?: boolean
+  /** True when the deployment configures MCP_PUBLIC_URL; MCP is disabled otherwise. */
+  mcp_enabled?: boolean
 }
 
 export interface AuthResponse {
