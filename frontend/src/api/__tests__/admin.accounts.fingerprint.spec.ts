@@ -41,20 +41,38 @@ describe('runFingerprint 流式读', () => {
   it('逐个样本回调进度，最后返回报告', async () => {
     global.fetch = vi.fn().mockResolvedValue(
       makeStreamResponse([
-        'data: {"type":"progress","completed":1,"total":3}\n\n',
-        'data: {"type":"progress","completed":2,"total":3}\n\n',
+        'data: {"type":"progress","completed":1,"total":3,"attempt":1}\n\n',
+        'data: {"type":"progress","completed":2,"total":3,"attempt":1}\n\n',
         `data: ${JSON.stringify({ type: 'result', report: sampleReport })}\n\n`
       ])
     ) as any
 
-    const seen: Array<[number, number]> = []
-    const got = await runFingerprint(3354, 'deepseek-v4.1-flash', (done, total) => seen.push([done, total]))
+    const seen: Array<[number, number, number]> = []
+    const got = await runFingerprint(3354, 'deepseek-v4.1-flash', (done, total, attempt) => seen.push([done, total, attempt]))
 
     expect(seen).toEqual([
-      [1, 3],
-      [2, 3]
+      [1, 3, 1],
+      [2, 3, 1]
     ])
     expect(got).toEqual(sampleReport)
+    const init = (global.fetch as any).mock.calls[0][1]
+    expect(JSON.parse(init.body)).toEqual({ model_id: 'deepseek-v4.1-flash', retry_partial: false })
+  })
+
+  it('自动补测把 attempt 和 retry_partial 透传出去', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      makeStreamResponse([
+        'data: {"type":"progress","completed":0,"total":3,"attempt":2}\n\n',
+        `data: ${JSON.stringify({ type: 'result', report: sampleReport })}\n\n`
+      ])
+    ) as any
+
+    const seen: Array<[number, number, number]> = []
+    await runFingerprint(1, 'm', (done, total, attempt) => seen.push([done, total, attempt]), true)
+
+    expect(seen).toEqual([[0, 3, 2]])
+    const init = (global.fetch as any).mock.calls[0][1]
+    expect(JSON.parse(init.body)).toEqual({ model_id: 'm', retry_partial: true })
   })
 
   it('事件被切成任意大小的块也能拼回来', async () => {

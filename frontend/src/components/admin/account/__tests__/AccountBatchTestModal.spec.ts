@@ -2,7 +2,11 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountBatchTestModal from '../AccountBatchTestModal.vue'
 // FORK: 批量指纹检测的断言用真实示例数据
-import { FINGERPRINT_SAMPLE } from '../fingerprintSample'
+import {
+  FINGERPRINT_LOW_CONFIDENCE_SAMPLE,
+  FINGERPRINT_PARTIAL_SAMPLE,
+  FINGERPRINT_SAMPLE
+} from '../fingerprintSample'
 
 const { getBatchTestPlan, updateProbedProtocols, setSchedulable, showSuccess, showError, runFingerprint } = vi.hoisted(() => ({
   getBatchTestPlan: vi.fn(),
@@ -643,6 +647,27 @@ describe('AccountBatchTestModal 批量指纹检测', () => {
 
     expect(wrapper.get('[data-testid="batch-fingerprint-result-1"]').text()).toBe('mimo-v2.5 · 46.7%')
     expect(wrapper.get('[data-testid="batch-fingerprint-result-2"]').text()).toBe('mimo-v2.5 · 46.7%')
+  })
+
+  // 回归：部分样本排名返回 null 置信度，不能显示成 0.0%。
+  it('部分样本排名按 1/3、2/3 显示置信度很弱/低置信度', async () => {
+    runFingerprint.mockResolvedValueOnce(FINGERPRINT_PARTIAL_SAMPLE)
+    runFingerprint.mockResolvedValueOnce(FINGERPRINT_LOW_CONFIDENCE_SAMPLE)
+    const wrapper = mountModal({ show: false, accountIds: [1, 2] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="batch-fingerprint-button"]').trigger('click')
+    await flushPromises()
+
+    const first = wrapper.get('[data-testid="batch-fingerprint-result-1"]').text()
+    const second = wrapper.get('[data-testid="batch-fingerprint-result-2"]').text()
+    expect(first).toBe('mimo-v2.5 · admin.accounts.fingerprint.confidenceVeryLow')
+    expect(second).toBe('mimo-v2.5 · admin.accounts.fingerprint.confidenceLow')
+    expect(first).not.toContain('0.0%')
+    expect(second).not.toContain('0.0%')
+    // 批量不自动补测，避免每个账号成本翻倍。
+    expect(runFingerprint.mock.calls[0][3]).toBeUndefined()
   })
 
   // 回归：client.ts 的拦截器 reject 的是普通对象不是 Error，原先只判断 instanceof Error，

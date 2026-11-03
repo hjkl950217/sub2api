@@ -187,7 +187,7 @@
                 class="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-300"
                 :data-testid="`batch-fingerprint-result-${row.id}`"
               >
-                {{ row.fingerprint.predictionName }} · {{ (row.fingerprint.probability * 100).toFixed(1) }}%
+                {{ row.fingerprint.predictionName }} · {{ formatFingerprintProbability(row.fingerprint.probability, row.fingerprint.usedOutputs) }}
               </span>
               <span
                 v-else-if="row.fingerprint.status === 'error'"
@@ -363,7 +363,10 @@ interface FingerprintRowState {
   // fpd 库里有些条目是两个模型合起来的，display_name 形如「a/b」而 model 只有「a」。
   // 存下来跟 predictionName 比，不一样就说明是合并条目，加提示符号。
   prediction: string
-  probability: number
+  // null = 部分样本排名，没有置信度（fpd 返回 null），不能当 0% 显示。
+  probability: number | null
+  // 有效样本数，用于区分 2/3 低置信与 1/3 很弱。
+  usedOutputs: number
   error: string
   elapsedMs: number
   // FORK-ANCHOR: batch-test-fingerprint-sample-progress（二开：逐行样本进度）
@@ -478,6 +481,14 @@ const fingerprintStatusClass = (state: FingerprintRowState) => {
   return 'text-gray-500'
 }
 
+const formatFingerprintProbability = (probability: number | null, usedOutputs: number) => {
+  if (probability != null) return `${(probability * 100).toFixed(1)}%`
+  if (usedOutputs < 1 || usedOutputs >= 3) return t('admin.accounts.fingerprint.confidenceUnavailableShort')
+  return usedOutputs >= 2
+    ? t('admin.accounts.fingerprint.confidenceLow')
+    : t('admin.accounts.fingerprint.confidenceVeryLow')
+}
+
 const fingerprintStatusLabel = (state: FingerprintRowState) => {
   if (state.status === 'done') return t('admin.accounts.fingerprint.done')
   if (state.status === 'error') return t('admin.accounts.fingerprint.failed')
@@ -500,7 +511,7 @@ const startFingerprint = async () => {
   fingerprintStartedAt.clear()
   targets.forEach((row) => {
     fingerprintStartedAt.set(row.id, startedAt)
-    row.fingerprint = { status: 'running', predictionName: '', prediction: '', probability: 0, error: '', elapsedMs: 0, samplesDone: 0, samplesTotal: 0 }
+    row.fingerprint = { status: 'running', predictionName: '', prediction: '', probability: null, usedOutputs: 0, error: '', elapsedMs: 0, samplesDone: 0, samplesTotal: 0 }
   })
   startFingerprintTimer()
   await Promise.all(
@@ -529,6 +540,7 @@ const startFingerprint = async () => {
           predictionName: report.analysis.prediction_name,
           prediction: report.analysis.prediction,
           probability: report.analysis.probability,
+          usedOutputs: report.analysis.used_outputs,
           error: '',
           elapsedMs: Date.now() - rowStartedAt,
           samplesDone: 0,
@@ -544,7 +556,8 @@ const startFingerprint = async () => {
           status: 'error',
           predictionName: '',
           prediction: '',
-          probability: 0,
+          probability: null,
+          usedOutputs: 0,
           error: typeof message === 'string' && message ? message : t('common.unknownError'),
           elapsedMs: Date.now() - rowStartedAt,
           samplesDone: 0,
@@ -676,7 +689,7 @@ const loadPlan = async () => {
           protocols: (account.protocols || []).map((protocol) => ({ protocol, success: null, probing: false, error: '', body: '', expanded: false, firstByteMs: null, totalMs: null })),
           rowFailure: '',
           schedulable: account.schedulable,
-          fingerprint: { status: 'idle', predictionName: '', prediction: '', probability: 0, error: '', elapsedMs: 0, samplesDone: 0, samplesTotal: 0 }
+          fingerprint: { status: 'idle', predictionName: '', prediction: '', probability: null, usedOutputs: 0, error: '', elapsedMs: 0, samplesDone: 0, samplesTotal: 0 }
         })
       })
     })

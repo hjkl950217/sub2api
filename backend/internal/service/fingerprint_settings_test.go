@@ -130,6 +130,31 @@ func TestParseFingerprintReport(t *testing.T) {
 	// 实测坑：成功检测时 insufficient 也是 true，它表达「证据不足以证明身份」。
 	require.True(t, report.Analysis.Evidence.Insufficient)
 	require.Len(t, report.Analysis.Results, 1)
+	require.NotNil(t, report.Analysis.Probability)
+	require.InDelta(t, 0.467, *report.Analysis.Probability, 1e-9)
+
+	// 部分样本排名（used_outputs < 3）时 fpd 明确返回 null。必须保留成 nil，
+	// 落成 0 会被前端显示成 0.0%。
+	t.Run("部分样本排名的 null 概率", func(t *testing.T) {
+		partial := []byte(`{
+			"schema": "fpd-detection-v1",
+			"scored_rounds": 1,
+			"analysis": {
+				"prediction": "claude-haiku-4.5",
+				"prediction_name": "claude-haiku-4.5",
+				"probability": null,
+				"probability_status": "unavailable",
+				"used_outputs": 1,
+				"results": [{"model": "claude-haiku-4.5", "display_name": "claude-haiku-4.5", "score": 0.5, "probability": null}],
+				"evidence": {"insufficient": true, "label": "Partial sample ranking", "method": "partial-sample-ranking"}
+			}
+		}`)
+		report, err := parseFingerprintReport(partial)
+		require.NoError(t, err)
+		require.Nil(t, report.Analysis.Probability)
+		require.Len(t, report.Analysis.Results, 1)
+		require.Nil(t, report.Analysis.Results[0].Probability)
+	})
 
 	// 前后空白要能容忍：CLI 用 stdout.write 一次性输出，末尾可能带换行。
 	padded := append([]byte("\n  "), append(append([]byte{}, ok...), []byte("\n\n")...)...)
@@ -151,6 +176,72 @@ func TestParseFingerprintReport(t *testing.T) {
 }
 
 // 失败报告的形状：网络不通时 fpd 照样输出合法 JSON，错误藏在 rounds 里。
+// 补测只针对网络类/限流/超时/流截断；「数字不够」是模型行为，重试只会多花钱。
+func TestFingerprintRetryPlanFor(t *testing.T) {
+	cases := []struct {
+		name      string
+		raw       string
+		stderr    string
+		retryable bool
+		parallel  int
+		timeout   int
+		noStream  bool
+	}{
+		{
+			name:      "429 降并发",
+			raw:       `{"rounds":[{"samples":[{"error":"HTTP 429: Upstream rate limit exceeded"}]}]}`,
+			retryable: true,
+			parallel:  1,
+		},
+		{
+			name:      "超时放宽并关流",
+			raw:       `{"rounds":[{"samples":[{"error":"The request timed out after 120s"}]}]}`,
+			retryable: true,
+			timeout:   fingerprintRetryRequestTimeoutSec,
+			noStream:  true,
+		},
+		{
+			name:      "流截断放宽并关流",
+			raw:       `{"rounds":[{"samples":[{"error":"incomplete stream body"}]}]}`,
+			retryable: true,
+			timeout:   fingerprintRetryRequestTimeoutSec,
+			noStream:  true,
+		},
+		{
+			name:      "连接失败原样重试",
+			raw:       `{"rounds":[{"samples":[{"error":"fetch failed: ECONNRESET"}]}]}`,
+			retryable: true,
+		},
+		{
+			name:      "5xx 原样重试",
+			raw:       `{"rounds":[{"samples":[{"error":"HTTP 503: upstream unavailable"}]}]}`,
+			retryable: true,
+		},
+		{
+			name:      "进程错误看 stderr",
+			stderr:    "Error: fetch failed",
+			retryable: true,
+		},
+		{
+			name:   "数字不够不重试",
+			raw:    `{"rounds":[{"samples":[{"error":"Too few valid numbers."}]}]}`,
+			stderr: "",
+		},
+		{
+			name: "没有错误不重试",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			plan, retryable := fingerprintRetryPlanFor([]byte(tc.raw), tc.stderr)
+			require.Equal(t, tc.retryable, retryable)
+			require.Equal(t, tc.parallel, plan.Parallel)
+			require.Equal(t, tc.timeout, plan.TimeoutSec)
+			require.Equal(t, tc.noStream, plan.NoStream)
+		})
+	}
+}
+
 func TestFingerprintFailureErrorExtractsReasons(t *testing.T) {
 	raw := []byte(`{
 		"schema": "fpd-detection-v1",
@@ -209,9 +300,9 @@ func TestFingerprintReportJSONShape(t *testing.T) {
 		ScoredRounds:    1,
 		Analysis: &FingerprintAnalysis{
 			PredictionName: "mimo-v2.5",
-			Probability:    0.467,
+			Probability:    ptrFloat64(0.467),
 			Results: []FingerprintCandidate{
-				{Model: "mimo-v2.5", DisplayName: "mimo-v2.5", Probability: 0.467},
+				{Model: "mimo-v2.5", DisplayName: "mimo-v2.5", Probability: ptrFloat64(0.467)},
 			},
 			Evidence: &FingerprintEvidence{Insufficient: true, Label: "Calibrated ranking"},
 		},

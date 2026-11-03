@@ -56,8 +56,16 @@ const (
 	// fpd 默认每个请求 120s、3 个样本并发，正常一次 30-180s；批量时靠信号量排队。
 	fingerprintDefaultTimeout = 300 * time.Second
 
+	// fingerprintRetryTimeout 是开启「部分结果自动补测」时的整体超时。
+	// 第一次最多 120s/请求，补测把单请求超时放到 180s，两次串行需要更长的预算。
+	fingerprintRetryTimeout = 600 * time.Second
+
+	// fingerprintRetryRequestTimeoutSec 是补测时放宽后的单请求超时（秒）。
+	// 原默认 120s，流式响应在部分中转站会被提前截断，放宽后更容易收满样本。
+	fingerprintRetryRequestTimeoutSec = 180
+
 	// fingerprintMaxConcurrency 限制同时运行的 fpd 进程数。
-	// 每个 node 进程约 60-100 MB，且每次检测要向上游真实发 3 个请求——
+	// 每个 node 进程约 60-100 MB，且每次检测要向上游真实发 3 个请求（补测时最多 6 个）——
 	// 放开会让批量场景把宿主内存和上游限流一起打满。
 	fingerprintMaxConcurrency = 3
 
@@ -145,7 +153,44 @@ type FingerprintProgress struct {
 	Completed int
 	// Total 是本轮样本总数（即 fingerprintProbeCount）。
 	Total int
+	// Attempt 是第几次尝试，从 1 开始；自动补测时第二轮为 2。
+	Attempt int
 }
+
+// fingerprintRunPlan 是单次 fpd 调用的请求参数。补测时按失败原因调整：
+// 429 降并发，超时/流截断放宽超时并关闭流式。
+type fingerprintRunPlan struct {
+	// Parallel 为 0 时用 CLI 默认值（3）。
+	Parallel int
+	// TimeoutSec 为 0 时用 120 秒。
+	TimeoutSec int
+	NoStream   bool
+}
+
+func (p fingerprintRunPlan) timeoutSec() int {
+	if p.TimeoutSec > 0 {
+		return p.TimeoutSec
+	}
+	return 120
+}
+
+// merged 把补测调整合并到当前计划上，只放宽、不收紧。
+func (p fingerprintRunPlan) merged(next fingerprintRunPlan) fingerprintRunPlan {
+	if next.Parallel > 0 {
+		p.Parallel = next.Parallel
+	}
+	if next.TimeoutSec > p.TimeoutSec {
+		p.TimeoutSec = next.TimeoutSec
+	}
+	if next.NoStream {
+		p.NoStream = true
+	}
+	return p
+}
+
+// fingerprintHTTP5xxPattern 只匹配错误文本里的 5xx 状态码，避免把正常的
+// 数字（例如样本里的 503）当成上游错误。
+var fingerprintHTTP5xxPattern = regexp.MustCompile(`\b(?:http|status)\s+5\d\d\b`)
 
 // FingerprintReport 是 fpd 输出的裁剪版报告，字段与前端 fingerprintMock.ts 的
 // FingerprintReport 一一对应。刻意不带上游完整的 rounds / challenges / outputs
@@ -167,30 +212,32 @@ type FingerprintBankInfo struct {
 }
 
 type FingerprintAnalysis struct {
-	Prediction           string                  `json:"prediction"`
-	PredictionName       string                  `json:"prediction_name"`
-	FamilyPrediction     string                  `json:"family_prediction"`
-	FamilyPredictionName string                  `json:"family_prediction_name"`
-	Probability          float64                 `json:"probability"`
-	ProbabilityStatus    string                  `json:"probability_status"`
-	ProbabilityScope     string                  `json:"probability_scope"`
-	RankingScore         float64                 `json:"ranking_score"`
-	UsedOutputs          int                     `json:"used_outputs"`
-	Method               string                  `json:"method"`
-	ModelVersion         map[string]any          `json:"model_version"`
-	Calibration          map[string]any          `json:"calibration"`
-	Results              []FingerprintCandidate  `json:"results"`
-	Diagnostics          []FingerprintDiagnostic `json:"diagnostics"`
-	Evidence             *FingerprintEvidence    `json:"evidence"`
+	Prediction           string `json:"prediction"`
+	PredictionName       string `json:"prediction_name"`
+	FamilyPrediction     string `json:"family_prediction"`
+	FamilyPredictionName string `json:"family_prediction_name"`
+	// Probability 用指针保住 null：部分样本排名（used_outputs < 3）时 fpd
+	// 明确返回 null，表示「没有置信度」。落成 0 会被前端显示成 0.0%。
+	Probability       *float64                `json:"probability"`
+	ProbabilityStatus string                  `json:"probability_status"`
+	ProbabilityScope  string                  `json:"probability_scope"`
+	RankingScore      float64                 `json:"ranking_score"`
+	UsedOutputs       int                     `json:"used_outputs"`
+	Method            string                  `json:"method"`
+	ModelVersion      map[string]any          `json:"model_version"`
+	Calibration       map[string]any          `json:"calibration"`
+	Results           []FingerprintCandidate  `json:"results"`
+	Diagnostics       []FingerprintDiagnostic `json:"diagnostics"`
+	Evidence          *FingerprintEvidence    `json:"evidence"`
 }
 
 type FingerprintCandidate struct {
-	Model       string  `json:"model"`
-	DisplayName string  `json:"display_name"`
-	Family      string  `json:"family"`
-	FamilyName  string  `json:"family_name"`
-	Score       float64 `json:"score"`
-	Probability float64 `json:"probability"`
+	Model       string   `json:"model"`
+	DisplayName string   `json:"display_name"`
+	Family      string   `json:"family"`
+	FamilyName  string   `json:"family_name"`
+	Score       float64  `json:"score"`
+	Probability *float64 `json:"probability"`
 }
 
 type FingerprintDiagnostic struct {
@@ -326,8 +373,12 @@ func (s *FingerprintService) GetFingerprintRuntime(ctx context.Context) Fingerpr
 
 // Detect 对单个账号跑一次指纹检测，返回裁剪版报告。
 //
+// retryPartial=true 时允许在「只收到 1–2 条有效样本」或网络类失败后自动补测一次。
+// 补测按失败原因调整参数：429 降并发，超时/流截断放宽超时并关闭流式；
+// 「Too few valid numbers」这类模型不肯输出数字的情况不重试。
+//
 // 调用方负责并发控制；本方法内部还有一层信号量，防止批量场景把进程数打满。
-func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelID string, onProgress func(FingerprintProgress)) (*FingerprintReport, error) {
+func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelID string, retryPartial bool, onProgress func(FingerprintProgress)) (*FingerprintReport, error) {
 	if s == nil {
 		return nil, errors.New("模型指纹检测服务未启用")
 	}
@@ -395,15 +446,108 @@ func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelI
 	_ = reportFile.Close()
 	defer func() { _ = os.Remove(reportPath) }()
 
+	proxyURL := fingerprintProxyURL(account)
+	plan := fingerprintRunPlan{TimeoutSec: 120}
+	maxAttempts := 1
+	if retryPartial {
+		maxAttempts = 2
+	}
+
+	var best *FingerprintReport
+	bestUsed := -1
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		report, raw, stderr, err := s.runFingerprintCLI(
+			ctx, plan, attempt, baseURL, model, apiFormat, apiKey,
+			string(headersJSON), preloadPath, reportPath, proxyURL, onProgress,
+		)
+		if err != nil {
+			lastErr = err
+			// 补测失败但手里已有部分结果：保留已经拿到的排名，不把结果丢掉。
+			if best != nil {
+				break
+			}
+			if attempt < maxAttempts && ctx.Err() == nil {
+				if next, retryable := fingerprintRetryPlanFor(raw, stderr); retryable {
+					plan = plan.merged(next)
+					continue
+				}
+			}
+			return nil, err
+		}
+		// 退出码非 0 但报告合法：上游不通、或有轮次没排上名，原因在 rounds 里。
+		if report.ScoredRounds == 0 {
+			lastErr = fingerprintFailureError(raw, report, stderr)
+			if best != nil {
+				break
+			}
+			if attempt < maxAttempts {
+				if next, retryable := fingerprintRetryPlanFor(raw, stderr); retryable {
+					plan = plan.merged(next)
+					continue
+				}
+			}
+			return nil, lastErr
+		}
+
+		used := 0
+		if report.Analysis != nil {
+			used = report.Analysis.UsedOutputs
+		}
+		if used > bestUsed {
+			best, bestUsed = report, used
+		}
+		// 样本齐了，或者这次不允许补测，或者已经用完次数：到此为止。
+		if used >= fingerprintProbeCount || attempt == maxAttempts {
+			break
+		}
+		next, retryable := fingerprintRetryPlanFor(raw, stderr)
+		if !retryable {
+			break
+		}
+		plan = plan.merged(next)
+		// 网络类失败给一秒退避，避免立刻撞回同一个限流窗口。
+		if err := sleepWithContext(ctx, time.Second); err != nil {
+			break
+		}
+	}
+
+	if best != nil {
+		return best, nil
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, errors.New("检测没有返回结果")
+}
+
+// runFingerprintCLI 执行一次 fpd。report 非空表示报告能解析；即使是 0 分轮次
+// 也会返回报告，由调用方结合 raw 里的失败原因决定要不要补测。
+func (s *FingerprintService) runFingerprintCLI(
+	ctx context.Context,
+	plan fingerprintRunPlan,
+	attempt int,
+	baseURL, model, apiFormat, apiKey, headersJSON, preloadPath, reportPath, proxyURL string,
+	onProgress func(FingerprintProgress),
+) (*FingerprintReport, []byte, string, error) {
+	// 补测时复用同一个报告路径，先删掉上一轮留下的文件，避免读到旧结果。
+	_ = os.Remove(reportPath)
+
 	scriptArgs := []string{
 		s.cliScript,
 		"-b", baseURL,
 		"-m", model,
 		"-a", apiFormat,
 		"--count", fmt.Sprintf("%d", fingerprintProbeCount),
-		"--timeout", "120",
+		"--timeout", fmt.Sprintf("%d", plan.timeoutSec()),
 		"--no-update-check",
 		"--output", reportPath,
+	}
+	if plan.Parallel > 0 {
+		scriptArgs = append(scriptArgs, "--parallel", fmt.Sprintf("%d", plan.Parallel))
+	}
+	if plan.NoStream {
+		scriptArgs = append(scriptArgs, "--no-stream")
 	}
 	if bankFile, ok := s.resolveBankFile(); ok {
 		scriptArgs = append(scriptArgs, "--bank", bankFile)
@@ -416,14 +560,13 @@ func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelI
 
 	cmdEnv := append(os.Environ(),
 		"API_KEY="+apiKey,
-		fingerprintHeadersEnv+"="+string(headersJSON),
+		fingerprintHeadersEnv+"="+headersJSON,
 		"FPD_NO_UPDATE_CHECK=1",
 		"NO_UPDATE_NOTIFIER=1",
 	)
 	// 账号配了代理就走代理：fpd 自己没有代理参数，但 node 22 的 --use-env-proxy
 	// 会让 fetch 读 HTTPS_PROXY。不配代理时两个都不加，避免误吃宿主环境里
 	// 可能存在的代理变量。
-	proxyURL := fingerprintProxyURL(account)
 	if proxyURL != "" {
 		nodeArgs = append(nodeArgs, "--use-env-proxy")
 		cmdEnv = append(cmdEnv, "HTTPS_PROXY="+proxyURL, "HTTP_PROXY="+proxyURL)
@@ -435,20 +578,20 @@ func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelI
 	cmd.Env = cmdEnv
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, fmt.Errorf("无法读取 lm-detector 的输出：%w", err)
+		return nil, nil, "", fmt.Errorf("无法读取 lm-detector 的输出：%w", err)
 	}
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		return nil, fmt.Errorf("无法读取 lm-detector 的错误输出：%w", err)
+		return nil, nil, "", fmt.Errorf("无法读取 lm-detector 的错误输出：%w", err)
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, fingerprintProcessError(err, "")
+		return nil, nil, "", fingerprintProcessError(err, "")
 	}
 	// 立刻报一条 0/N：前端一进检测中就能显示「检测中(0/3) 0.0s」。
 	// 否则在第一个样本收尾前只有一个不动的「检测中」，看着像卡住了 ——
 	// 长空注意到这一点：数字的变化负责表达进展，走动的秒数负责证明没卡死。
 	if onProgress != nil {
-		onProgress(FingerprintProgress{Completed: 0, Total: fingerprintProbeCount})
+		onProgress(FingerprintProgress{Completed: 0, Total: fingerprintProbeCount, Attempt: attempt})
 	}
 
 	// 两个流都要读到 EOF，否则管道写满会把子进程卡死，所以并发读。
@@ -475,7 +618,7 @@ func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelI
 				if completed > fingerprintProbeCount {
 					completed = fingerprintProbeCount
 				}
-				onProgress(FingerprintProgress{Completed: completed, Total: fingerprintProbeCount})
+				onProgress(FingerprintProgress{Completed: completed, Total: fingerprintProbeCount, Attempt: attempt})
 			}
 		}
 	}()
@@ -485,31 +628,77 @@ func (s *FingerprintService) Detect(ctx context.Context, accountID int64, modelI
 	runErr := cmd.Wait()
 
 	raw, readErr := os.ReadFile(reportPath)
+	stderr := stderrBuf.String()
 	if readErr != nil || len(bytes.TrimSpace(raw)) == 0 {
 		// 没写出报告 = 进程没跑到最后（起不来、被杀、超时）。
 		if ctx.Err() != nil {
-			return nil, errors.New("检测超时或已取消")
+			return nil, raw, stderr, errors.New("检测超时或已取消")
 		}
-		return nil, fingerprintProcessError(runErr, stderrBuf.String())
+		return nil, raw, stderr, fingerprintProcessError(runErr, stderr)
 	}
 
 	report, parseErr := parseFingerprintReport(raw)
 	if parseErr != nil {
 		if runErr != nil {
-			return nil, fingerprintProcessError(runErr, stderrBuf.String())
+			return nil, raw, stderr, fingerprintProcessError(runErr, stderr)
 		}
-		return nil, parseErr
+		return nil, raw, stderr, parseErr
 	}
-	// 退出码非 0 但报告合法：上游不通、或有轮次没排上名，原因在 rounds 里。
-	if report.ScoredRounds == 0 {
-		return nil, fingerprintFailureError(raw, report, stderrBuf.String())
+	return report, raw, stderr, nil
+}
+
+// fingerprintRetryPlanFor 从原始报告的样本错误里判断这次失败值不值得补测，
+// 并给出补测要放宽的参数。只有网络类/限流/超时/流截断会返回 true；
+// 「数字不够」这类模型行为不重试。
+func fingerprintRetryPlanFor(raw []byte, stderr string) (fingerprintRunPlan, bool) {
+	var text strings.Builder
+	text.WriteString(stderr)
+	if len(bytes.TrimSpace(raw)) > 0 {
+		var parsed fingerprintRawReport
+		if err := json.Unmarshal(raw, &parsed); err == nil {
+			for _, round := range parsed.Rounds {
+				text.WriteString(" ")
+				text.WriteString(round.Error)
+				for _, sample := range round.Samples {
+					text.WriteString(" ")
+					text.WriteString(sample.Error)
+				}
+			}
+		}
 	}
-	return report, nil
+	lowered := strings.ToLower(text.String())
+
+	plan := fingerprintRunPlan{}
+	retryable := false
+	if containsAny(lowered, "429", "rate limit", "rate_limit", "too many requests") {
+		// 限流时三个样本并发只会继续撞墙，下一轮改成逐个发。
+		plan.Parallel = 1
+		retryable = true
+	}
+	if containsAny(lowered,
+		"timeout", "timed out", "etimedout", "incomplete", "truncated",
+		"no_stream_body", "bad_stream_json", "upstream_stream_error", "stream ended", "stream closed") {
+		// 超时或流式响应被截断：放宽单请求超时，并改用非流式拿完整响应。
+		plan.TimeoutSec = fingerprintRetryRequestTimeoutSec
+		plan.NoStream = true
+		retryable = true
+	}
+	if containsAny(lowered,
+		"network", "fetch failed", "econnreset", "econnrefused", "enotfound",
+		"eai_again", "socket hang up") || fingerprintHTTP5xxPattern.MatchString(lowered) {
+		retryable = true
+	}
+	return plan, retryable
 }
 
 // DetectWithTimeout 给 Detect 套一层默认超时，供 handler 直接调用。
-func (s *FingerprintService) DetectWithTimeout(ctx context.Context, accountID int64, modelID string, onProgress func(FingerprintProgress)) (*FingerprintReport, error) {
-	runCtx, cancel := context.WithTimeout(ctx, fingerprintDefaultTimeout)
+// 允许补测时整体预算放宽，避免第二次尝试被第一次吃掉的超时卡断。
+func (s *FingerprintService) DetectWithTimeout(ctx context.Context, accountID int64, modelID string, retryPartial bool, onProgress func(FingerprintProgress)) (*FingerprintReport, error) {
+	timeout := fingerprintDefaultTimeout
+	if retryPartial {
+		timeout = fingerprintRetryTimeout
+	}
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	// 信号量在超时之外单独获取：排队等待不该吃掉检测本身的预算。
@@ -519,7 +708,7 @@ func (s *FingerprintService) DetectWithTimeout(ctx context.Context, accountID in
 	case <-runCtx.Done():
 		return nil, errors.New("检测排队超时，请稍后重试")
 	}
-	return s.Detect(runCtx, accountID, modelID, onProgress)
+	return s.Detect(runCtx, accountID, modelID, retryPartial, onProgress)
 }
 
 // resolveBankFile 返回运行期下载的样本库文件路径。

@@ -449,7 +449,7 @@
                   :title="t('admin.accounts.fingerprint.ambiguousHint')"
                 >ⓘ</span>
                 <span class="rounded bg-primary-50 px-1.5 py-0.5 text-[11px] font-medium text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">
-                  {{ formatFingerprintPercent(fingerprintReport.analysis.probability) }}
+                  {{ fingerprintConfidenceLabel }}
                 </span>
                 <span class="text-[11px] text-gray-500 dark:text-gray-400">
                   {{ t('admin.accounts.fingerprint.family') }} {{ fingerprintReport.analysis.family_prediction_name }}
@@ -477,7 +477,7 @@
                     :title="t('admin.accounts.fingerprint.ambiguousHint')"
                   >ⓘ</span>
                   <span class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-600">
-                    <span class="block h-full rounded-full bg-primary-500" :style="{ width: fingerprintBarWidth(candidate.probability) }"></span>
+                    <span class="block h-full rounded-full bg-primary-500" :style="{ width: fingerprintBarWidth(candidate) }"></span>
                   </span>
                   <span class="w-12 shrink-0 text-right text-[11px] text-gray-500 dark:text-gray-400">
                     {{ formatFingerprintPercent(candidate.probability) }}
@@ -499,10 +499,21 @@
                 }}
               </button>
 
+              <div
+                v-if="fingerprintConfidenceUnavailable"
+                class="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
+                data-testid="fingerprint-confidence-unavailable"
+              >
+                {{ t('admin.accounts.fingerprint.confidenceUnavailable', {
+                  used: fingerprintReport.analysis.used_outputs,
+                  total: fingerprintReport.analysis.diagnostics.length
+                }) }}
+              </div>
+
               <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-gray-500 dark:text-gray-400" data-testid="fingerprint-evidence">
                 <span>{{ t('admin.accounts.fingerprint.samplesUsed', { used: fingerprintReport.analysis.used_outputs, total: fingerprintReport.analysis.diagnostics.length }) }}</span>
                 <span>{{ t('admin.accounts.fingerprint.bankModels', { count: fingerprintReport.bank.models }) }}</span>
-                <span>{{ t('admin.accounts.fingerprint.evidenceLabel') }}{{ fingerprintReport.analysis.evidence.label }}</span>
+                <span>{{ t('admin.accounts.fingerprint.evidenceLabel') }}{{ fingerprintVerdictLabel }}</span>
               </div>
 
               <div
@@ -610,7 +621,7 @@ import { useAppStore } from '@/stores/app'
 import type { Account, ClaudeModel } from '@/types'
 // FORK: 模型指纹检测（二开：走真实后端接口，不再是 mock）。
 // 调用走 adminAPI.accounts，与同文件其它账号接口一致，测试里也是同一个 mock 点。
-import type { FingerprintReport } from '@/api/admin/accounts'
+import type { FingerprintCandidate, FingerprintReport } from '@/api/admin/accounts'
 import { FeatureFlags, resolveFeatureFlag } from '@/utils/featureFlags'
 
 const { t } = useI18n()
@@ -757,7 +768,7 @@ const fingerprintElapsedMs = ref(0)
 const fingerprintShowAll = ref(false)
 // FORK-ANCHOR: test-modal-fingerprint-sample-progress (二开：检测中的样本进度)
 // 后端 exec fpd 时解析它的 TUI 进度行，逐条 SSE 推过来，用来显示「检测中(1/3)」。
-const fingerprintSamples = ref({ done: 0, total: 0 })
+const fingerprintSamples = ref({ done: 0, total: 0, attempt: 1 })
 const FINGERPRINT_TOP_N = 5
 let fingerprintTimer: ReturnType<typeof setInterval> | null = null
 // 用递增的 runId 作废掉上一次未完成的检测，避免连点两次后旧结果覆盖新结果
@@ -771,7 +782,13 @@ const fingerprintVisibleCandidates = computed(() => {
 const fingerprintStatusLabel = computed(() => {
   if (fingerprintStatus.value === 'running') {
     // 长空 2026-10-16：三个样本并发跑，显示「检测中(1/3)」让等待有进度感。
-    const { done, total } = fingerprintSamples.value
+    // attempt > 1 是自动补测第二轮，进度会从 0 重来，用「重试中」避免看着像倒退。
+    const { done, total, attempt } = fingerprintSamples.value
+    if (attempt > 1) {
+      return total > 0
+        ? t('admin.accounts.fingerprint.retryingWithProgress', { done, total })
+        : t('admin.accounts.fingerprint.running')
+    }
     return total > 0 ? t('admin.accounts.fingerprint.runningWithProgress', { done, total }) : t('admin.accounts.fingerprint.running')
   }
   if (fingerprintStatus.value === 'done') return t('admin.accounts.fingerprint.done')
@@ -801,14 +818,69 @@ const fingerprintElapsedLabel = computed(() =>
   fingerprintStatus.value === 'idle' ? '' : `${(fingerprintElapsedMs.value / 1000).toFixed(1)}s`
 )
 
-const formatFingerprintPercent = (probability: number) => `${(probability * 100).toFixed(1)}%`
+const formatFingerprintPercent = (probability: number | null) =>
+  probability == null ? '—' : `${(probability * 100).toFixed(1)}%`
 
-// 概率条按第一名归一化：否则第 3 名之后全是零宽，长尾候选在界面上完全看不见
-const fingerprintBarWidth = (probability: number) => {
-  const top = fingerprintReport.value?.analysis.results[0]?.probability ?? 0
-  if (top <= 0) return '0%'
-  return `${Math.max(1, Math.round((probability / top) * 100))}%`
+// 三档结论：3/3 才有正常置信度；2/3 低置信，1/3 很弱，都只给排名。
+const fingerprintConfidenceLabel = computed(() => {
+  const analysis = fingerprintReport.value?.analysis
+  if (!analysis) return ''
+  // 没有候选排行（不像语言模型回答 / 完全没排上名）时不冒充三档，直接显示占位。
+  if (analysis.results.length === 0) return '—'
+  if (analysis.probability != null) return formatFingerprintPercent(analysis.probability)
+  if (analysis.used_outputs >= analysis.diagnostics.length) return t('admin.accounts.fingerprint.confidenceUnavailableShort')
+  return analysis.used_outputs >= 2
+    ? t('admin.accounts.fingerprint.confidenceLow')
+    : t('admin.accounts.fingerprint.confidenceVeryLow')
+})
+
+// 部分样本排名时（有效回答不足 3 条）fpd 不返回置信度，所有 probability 都是 null。
+// 这时概率条按排名分做 min-max 归一化，至少还能看出候选之间的强弱。
+const fingerprintHasProbability = computed(
+  () => fingerprintReport.value?.analysis.results.some((candidate) => candidate.probability != null) ?? false
+)
+
+const fingerprintBarWidth = (candidate: FingerprintCandidate) => {
+  const results = fingerprintReport.value?.analysis.results ?? []
+  if (fingerprintHasProbability.value) {
+    const top = results[0]?.probability
+    if (top == null || top <= 0) return '0%'
+    return `${Math.max(1, Math.round(((candidate.probability ?? 0) / top) * 100))}%`
+  }
+  const scores = results.map((item) => item.score)
+  const min = Math.min(...scores)
+  const max = Math.max(...scores)
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return '100%'
+  return `${Math.max(1, Math.round(((candidate.score - min) / (max - min)) * 100))}%`
 }
+
+// 只有「有效回答不足 3 条」才是部分样本排名；未校准排名也可能没有概率，
+// 但那种情况样本是齐的，不能套用「补齐 3 条」的提示。
+const fingerprintConfidenceUnavailable = computed(() => {
+  const analysis = fingerprintReport.value?.analysis
+  return (
+    !!analysis &&
+    analysis.results.length > 0 &&
+    analysis.probability == null &&
+    analysis.used_outputs < analysis.diagnostics.length
+  )
+})
+
+// fpd 的 evidence.label 是英文，按 method 映射成中文；未知方法则原样显示。
+const FINGERPRINT_VERDICT_KEYS: Record<string, string> = {
+  'partial-sample-ranking': 'verdictPartial',
+  'reference-calibrated-ranking': 'verdictCalibrated',
+  'uncalibrated-ranking': 'verdictUncalibrated',
+  'sequence-shape': 'verdictNotModel',
+  'complete-three-answers': 'verdictUnscorable'
+}
+
+const fingerprintVerdictLabel = computed(() => {
+  const evidence = fingerprintReport.value?.analysis.evidence
+  if (!evidence) return ''
+  const key = FINGERPRINT_VERDICT_KEYS[evidence.method]
+  return key ? t(`admin.accounts.fingerprint.${key}`) : evidence.label
+})
 
 const fingerprintRawJson = computed(() =>
   fingerprintReport.value ? JSON.stringify(fingerprintReport.value, null, 2) : ''
@@ -829,7 +901,7 @@ const resetFingerprint = () => {
   fingerprintError.value = ''
   fingerprintElapsedMs.value = 0
   fingerprintShowAll.value = false
-  fingerprintSamples.value = { done: 0, total: 0 }
+  fingerprintSamples.value = { done: 0, total: 0, attempt: 1 }
 }
 
 const runFingerprint = async () => {
@@ -841,21 +913,23 @@ const runFingerprint = async () => {
   fingerprintError.value = ''
   fingerprintElapsedMs.value = 0
   fingerprintShowAll.value = false
-  fingerprintSamples.value = { done: 0, total: 0 }
+  fingerprintSamples.value = { done: 0, total: 0, attempt: 1 }
   const started = Date.now()
   fingerprintTimer = setInterval(() => {
     fingerprintElapsedMs.value = Date.now() - started
   }, 100)
   try {
-    // 真实检测：后端 exec lm-detector CLI，一次约 30-180 秒。
+    // 真实检测：后端 exec lm-detector CLI，一次约 30-180 秒；允许补测时更久。
     // 模型优先用当前下拉选中的那个 —— 那正是要验证「上游是不是真在提供它」的对象。
     const report = await adminAPI.accounts.runFingerprint(
       props.account.id,
       selectedModelId.value || undefined,
-      (completed, total) => {
+      (completed, total, attempt) => {
         // 只认当前这次检测的进度：连点两次时旧回调不能串进新结果。
-        if (runId === fingerprintRunId) fingerprintSamples.value = { done: completed, total }
-      }
+        if (runId === fingerprintRunId) fingerprintSamples.value = { done: completed, total, attempt }
+      },
+      // 单账号允许自动补测一次；批量不走这条路径，避免每个账号成本翻倍。
+      true
     )
     if (runId !== fingerprintRunId) return
     fingerprintReport.value = report

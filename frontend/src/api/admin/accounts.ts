@@ -674,7 +674,9 @@ export interface FingerprintCandidate {
   family: string
   family_name: string
   score: number
-  probability: number
+  // 部分样本排名（有效回答不足 3 条）时 fpd 返回 null，表示没有置信度，
+  // 不能当成 0% 显示。
+  probability: number | null
 }
 
 export interface FingerprintDiagnostic {
@@ -698,7 +700,7 @@ export interface FingerprintAnalysis {
   prediction_name: string
   family_prediction: string
   family_prediction_name: string
-  probability: number
+  probability: number | null
   probability_status: string
   probability_scope: string
   ranking_score: number
@@ -726,15 +728,19 @@ export interface FingerprintReport {
  * Run one real model-fingerprint detection against the account's upstream.
  *
  * 非流式，一次约 30-180 秒（后端 exec lm-detector CLI，真实向上游发 3 个请求）。
+ * 单账号允许补测时最多 6 个请求，整体上限约 10 分钟；批量不补测。
  * 批量场景由调用方按行并发发起，服务端有信号量限制同时运行的进程数。
  *
  * @param id - Account ID
  * @param modelId - 要检测的模型名；留空时后端从账号 model_mapping 里挑一个
+ * @param onProgress - 样本进度；attempt 是第几次尝试（自动补测时为 2）
+ * @param retryPartial - 只收到 1–2 条有效样本时是否允许自动补测一次（批量不传）
  */
 export async function runFingerprint(
   id: number,
   modelId?: string,
-  onProgress?: (completed: number, total: number) => void
+  onProgress?: (completed: number, total: number, attempt: number) => void,
+  retryPartial = false
 ): Promise<FingerprintReport> {
   // 后端返回 text/event-stream：先逐条推 progress（每个样本收尾一条），最后推 result 或 error。
   // 走 fetch 而不是 apiClient 是为了能边读边更新「检测中(1/3)」——axios 要等整个响应体读完。
@@ -746,7 +752,7 @@ export async function runFingerprint(
       'Content-Type': 'application/json',
       [ADMIN_UI_REQUEST_HEADER]: '1'
     },
-    body: JSON.stringify({ model_id: modelId ?? '' })
+    body: JSON.stringify({ model_id: modelId ?? '', retry_partial: retryPartial })
   })
 
   if (!response.ok) {
@@ -786,11 +792,12 @@ export async function runFingerprint(
             type?: string
             completed?: number
             total?: number
+            attempt?: number
             message?: string
             report?: FingerprintReport
           }
           if (payload.type === 'progress' && onProgress) {
-            onProgress(payload.completed ?? 0, payload.total ?? 0)
+            onProgress(payload.completed ?? 0, payload.total ?? 0, payload.attempt ?? 1)
           } else if (payload.type === 'result' && payload.report) {
             report = payload.report
           } else if (payload.type === 'error') {

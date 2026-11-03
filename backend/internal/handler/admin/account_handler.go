@@ -1442,12 +1442,16 @@ func (h *AccountHandler) BatchTest(c *gin.Context) {
 type FingerprintTestRequest struct {
 	// ModelID 是要拿去问上游的模型名。留空时后端从账号的 model_mapping 里挑一个。
 	ModelID string `json:"model_id"`
+	// RetryPartial 允许在只收到 1–2 条有效样本、或网络类失败时自动补测一次。
+	// 批量检测不传，避免每个账号的成本翻倍。
+	RetryPartial bool `json:"retry_partial"`
 }
 
 // Fingerprint runs one real model-fingerprint detection against the account's
 // upstream using the lm-detector CLI, and returns the trimmed report.
 //
 // 非流式：一次检测约 30-180 秒（fpd 默认三个样本并发，单请求超时 120 秒）。
+// 单账号允许补测时最多跑两轮，整体上限约 10 分钟。
 // 批量场景由前端按行并发调用本接口，服务端另有信号量限制同时运行的进程数。
 //
 // FORK-ANCHOR: fork-fingerprint-handler (二开：模型指纹检测)
@@ -1486,9 +1490,9 @@ func (h *AccountHandler) Fingerprint(c *gin.Context) {
 	}
 
 	report, err := h.fingerprintService.DetectWithTimeout(
-		c.Request.Context(), accountID, req.ModelID,
+		c.Request.Context(), accountID, req.ModelID, req.RetryPartial,
 		func(p service.FingerprintProgress) {
-			sendEvent(map[string]any{"type": "progress", "completed": p.Completed, "total": p.Total})
+			sendEvent(map[string]any{"type": "progress", "completed": p.Completed, "total": p.Total, "attempt": p.Attempt})
 		},
 	)
 	if err != nil {

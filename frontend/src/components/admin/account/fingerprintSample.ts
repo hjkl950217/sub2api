@@ -574,3 +574,34 @@ export const FINGERPRINT_SAMPLE: FingerprintReport = {
   }
 }
 
+// 部分样本排名：有效回答不足 3 条时 fpd 走 partial 分支，所有 probability 都是 null，
+// 只有排名分。真实检测里上游偶发两三个样本失败时就是这个形态。
+export const FINGERPRINT_PARTIAL_SAMPLE: FingerprintReport = {
+  ...FINGERPRINT_SAMPLE,
+  analysis: {
+    ...FINGERPRINT_SAMPLE.analysis,
+    probability: null,
+    probability_status: 'unavailable',
+    probability_scope: '',
+    used_outputs: 1,
+    calibration: {},
+    results: FINGERPRINT_SAMPLE.analysis.results.map((candidate) => ({ ...candidate, probability: null })),
+    evidence: {
+      insufficient: true,
+      label: 'Partial sample ranking',
+      reason: 'Ranked 1 valid sample. Confidence requires three valid samples.',
+      threshold: null,
+      method: 'partial-sample-ranking'
+    }
+  }
+}
+
+// 2/3 有效样本：与 1/3 同样没有置信度，但证据稍多，UI 标「低置信度」。
+export const FINGERPRINT_LOW_CONFIDENCE_SAMPLE: FingerprintReport = {
+  ...FINGERPRINT_PARTIAL_SAMPLE,
+  analysis: {
+    ...FINGERPRINT_PARTIAL_SAMPLE.analysis,
+    used_outputs: 2
+  }
+}
+

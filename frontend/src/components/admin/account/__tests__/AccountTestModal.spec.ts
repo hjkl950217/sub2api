@@ -2,7 +2,11 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountTestModal from '../AccountTestModal.vue'
 // FORK: 模型指纹测试区块的真实示例数据从样本模块取，断言落在真实结构上，不自己造一份假的
-import { FINGERPRINT_SAMPLE } from '../fingerprintSample'
+import {
+  FINGERPRINT_LOW_CONFIDENCE_SAMPLE,
+  FINGERPRINT_PARTIAL_SAMPLE,
+  FINGERPRINT_SAMPLE
+} from '../fingerprintSample'
 
 const { getAvailableModels, updateProbedProtocols, copyToClipboard, showSuccess, showError, runFingerprint } = vi.hoisted(() => ({
   getAvailableModels: vi.fn(),
@@ -763,6 +767,8 @@ describe('AccountTestModal 模型指纹测试', () => {
 
     expect(runFingerprint).toHaveBeenCalledTimes(1)
     expect(runFingerprint.mock.calls[0][0]).toBe(3285)
+    // 单账号允许自动补测；批量不走这条路径。
+    expect(runFingerprint.mock.calls[0][3]).toBe(true)
   })
 
   it('后台「模型检测」开关关掉时，整个指纹区块不渲染', async () => {
@@ -850,6 +856,52 @@ describe('AccountTestModal 模型指纹测试', () => {
       FINGERPRINT_SAMPLE.analysis.results.length
     )
     expect(FINGERPRINT_SAMPLE.analysis.results.length).toBe(59)
+  })
+
+  // 回归：有效回答不足 3 条时 fpd 返回 partial 排名，probability 全是 null。
+  // 后端以前把它落成 0，前端显示成 0.0%，看起来像「一个都不像」。
+  it('部分样本排名没有置信度：显示无置信度，不显示 0.0%，概率条按排名分归一化', async () => {
+    runFingerprint.mockResolvedValue(FINGERPRINT_PARTIAL_SAMPLE)
+    const wrapper = await open()
+    await wrapper.get('[data-testid="fingerprint-run-button"]').trigger('click')
+    await flushPromises()
+
+    const conclusion = wrapper.get('[data-testid="fingerprint-conclusion"]')
+    expect(conclusion.text()).toContain('admin.accounts.fingerprint.confidenceUnavailable')
+    expect(conclusion.text()).not.toContain('0.0%')
+    expect(conclusion.text()).toContain('admin.accounts.fingerprint.confidenceVeryLow')
+    expect(wrapper.get('[data-testid="fingerprint-prediction"]').text()).toBe('mimo-v2.5')
+
+    const first = wrapper.get('[data-testid="fingerprint-candidate-mimo-v2.5"]')
+    expect(first.text()).toContain('—')
+    expect((first.get('span.block').element as HTMLElement).style.width).toBe('100%')
+  })
+
+  it('2/3 有效样本标低置信度，1/3 标置信度很弱', async () => {
+    runFingerprint.mockResolvedValue(FINGERPRINT_LOW_CONFIDENCE_SAMPLE)
+    const wrapper = await open()
+    await wrapper.get('[data-testid="fingerprint-run-button"]').trigger('click')
+    await flushPromises()
+
+    const text = wrapper.get('[data-testid="fingerprint-conclusion"]').text()
+    expect(text).toContain('admin.accounts.fingerprint.confidenceLow')
+    expect(text).not.toContain('admin.accounts.fingerprint.confidenceVeryLow')
+  })
+
+  it('自动补测时进度显示「重试中」', async () => {
+    runFingerprint.mockImplementationOnce(
+      (_id: number, _model: string | undefined, onProgress?: (done: number, total: number, attempt: number) => void) => {
+        onProgress?.(0, 3, 2)
+        return new Promise(() => {})
+      }
+    )
+    const wrapper = await open()
+    await wrapper.get('[data-testid="fingerprint-run-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="fingerprint-status"]').text()).toBe(
+      'admin.accounts.fingerprint.retryingWithProgress'
+    )
   })
 
   it('点「开始测试」不触发指纹检测，也不清掉已有结论', async () => {
