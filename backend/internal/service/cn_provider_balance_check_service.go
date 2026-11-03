@@ -496,6 +496,8 @@ func (s *CNProviderBalanceCheckService) platforms() []string {
 }
 
 // activeAccountLister 已废弃的辅助接口（保留占位，勿在补扫里使用）。
+//
+//nolint:unused // 刻意保留的废弃占位，删除会改变后续补扫的接口约束。
 type activeAccountLister interface {
 	ListActive(ctx context.Context) ([]Account, error)
 }

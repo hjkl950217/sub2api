@@ -652,16 +652,16 @@ func (s *FingerprintService) runFingerprintCLI(
 // 「数字不够」这类模型行为不重试。
 func fingerprintRetryPlanFor(raw []byte, stderr string) (fingerprintRunPlan, bool) {
 	var text strings.Builder
-	text.WriteString(stderr)
+	_, _ = text.WriteString(stderr)
 	if len(bytes.TrimSpace(raw)) > 0 {
 		var parsed fingerprintRawReport
 		if err := json.Unmarshal(raw, &parsed); err == nil {
 			for _, round := range parsed.Rounds {
-				text.WriteString(" ")
-				text.WriteString(round.Error)
+				_, _ = text.WriteString(" ")
+				_, _ = text.WriteString(round.Error)
 				for _, sample := range round.Samples {
-					text.WriteString(" ")
-					text.WriteString(sample.Error)
+					_, _ = text.WriteString(" ")
+					_, _ = text.WriteString(sample.Error)
 				}
 			}
 		}
