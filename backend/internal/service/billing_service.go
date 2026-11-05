@@ -1818,14 +1818,22 @@ func normalizeCacheCreationBreakdown(tokens UsageTokens) (int, int) {
 	if cacheCreation1hTokens < 0 {
 		cacheCreation1hTokens = 0
 	}
-	if aggregate <= 0 || (cacheCreation5mTokens <= aggregate && cacheCreation1hTokens <= aggregate-cacheCreation5mTokens) {
+	if aggregate <= 0 {
 		return cacheCreation5mTokens, cacheCreation1hTokens
 	}
 
 	detailTotal := float64(cacheCreation5mTokens) + float64(cacheCreation1hTokens)
+	if detailTotal <= 0 {
+		return cacheCreation5mTokens, cacheCreation1hTokens
+	}
+
+	// 明细与聚合值不一致时按现有 5m/1h 比例补齐到聚合值：既覆盖明细大于聚合
+	// 的重复计费场景，也覆盖服务端工具多轮采样时明细小于聚合的漏计费场景。
 	normalized5mTokens := math.Round(float64(aggregate) * float64(cacheCreation5mTokens) / detailTotal)
 	if normalized5mTokens >= float64(aggregate) {
 		cacheCreation5mTokens = aggregate
+	} else if normalized5mTokens <= 0 {
+		cacheCreation5mTokens = 0
 	} else {
 		cacheCreation5mTokens = int(normalized5mTokens)
 	}
