@@ -188,7 +188,7 @@ func (s *OpenAIGatewayService) MergeGroupConfiguredCodexModels(
 		return nil
 	}
 
-	_, accounts, err := loadCodexGroupCatalogAccounts(ctx, s.accountRepo, group.ID)
+	visible, accounts, err := loadCodexGroupCatalogAccounts(ctx, s.accountRepo, group.ID)
 	if err != nil {
 		return fmt.Errorf("load group configured Codex models: %w", err)
 	}
