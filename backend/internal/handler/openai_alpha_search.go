@@ -127,6 +127,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 	searchID := strings.TrimSpace(gjson.GetBytes(body, "id").String())
 	sessionHash := h.gatewayService.GenerateSessionHashWithFallback(c, nil, searchID)
 	profitVetoCount := 0
+	capacityShedAttempts := 0
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
@@ -233,6 +234,14 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 				zap.Int64("account_id", account.ID),
 				zap.Int("upstream_status", failoverErr.StatusCode),
 			)
+			return
+		}
+		if capacityShedAttemptsExhausted(failoverErr, &capacityShedAttempts, h.maxCapacityShedAttempts()) {
+			reqLog.Warn("openai_alpha_search.capacity_shed_attempts_exhausted",
+				zap.Int64("account_id", account.ID),
+				zap.Int("attempts", capacityShedAttempts),
+			)
+			h.handleFailoverExhausted(c, failoverErr, false)
 			return
 		}
 		if failoverErr.RetryableOnSameAccount {
