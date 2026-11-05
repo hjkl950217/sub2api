@@ -52,6 +52,17 @@ describe('CNProviderBalanceCell', () => {
     expect(queryBalance).toHaveBeenCalledWith(account.id)
   })
 
+  it('keeps two decimals for balances of 100 and above', () => {
+    const bigAccount = {
+      ...account,
+      extra: { kimi_balance: 1106.5, kimi_balance_currency: 'USD' }
+    } as Account
+
+    const wrapper = mount(CNProviderBalanceCell, { props: { account: bigAccount } })
+
+    expect(wrapper.get('[data-test="cn-provider-balance-value"]').text()).toContain('USD 1106.50')
+  })
+
   it('shows the low-balance badge from the snapshot marker', () => {
     const lowAccount = {
       ...account,
