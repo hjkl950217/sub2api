@@ -30,8 +30,9 @@ func RegisterGatewayRoutes(
 	compositeResolver *service.CompositeRouteResolver,
 	cfg *config.Config,
 ) {
-	mediaBodyLimit := middleware.RequestBodyLimitWithDecompression(cfg.Gateway.MaxBodySize, cfg.Gateway.MaxDecompressedBodySize)
-	textBodyLimit := middleware.RequestBodyLimitWithDecompression(cfg.Gateway.TextMaxBodySize, cfg.Gateway.MaxDecompressedBodySize)
+	bodyMemoryBudget := pkghttputil.NewBodyMemoryBudget(cfg.Gateway.RequestBodyMemoryBudgetBytes)
+	mediaBodyLimit := middleware.RequestBodyLimitWithDecompression(cfg.Gateway.MaxBodySize, cfg.Gateway.MaxDecompressedBodySize, bodyMemoryBudget)
+	textBodyLimit := middleware.RequestBodyLimitWithDecompression(cfg.Gateway.TextMaxBodySize, cfg.Gateway.MaxDecompressedBodySize, bodyMemoryBudget)
 	contextLengthLimit := func(c *gin.Context) bool {
 		return middleware.RejectContextLengthExceeded(c, cfg.Gateway.ContextLengthLimitBytes)
 	}
@@ -580,6 +581,9 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 
 		body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 		if err != nil {
+			if middleware.RejectRequestBodyReadError(c, err) {
+				return
+			}
 			status := http.StatusBadRequest
 			message := "Failed to read request body"
 			var maxErr *http.MaxBytesError

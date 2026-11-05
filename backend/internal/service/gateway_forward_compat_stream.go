@@ -71,8 +71,9 @@ func newAnthropicCompatStream(cfg *config.Config, c *gin.Context, resp *http.Res
 		maxLineSize = cfg.Gateway.MaxLineSize
 	}
 	scanner.Buffer(make([]byte, 0, 64*1024), maxLineSize)
+	scanner.Split(newBoundedSSESplit(cfg, maxLineSize, nil))
 	stream := &anthropicCompatStream{
-		pump:        newAnthropicNativeLinePump(scanner, anthropicNativeStreamInterval(cfg)),
+		pump:        newAnthropicNativeLinePump(scanner, anthropicNativeStreamInterval(cfg), cfg),
 		body:        resp.Body,
 		maxLineSize: maxLineSize,
 		logPrefix:   logPrefix,
@@ -153,7 +154,10 @@ func (st *anthropicCompatStream) markTerminal() {
 		return
 	}
 	st.sawTerminal = true
-	st.pump.setDeadline(anthropicCompatTerminalUsageGrace)
+	// 缓冲式（非行泵）调用方直接构造 status，没有 pump，也没有可延长的读窗口。
+	if st.pump != nil {
+		st.pump.setDeadline(anthropicCompatTerminalUsageGrace)
+	}
 }
 
 // observe 记录决定收尾方式的上游事件。收到上游 error 事件时关闭上游 body，
