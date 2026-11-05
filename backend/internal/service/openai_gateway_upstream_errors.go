@@ -473,7 +473,6 @@ func (s *OpenAIGatewayService) newOpenAIAccountFailoverErrorWithClassificationHe
 	if limit := s.capacityShedSameAccountRetries(); limit > 0 && failoverErr.IsOpenAICapacityShed() {
 		failoverErr.SameAccountRetryMax = limit
 	}
-	}
 	return failoverErr
 }
 
