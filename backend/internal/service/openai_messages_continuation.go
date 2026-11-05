@@ -2,17 +2,20 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 type openAICompatSessionResponseBinding struct {
-	ResponseID string
-	TurnState  string
-	ExpiresAt  time.Time
+	ResponseID           string
+	TurnState            string
+	ContinuationDisabled bool
+	ExpiresAt            time.Time
 }
 
 func (b openAICompatSessionResponseBinding) sessionExpiresAt() time.Time { return b.ExpiresAt }
@@ -75,7 +78,7 @@ func (s *OpenAIGatewayService) getOpenAICompatSessionTurnState(_ context.Context
 		return ""
 	}
 	binding, ok := raw.(openAICompatSessionResponseBinding)
-	if !ok || strings.TrimSpace(binding.TurnState) == "" {
+	if !ok || strings.TrimSpace(binding.TurnState) == "" || binding.ContinuationDisabled {
 		return ""
 	}
 	if !binding.ExpiresAt.IsZero() && time.Now().After(binding.ExpiresAt) {
@@ -100,8 +103,157 @@ func (s *OpenAIGatewayService) bindOpenAICompatSessionTurnState(_ context.Contex
 	}
 	if raw, ok := s.openaiCompatSessionResponses.Load(key); ok {
 		if existing, ok := raw.(openAICompatSessionResponseBinding); ok {
+			if existing.ContinuationDisabled {
+				return
+			}
 			binding.ResponseID = existing.ResponseID
 		}
 	}
 	s.openaiCompatSessionResponses.Store(key, binding)
+}
+
+func isOpenAICompatPreviousResponseNotFound(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
+	if statusCode != http.StatusBadRequest && statusCode != http.StatusNotFound {
+		return false
+	}
+	check := func(s string) bool {
+		lower := strings.ToLower(strings.TrimSpace(s))
+		return strings.Contains(lower, "previous_response_not_found") ||
+			lower == "previous_response_id is not available for this user" ||
+			(strings.Contains(lower, "previous response") && strings.Contains(lower, "not found")) ||
+			(strings.Contains(lower, "unsupported parameter") && strings.Contains(lower, "previous_response_id"))
+	}
+	if check(upstreamMsg) || check(string(upstreamBody)) {
+		return true
+	}
+	return check(gjson.GetBytes(upstreamBody, "error.code").String()) ||
+		check(gjson.GetBytes(upstreamBody, "error.message").String())
+}
+
+func isOpenAICompatPreviousResponseUnsupported(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
+	if statusCode != http.StatusBadRequest {
+		return false
+	}
+	check := func(s string) bool {
+		lower := strings.ToLower(strings.TrimSpace(s))
+		if !strings.Contains(lower, "previous_response_id") {
+			return false
+		}
+		return strings.Contains(lower, "unsupported parameter") ||
+			strings.Contains(lower, "only supported on responses websocket") ||
+			strings.Contains(lower, "not supported") ||
+			strings.Contains(lower, "is not available for this user") ||
+			strings.Contains(lower, "requires an openai api-key account for http requests")
+	}
+	if check(upstreamMsg) || check(string(upstreamBody)) {
+		return true
+	}
+	return check(gjson.GetBytes(upstreamBody, "error.code").String()) ||
+		check(gjson.GetBytes(upstreamBody, "error.message").String())
+}
+
+// hasOpenAICompatSessionContinuation 报告该会话是否绑定过续写状态。
+func (s *OpenAIGatewayService) hasOpenAICompatSessionContinuation(c *gin.Context, account *Account, promptCacheKey string) bool {
+	if s == nil {
+		return false
+	}
+	key := openAICompatSessionResponseKey(c, account, promptCacheKey)
+	if key == "" {
+		return false
+	}
+	raw, ok := s.openaiCompatSessionResponses.Load(key)
+	if !ok {
+		return false
+	}
+	binding, ok := raw.(openAICompatSessionResponseBinding)
+	if !ok {
+		s.openaiCompatSessionResponses.Delete(key)
+		return false
+	}
+	if !binding.ExpiresAt.IsZero() && time.Now().After(binding.ExpiresAt) {
+		s.openaiCompatSessionResponses.Delete(key)
+		return false
+	}
+	return !binding.ContinuationDisabled &&
+		(strings.TrimSpace(binding.ResponseID) != "" || strings.TrimSpace(binding.TurnState) != "")
+}
+
+func (s *OpenAIGatewayService) deleteOpenAICompatSessionResponseID(_ context.Context, c *gin.Context, account *Account, promptCacheKey string) {
+	if s == nil {
+		return
+	}
+	key := openAICompatSessionResponseKey(c, account, promptCacheKey)
+	if key == "" {
+		return
+	}
+	raw, ok := s.openaiCompatSessionResponses.Load(key)
+	if !ok {
+		return
+	}
+	binding, ok := raw.(openAICompatSessionResponseBinding)
+	if !ok {
+		s.openaiCompatSessionResponses.Delete(key)
+		return
+	}
+	binding.ResponseID = ""
+	if strings.TrimSpace(binding.TurnState) == "" && !binding.ContinuationDisabled {
+		s.openaiCompatSessionResponses.Delete(key)
+		return
+	}
+	binding.ExpiresAt = time.Now().Add(s.openAIWSResponseStickyTTL())
+	s.openaiCompatSessionResponses.Store(key, binding)
+}
+
+func (s *OpenAIGatewayService) disableOpenAICompatSessionContinuation(_ context.Context, c *gin.Context, account *Account, promptCacheKey string) {
+	if s == nil {
+		return
+	}
+	key := openAICompatSessionResponseKey(c, account, promptCacheKey)
+	if key == "" {
+		return
+	}
+	binding := openAICompatSessionResponseBinding{
+		ContinuationDisabled: true,
+		ExpiresAt:            time.Now().Add(s.openAIWSResponseStickyTTL()),
+	}
+	if raw, ok := s.openaiCompatSessionResponses.Load(key); ok {
+		if existing, ok := raw.(openAICompatSessionResponseBinding); ok {
+			binding.TurnState = existing.TurnState
+		}
+	}
+	s.openaiCompatSessionResponses.Store(key, binding)
+}
+
+func (s *OpenAIGatewayService) isOpenAICompatSessionContinuationDisabled(_ context.Context, c *gin.Context, account *Account, promptCacheKey string) bool {
+	if s == nil {
+		return false
+	}
+	key := openAICompatSessionResponseKey(c, account, promptCacheKey)
+	if key == "" {
+		return false
+	}
+	raw, ok := s.openaiCompatSessionResponses.Load(key)
+	if !ok {
+		return false
+	}
+	binding, ok := raw.(openAICompatSessionResponseBinding)
+	if !ok {
+		return false
+	}
+	if !binding.ExpiresAt.IsZero() && time.Now().After(binding.ExpiresAt) {
+		s.openaiCompatSessionResponses.Delete(key)
+		return false
+	}
+	return binding.ContinuationDisabled
+}
+
+type openAICompatContinuationRetryKey struct{}
+
+func markOpenAICompatContinuationRetry(ctx context.Context) context.Context {
+	return context.WithValue(ctx, openAICompatContinuationRetryKey{}, true)
+}
+
+func openAICompatContinuationRetryTried(ctx context.Context) bool {
+	tried, _ := ctx.Value(openAICompatContinuationRetryKey{}).(bool)
+	return tried
 }
