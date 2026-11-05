@@ -123,11 +123,13 @@ func TestGatewayStreamingUndelimitedEventFailsWithoutSuccessfulTerminal(t *testi
 	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(wire))}
 	defer func() { _ = resp.Body.Close() }()
 	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", false)
-	require.ErrorIs(t, err, errSSETransportLimit)
-	require.NotNil(t, result)
-	require.Equal(t, 3, result.usage.InputTokens)
-	require.Contains(t, rec.Body.String(), "response_too_large")
-	require.NotContains(t, rec.Body.String(), "message_stop")
+	// FORK-ANCHOR: first-visible-output-failover
+	// 二开在首可见输出前遇到 SSE 传输上限时换号重试，而不是直接回 502。
+	var failover *UpstreamFailoverError
+	require.ErrorAs(t, err, &failover)
+	require.Equal(t, http.StatusBadGateway, failover.StatusCode)
+	require.Nil(t, result)
+	require.Empty(t, rec.Body.String())
 }
 
 func TestAnthropicNativePumpLargeLineBudgetAndStop(t *testing.T) {

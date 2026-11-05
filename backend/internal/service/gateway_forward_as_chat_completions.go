@@ -327,6 +327,11 @@ func (s *GatewayService) handleCCBufferedFromAnthropic(
 	streamStatus.readErr = scanner.Err()
 	if failure := streamStatus.failure(); failure != nil {
 		_ = resp.Body.Close()
+		// FORK-ANCHOR: compat-buffered-failover-on-no-usage
+		// 未观测到 usage 时不写响应，交给 handler 换号重试（issue #7797）。
+		if !claudeUsageObserved(usage) {
+			return nil, newAnthropicCompatBufferedFailoverError(failure.message)
+		}
 		writeGatewayCCError(c, http.StatusBadGateway, "server_error", failure.message)
 		return &ForwardResult{
 			RequestID: requestID, UpstreamHeaders: resp.Header, Usage: usage,

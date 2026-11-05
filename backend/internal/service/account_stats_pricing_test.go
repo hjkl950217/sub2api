@@ -907,7 +907,7 @@ func TestResolveAccountStatsCost_CompositeUsesResolvedTargetPlatform(t *testing.
 	result := resolveAccountStatsCost(
 		ctx,
 		cs, nil,
-		1, 10, "gpt-5.6-sol",
+		1, 10, []string{"gpt-5.6-sol"}, "gpt-5.6-sol",
 		UsageTokens{InputTokens: 100}, 1, 999.0, "", time.Time{}, true,
 	)
 	require.NotNil(t, result)
