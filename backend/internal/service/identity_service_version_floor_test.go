@@ -69,8 +69,39 @@ func TestGetOrCreateFingerprintFloorsStaleCachedUserAgent(t *testing.T) {
 	require.Equal(t, "claude-cli/"+claude.CLICurrentVersion+" (external, cli)", fp.UserAgent)
 	require.Equal(t, 1, cache.setCalls, "下限抬升必须持久化写回缓存")
 	require.Equal(t, "claude-cli/"+claude.CLICurrentVersion+" (external, cli)", cache.lastSet.UserAgent)
-	// X-Stainless-* 维持既有 merge 语义：客户端未携带时保留缓存中的真实值，不被下限逻辑覆盖。
-	require.Equal(t, "0.91.1", fp.StainlessPackageVersion)
+	// UA 被 floor 抬升后，SDK/运行时版本按新 CLI 版本同步，保证版本三元组自洽。
+	var expected Fingerprint
+	applyClaudeCLIRuntimeVersions(&expected, fp.UserAgent)
+	require.Equal(t, expected.StainlessPackageVersion, fp.StainlessPackageVersion)
+	require.Equal(t, expected.StainlessRuntimeVersion, fp.StainlessRuntimeVersion)
+}
+
+func TestApplyClaudeCLIRuntimeVersions(t *testing.T) {
+	for _, tc := range []struct {
+		ua        string
+		wantPkg   string
+		wantRt    string
+		wantApply bool
+	}{
+		{"claude-cli/2.1.220 (external, cli)", "0.94.0", "v26.3.0", true},
+		{"claude-cli/2.1.290 (external, cli)", "0.128.0", "v26.3.0", true},
+		{"claude-cli/2.1.311 (external, cli)", "0.128.0", "v26.12.1", true},
+		{"claude-cli/2.1.100 (external, cli)", "", "", false},
+		{"opencode/1.2.3 (external, cli)", "", "", false},
+	} {
+		t.Run(tc.ua, func(t *testing.T) {
+			fp := &Fingerprint{StainlessPackageVersion: "old", StainlessRuntimeVersion: "old"}
+			changed := applyClaudeCLIRuntimeVersions(fp, tc.ua)
+			require.Equal(t, tc.wantApply, changed)
+			if tc.wantApply {
+				require.Equal(t, tc.wantPkg, fp.StainlessPackageVersion)
+				require.Equal(t, tc.wantRt, fp.StainlessRuntimeVersion)
+			} else {
+				require.Equal(t, "old", fp.StainlessPackageVersion)
+				require.Equal(t, "old", fp.StainlessRuntimeVersion)
+			}
+		})
+	}
 }
 
 // 缓存版本高于下限：不得被降级，也不得触发多余写入。

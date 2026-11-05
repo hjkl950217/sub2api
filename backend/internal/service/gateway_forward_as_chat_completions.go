@@ -113,6 +113,9 @@ func (s *GatewayService) ForwardAsChatCompletions(
 	anthropicBody = applyResponsesAnthropicCacheBreakpoints(anthropicBody, mappedModel)
 	anthropicBody = enforceCacheControlLimit(anthropicBody)
 
+	// Anthropic API Key / 自定义 endpoint 的兼容路径补齐会话信号。
+	anthropicBody, compatSessionID := applyCompatAnthropicSessionID(anthropicBody, account, c, "")
+
 	// 8. Get access token
 	token, tokenType, err := s.GetAccessToken(ctx, account)
 	if err != nil {
@@ -131,6 +134,9 @@ func (s *GatewayService) ForwardAsChatCompletions(
 	releaseUpstreamCtx()
 	if err != nil {
 		return nil, fmt.Errorf("build upstream request: %w", err)
+	}
+	if compatSessionID != "" {
+		setHeaderRaw(upstreamReq.Header, "X-Claude-Code-Session-Id", compatSessionID)
 	}
 	// Bill the final Anthropic effort after conversion and account normalization.
 	// For example, OpenAI xhigh is forwarded as output_config.effort=max.
