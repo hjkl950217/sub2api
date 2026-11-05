@@ -406,7 +406,9 @@ func cnProviderResponseIndicatesOverloaded(responseBody []byte) bool {
 		return true
 	}
 	msg := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
-	return strings.Contains(msg, "server is busy")
+	return strings.Contains(msg, "server is busy") ||
+		strings.Contains(msg, "engine is currently overloaded") ||
+		strings.Contains(msg, "engine overloaded")
 }
 
 // applyCNProviderReactive429 处理国产供应商的 429 响应。

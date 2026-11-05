@@ -197,7 +197,7 @@ func isOpenAIRequestScopedCapacityShed(upstreamMsg string, upstreamBody []byte) 
 
 const openAIRequestScopedRetryMaxDelay = 8 * time.Second
 
-func openAIRequestScopedRetryDelay(responseHeaders http.Header, responseBody []byte) time.Duration {
+func openAIRequestScopedRetryAfter(responseHeaders http.Header, responseBody []byte) (time.Duration, bool) {
 	type retryAfterValue struct {
 		raw          string
 		milliseconds bool
@@ -224,12 +224,20 @@ func openAIRequestScopedRetryDelay(responseHeaders http.Header, responseBody []b
 		if !ok || delay <= 0 {
 			continue
 		}
-		if delay > openAIRequestScopedRetryMaxDelay {
-			return openAIRequestScopedRetryMaxDelay
-		}
-		return delay
+		return delay, true
 	}
-	return 0
+	return 0, false
+}
+
+func openAIRequestScopedRetryDelay(responseHeaders http.Header, responseBody []byte) time.Duration {
+	delay, ok := openAIRequestScopedRetryAfter(responseHeaders, responseBody)
+	if !ok {
+		return 0
+	}
+	if delay > openAIRequestScopedRetryMaxDelay {
+		return openAIRequestScopedRetryMaxDelay
+	}
+	return delay
 }
 
 func parseOpenAIRequestScopedRetryDelay(raw string) (time.Duration, bool) {
@@ -396,7 +404,15 @@ func newOpenAIUpstreamFailoverError(
 		RequestScopedTransient: requestScopedCapacity,
 	}
 	if requestScopedCapacity {
-		failoverErr.SameAccountRetryDelay = openAIRequestScopedRetryDelay(responseHeaders, responseBody)
+		if delay, ok := openAIRequestScopedRetryAfter(responseHeaders, responseBody); ok {
+			// 上游要求等待的时间超过本地上限时，继续同号重试只会立刻再撞 429/503；
+			// 保留请求级失败语义，直接换号。
+			if delay > openAIRequestScopedRetryMaxDelay {
+				failoverErr.RetryableOnSameAccount = false
+			} else {
+				failoverErr.SameAccountRetryDelay = delay
+			}
+		}
 	}
 	if isOpenAIRequestBodyTooLargeError(statusCode, upstreamMsg, responseBody) {
 		failoverErr.RetryableOnSameAccount = false

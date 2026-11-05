@@ -104,6 +104,19 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	// Capacity shedding describes this request, not account health. Keep the
 	// account schedulable while the request-local retry budget handles recovery.
 	if account != nil && account.Platform == PlatformOpenAI && isOpenAIRequestScopedCapacityShed("", responseBody) {
+		// 显式配置的模型级规则优先于默认保护；账号级规则仍按请求级降载处理。
+		model := firstRequestedModel(canonicalModel)
+		if s != nil && s.rateLimitService != nil && model != "" {
+			matches := matchTempUnschedulableRules(account, statusCode, responseBody)
+			if len(matches) > 0 && matches[0].rule.Scope == TempUnschedScopeModel {
+				stateCtx, cancel := openAIAccountStateContext(ctx)
+				defer cancel()
+				stateCtx = withTempUnschedulableModel(stateCtx, canonicalModel)
+				if s.rateLimitService.HandleTempUnschedulable(stateCtx, account, statusCode, responseBody, model) {
+					return true
+				}
+			}
+		}
 		return false
 	}
 	// OpenCode 模型容量拒绝由本次请求有限重试，不能按订阅额度快照冷却整个账号。

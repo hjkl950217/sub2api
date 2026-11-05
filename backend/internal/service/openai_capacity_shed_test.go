@@ -112,16 +112,17 @@ func TestOpenAIHTTPCapacityShedIsRequestScopedForOAuthAccounts(t *testing.T) {
 
 func TestOpenAICapacityShedHonorsRetryAfter(t *testing.T) {
 	for _, test := range []struct {
-		name    string
-		headers http.Header
-		body    string
-		want    time.Duration
+		name            string
+		headers         http.Header
+		body            string
+		want            time.Duration
+		wantSameAccount bool
 	}{
-		{name: "http seconds", headers: http.Header{"Retry-After": []string{"6"}}, want: 6 * time.Second},
-		{name: "http milliseconds", headers: http.Header{"Retry-After-Ms": []string{"6000"}}, want: 6 * time.Second},
-		{name: "body seconds", body: `{"error":{"headers":{"retry-after":"7"},"message":"Our servers are currently overloaded. Please try again later."}}`, want: 7 * time.Second},
-		{name: "body milliseconds", body: `{"response":{"error":{"headers":{"retry-after-ms":"7000"},"message":"Our servers are currently overloaded. Please try again later."}}}`, want: 7 * time.Second},
-		{name: "bounded", headers: http.Header{"Retry-After": []string{"60"}}, want: openAIRequestScopedRetryMaxDelay},
+		{name: "http seconds", headers: http.Header{"Retry-After": []string{"6"}}, want: 6 * time.Second, wantSameAccount: true},
+		{name: "http milliseconds", headers: http.Header{"Retry-After-Ms": []string{"6000"}}, want: 6 * time.Second, wantSameAccount: true},
+		{name: "body seconds", body: `{"error":{"headers":{"retry-after":"7"},"message":"Our servers are currently overloaded. Please try again later."}}`, want: 7 * time.Second, wantSameAccount: true},
+		{name: "body milliseconds", body: `{"response":{"error":{"headers":{"retry-after-ms":"7000"},"message":"Our servers are currently overloaded. Please try again later."}}}`, want: 7 * time.Second, wantSameAccount: true},
+		{name: "above cap switches account", headers: http.Header{"Retry-After": []string{"309"}}, wantSameAccount: false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			failoverErr := newOpenAIUpstreamFailoverError(
@@ -132,6 +133,7 @@ func TestOpenAICapacityShedHonorsRetryAfter(t *testing.T) {
 				false,
 			)
 			require.True(t, failoverErr.RequestScopedTransient)
+			require.Equal(t, test.wantSameAccount, failoverErr.RetryableOnSameAccount)
 			require.Equal(t, test.want, failoverErr.SameAccountRetryDelay)
 		})
 	}

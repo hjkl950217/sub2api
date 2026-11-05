@@ -849,3 +849,62 @@ func TestShouldStopOpenAIOAuth429Failover_TracksOneGrokFollowupAttempt(t *testin
 	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 0, &state))
 	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(apiKeyAccount, http.StatusTooManyRequests, 2, &state))
 }
+
+func capacityShedTempRuleAccount(id int64) *Account {
+	return &Account{ID: id, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{
+		"temp_unschedulable_enabled": true,
+		"temp_unschedulable_rules": []any{map[string]any{
+			"error_code":       503,
+			"keywords":         []any{"overloaded"},
+			"duration_minutes": 5,
+			"scope":            "model",
+		}},
+	}}
+}
+
+func TestOpenAIStream503OverloadedAppliesExplicitModelRule(t *testing.T) {
+	repo := &oauth429RateLimitRepo{}
+	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{rateLimitService: rateLimits}
+	rateLimits.SetAccountRuntimeBlocker(svc)
+	account := capacityShedTempRuleAccount(503)
+	payload := []byte(`{"type":"error","error":{"code":"server_is_overloaded","type":"service_unavailable_error","message":"Our servers are currently overloaded. Please try again later.","headers":{"retry-after":"328","retry-after-ms":"328000"}}}`)
+
+	status, shouldDisable := svc.handleOpenAIStreamTerminalAccountSideEffects(
+		nil, account, payload, "overloaded", http.Header{}, "gpt-5",
+	)
+
+	require.Equal(t, http.StatusServiceUnavailable, status)
+	require.True(t, shouldDisable)
+	require.Equal(t, 1, repo.setModelRateLimitCalls)
+	require.Equal(t, "gpt-5", repo.lastModelRateLimitKey)
+	require.Greater(t, time.Until(repo.lastModelRateLimitedUntil), 4*time.Minute)
+}
+
+func TestOpenAICapacityShedExplicitModelRuleWins(t *testing.T) {
+	repo := &oauth429RateLimitRepo{}
+	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{rateLimitService: rateLimits}
+	account := capacityShedTempRuleAccount(504)
+	body := []byte(`{"error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}`)
+
+	require.True(t, svc.handleOpenAIAccountUpstreamError(
+		context.Background(), account, http.StatusServiceUnavailable, http.Header{}, body, "gpt-5",
+	))
+	require.Equal(t, 1, repo.setModelRateLimitCalls)
+	require.Equal(t, "gpt-5", repo.lastModelRateLimitKey)
+}
+
+func TestOpenAICapacityShedWithoutRulesStaysRequestScoped(t *testing.T) {
+	repo := &oauth429RateLimitRepo{}
+	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{rateLimitService: rateLimits}
+	account := &Account{ID: 505, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	body := []byte(`{"error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}`)
+
+	require.False(t, svc.handleOpenAIAccountUpstreamError(
+		context.Background(), account, http.StatusServiceUnavailable, http.Header{}, body, "gpt-5",
+	))
+	require.Zero(t, repo.setModelRateLimitCalls)
+	require.Zero(t, repo.setRateLimitedCalls)
+}

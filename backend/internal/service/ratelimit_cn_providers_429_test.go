@@ -22,6 +22,7 @@ func TestApplyCNProviderReactive429_OverloadedFallsBackToDefault(t *testing.T) {
 	bodies := []string{
 		`{"type":"error","error":{"type":"overloaded_error","message":"server is busy, please retry later"}}`,
 		`{"error":{"message":"Server is busy, please retry later"}}`,
+		`{"error":{"message":"The engine is currently overloaded. Please try again later."}}`,
 	}
 	accounts := []*Account{
 		{
@@ -71,6 +72,8 @@ func TestCNProviderResponseIndicatesOverloaded(t *testing.T) {
 		[]byte(`{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`)))
 	require.True(t, cnProviderResponseIndicatesOverloaded(
 		[]byte(`{"error":{"message":"server is busy, please retry later"}}`)))
+	require.True(t, cnProviderResponseIndicatesOverloaded(
+		[]byte(`{"error":{"message":"The engine is currently overloaded. Please try again later."}}`)))
 	require.False(t, cnProviderResponseIndicatesOverloaded(
 		[]byte(`{"error":{"type":"rate_limit_error","message":"usage limit reached"}}`)))
 	require.False(t, cnProviderResponseIndicatesOverloaded(

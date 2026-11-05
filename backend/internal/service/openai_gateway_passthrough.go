@@ -1627,7 +1627,7 @@ func openAIStreamErrorEventShouldFailover(payload []byte, message string) bool {
 	switch openAIStreamFailedEventSemanticStatus(payload, message) {
 	case http.StatusForbidden:
 		return openAIStream403AccountFailure(payload, message)
-	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusTooManyRequests, 529:
+	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusTooManyRequests, http.StatusServiceUnavailable, 529:
 		return true
 	}
 	if isOpenAITransientProcessingError(http.StatusBadRequest, message, payload) {
@@ -1662,7 +1662,7 @@ func (s *OpenAIGatewayService) handleOpenAIStreamTerminalAccountSideEffects(
 			return statusCode, false
 		}
 		fallthrough
-	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusTooManyRequests, 529:
+	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusTooManyRequests, http.StatusServiceUnavailable, 529:
 		ctx := context.Background()
 		if c != nil && c.Request != nil {
 			ctx = c.Request.Context()
