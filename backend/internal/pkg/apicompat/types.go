@@ -468,12 +468,21 @@ type ResponsesOutput struct {
 }
 
 // MarshalJSON keeps message and tool_search_call items consistent with their
-// streamed representation. Other output types retain their default encoding.
+// streamed representation；reasoning 项始终携带 summary 数组（即使只有签名），
+// 其余输出类型保留默认编码。
 func (o ResponsesOutput) MarshalJSON() ([]byte, error) {
 	if o.Type == "message" || o.Type == "tool_search_call" {
 		return json.Marshal(responsesItemWire(&o))
 	}
 	type responsesOutputAlias ResponsesOutput
+	// Terminal responses must retain summary:[] for signature-only reasoning.
+	// An explicit field overrides the alias's omitempty without a JSON round trip.
+	if o.Type == "reasoning" && len(o.Summary) == 0 {
+		return json.Marshal(struct {
+			responsesOutputAlias
+			Summary []ResponsesSummary `json:"summary"`
+		}{responsesOutputAlias: responsesOutputAlias(o), Summary: []ResponsesSummary{}})
+	}
 	return json.Marshal(responsesOutputAlias(o))
 }
 

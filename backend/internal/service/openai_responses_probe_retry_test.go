@@ -21,14 +21,15 @@ func (s *stubResponsesProbeLister) ListByPlatform(context.Context, string) ([]Ac
 
 func TestOpenAIResponsesProbeRetryRunOnceProbesOnlyUnknownAPIKeys(t *testing.T) {
 	lister := &stubResponsesProbeLister{accounts: []Account{
-		{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
-		{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{
+		{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive},
+		{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Extra: map[string]any{
 			openai_compat.ExtraKeyResponsesSupported: true,
 		}},
-		{ID: 3, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
-		{ID: 4, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{
+		{ID: 3, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive},
+		{ID: 4, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Extra: map[string]any{
 			openai_compat.ExtraKeyResponsesMode: string(openai_compat.ResponsesSupportModeForceChatCompletions),
 		}},
+		{ID: 5, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusDisabled},
 	}}
 	var probed []int64
 	svc := NewOpenAIResponsesProbeRetryService(lister, func(_ context.Context, accountID int64) {
