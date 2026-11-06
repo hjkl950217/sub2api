@@ -224,6 +224,7 @@ func (s *OpenAIGatewayService) disableOpenAICompatSessionContinuation(_ context.
 	s.openaiCompatSessionResponses.Store(key, binding)
 }
 
+//nolint:unused // 仅供 openai_gateway_messages_cn_policy_test.go 断言会话绑定状态
 func (s *OpenAIGatewayService) isOpenAICompatSessionContinuationDisabled(_ context.Context, c *gin.Context, account *Account, promptCacheKey string) bool {
 	if s == nil {
 		return false

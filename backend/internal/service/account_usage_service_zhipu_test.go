@@ -206,10 +206,10 @@ func TestGetZhipuUsage_DegradesToSnapshotWhenProbeFails(t *testing.T) {
 	stale := time.Now().Add(-zhipuCodingSnapshotStaleAfter - time.Hour).UTC().Format(time.RFC3339)
 	account := codingAccount(PlatformZhipu)
 	account.Extra = map[string]any{
-		"zhipu_5h_used_percent":     float64(30),
-		"zhipu_5h_reset_at":         time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
-		"zhipu_weekly_used_percent": float64(60),
-		"zhipu_weekly_reset_at":     time.Now().Add(12 * time.Hour).UTC().Format(time.RFC3339),
+		"zhipu_5h_used_percent":                              float64(30),
+		"zhipu_5h_reset_at":                                  time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		"zhipu_weekly_used_percent":                          float64(60),
+		"zhipu_weekly_reset_at":                              time.Now().Add(12 * time.Hour).UTC().Format(time.RFC3339),
 		cnExtraKey(PlatformZhipu, cnExtraSuffixUsageUpdated): stale,
 	}
 
@@ -247,9 +247,9 @@ func TestGetZhipuUsage_FreshSnapshotSkipsProbe(t *testing.T) {
 
 	account := codingAccount(PlatformZhipu)
 	account.Extra = map[string]any{
-		"zhipu_5h_used_percent":                                 float64(10),
-		"zhipu_weekly_used_percent":                             float64(40),
-		cnExtraKey(PlatformZhipu, cnExtraSuffixUsageUpdated):   time.Now().Format(time.RFC3339),
+		"zhipu_5h_used_percent":                              float64(10),
+		"zhipu_weekly_used_percent":                          float64(40),
+		cnExtraKey(PlatformZhipu, cnExtraSuffixUsageUpdated): time.Now().Format(time.RFC3339),
 	}
 
 	repo := &zhipuQuotaTestRepo{fakeCNProbeAccountRepo: fakeCNProbeAccountRepo{account: account}}
@@ -282,10 +282,10 @@ func TestGetZhipuUsage_AttachesWindowStats(t *testing.T) {
 	resetAt := time.Now().Add(90 * time.Minute).UTC().Truncate(time.Second)
 	account := codingAccount(PlatformZhipu)
 	account.Extra = map[string]any{
-		"zhipu_5h_used_percent":                     float64(25),
-		"zhipu_5h_reset_at":                         resetAt.Format(time.RFC3339),
-		"zhipu_weekly_used_percent":                 float64(50),
-		"zhipu_weekly_reset_at":                     resetAt.Add(24 * time.Hour).Format(time.RFC3339),
+		"zhipu_5h_used_percent":                              float64(25),
+		"zhipu_5h_reset_at":                                  resetAt.Format(time.RFC3339),
+		"zhipu_weekly_used_percent":                          float64(50),
+		"zhipu_weekly_reset_at":                              resetAt.Add(24 * time.Hour).Format(time.RFC3339),
 		cnExtraKey(PlatformZhipu, cnExtraSuffixUsageUpdated): time.Now().Format(time.RFC3339),
 	}
 

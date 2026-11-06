@@ -1146,7 +1146,7 @@ func (s *AccountUsageService) getAntigravityUsage(ctx context.Context, account *
 	refreshStarted := time.Now()
 	if s.antigravityQuotaFetcher == nil || !s.antigravityQuotaFetcher.CanFetch(account) {
 		if forceProbe {
-			return nil, fmt.Errorf("Antigravity usage query is unavailable")
+			return nil, fmt.Errorf("antigravity usage query is unavailable")
 		}
 		now := time.Now()
 		return &UsageInfo{UpdatedAt: &now}, nil
@@ -1199,10 +1199,10 @@ func (s *AccountUsageService) getAntigravityUsage(ctx context.Context, account *
 		}
 
 		if fetchResult == nil || fetchResult.UsageInfo == nil {
-			return nil, fmt.Errorf("Antigravity usage API returned an empty snapshot")
+			return nil, fmt.Errorf("antigravity usage API returned an empty snapshot")
 		}
 		if forceProbe && !antigravityUsageFailed(fetchResult.UsageInfo) && len(fetchResult.UsageInfo.AntigravityQuota) == 0 {
-			return nil, fmt.Errorf("Antigravity usage API returned an empty snapshot")
+			return nil, fmt.Errorf("antigravity usage API returned an empty snapshot")
 		}
 		enrichUsageWithAccountError(fetchResult.UsageInfo, account)
 		s.cache.antigravityCache.Store(account.ID, &antigravityUsageCache{

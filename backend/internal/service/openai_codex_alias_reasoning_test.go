@@ -13,7 +13,11 @@ func codexReasoningEfforts(t *testing.T, model map[string]any) []string {
 	require.True(t, ok, "supported_reasoning_levels missing: %#v", model)
 	efforts := make([]string, 0, len(raw))
 	for _, level := range raw {
-		efforts = append(efforts, level.(map[string]any)["effort"].(string))
+		levelMap, ok := level.(map[string]any)
+		require.True(t, ok, "reasoning level is not an object: %#v", level)
+		effort, ok := levelMap["effort"].(string)
+		require.True(t, ok, "effort is not a string: %#v", levelMap["effort"])
+		efforts = append(efforts, effort)
 	}
 	return efforts
 }

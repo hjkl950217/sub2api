@@ -229,17 +229,6 @@ func openAIRequestScopedRetryAfter(responseHeaders http.Header, responseBody []b
 	return 0, false
 }
 
-func openAIRequestScopedRetryDelay(responseHeaders http.Header, responseBody []byte) time.Duration {
-	delay, ok := openAIRequestScopedRetryAfter(responseHeaders, responseBody)
-	if !ok {
-		return 0
-	}
-	if delay > openAIRequestScopedRetryMaxDelay {
-		return openAIRequestScopedRetryMaxDelay
-	}
-	return delay
-}
-
 func parseOpenAIRequestScopedRetryDelay(raw string) (time.Duration, bool) {
 	if seconds, err := strconv.ParseFloat(raw, 64); err == nil && seconds > 0 {
 		return time.Duration(seconds * float64(time.Second)), true
