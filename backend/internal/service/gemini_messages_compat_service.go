@@ -2054,6 +2054,12 @@ func (s *GeminiMessagesCompatService) writeGeminiMappedError(c *gin.Context, acc
 		}
 	}
 
+	// 尽量把上游原文回传客户端：401 保留通用文案（上游可能回显 key 片段），
+	// 其余状态在有可读 message 时优先用它。只改文案，不影响调度与失败分类。
+	if upstreamStatus != http.StatusUnauthorized && upstreamMsg != "" {
+		errMsg = upstreamMsg
+	}
+
 	c.JSON(statusCode, gin.H{
 		"type":  "error",
 		"error": gin.H{"type": errType, "message": errMsg},

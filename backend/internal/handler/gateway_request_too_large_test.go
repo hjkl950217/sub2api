@@ -44,7 +44,11 @@ func TestGatewayFailoverExhausted_RequestTooLarge(t *testing.T) {
 					}, service.PlatformAnthropic, streamStarted)
 				}
 
-				const wantBody = `{"type":"error","error":{"type":"request_too_large","message":"Request exceeds the upstream size limit"}}`
+				// 有 body 时透传上游可读 message；无 body 的简化路径保持固定文案。
+				wantBody := `{"type":"error","error":{"type":"request_too_large","message":"Request exceeds the maximum allowed size of 32 MB"}}`
+				if simple {
+					wantBody = `{"type":"error","error":{"type":"request_too_large","message":"Request exceeds the upstream size limit"}}`
+				}
 				if streamStarted {
 					require.Equal(t, http.StatusOK, rec.Code)
 					errorEvent := strings.TrimPrefix(rec.Body.String(), "event: ping\ndata: {}\n\ndata: ")

@@ -1986,6 +1986,13 @@ func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *se
 
 	// 使用默认的错误映射
 	status, errType, errMsg := h.mapUpstreamError(statusCode)
+	// 尽量把上游原文回传客户端：401 保留通用文案（上游可能回显 key 片段），
+	// 其余状态在有可读 message 时优先用它。只改文案，不影响换号与账号状态。
+	if statusCode != http.StatusUnauthorized {
+		if msg := service.UpstreamClientMessageText(responseBody); msg != "" {
+			errMsg = msg
+		}
+	}
 	h.handleStreamingAwareError(c, status, errType, errMsg, streamStarted)
 }
 

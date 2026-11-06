@@ -64,7 +64,8 @@ func TestGatewayForward_RequestTooLarge(t *testing.T) {
 				require.Equal(t, 1, upstream.calls, "a size rejection should not retry the same request")
 				require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
 				require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
-				require.JSONEq(t, `{"type":"error","error":{"type":"request_too_large","message":"Request exceeds the upstream size limit"}}`, rec.Body.String())
+				// 上游 413 的可读 message 直接透传（2026-11-06 需求）。
+				require.JSONEq(t, `{"type":"error","error":{"type":"request_too_large","message":"Request exceeds the maximum allowed size of 32 MB"}}`, rec.Body.String())
 				require.True(t, IsResponseCommitted(c))
 				require.Equal(t, http.StatusRequestEntityTooLarge, c.GetInt(OpsUpstreamStatusCodeKey))
 			})
@@ -99,7 +100,12 @@ func TestGatewayHandleErrorResponse_RequestTooLarge(t *testing.T) {
 				var failoverErr *UpstreamFailoverError
 				require.NotErrorAs(t, err, &failoverErr)
 				require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
-				require.JSONEq(t, `{"type":"error","error":{"type":"request_too_large","message":"Request exceeds the upstream size limit"}}`, rec.Body.String())
+				// 有可读上游 message 时透传；HTML/空/畸形体回退固定文案。
+				wantMessage := "Request exceeds the upstream size limit"
+				if name == "structured" {
+					wantMessage = "Request exceeds the maximum allowed size of 32 MB"
+				}
+				require.JSONEq(t, `{"type":"error","error":{"type":"request_too_large","message":"`+wantMessage+`"}}`, rec.Body.String())
 				require.True(t, IsResponseCommitted(c))
 				require.Equal(t, http.StatusRequestEntityTooLarge, c.GetInt(OpsUpstreamStatusCodeKey))
 				if name == "structured" {

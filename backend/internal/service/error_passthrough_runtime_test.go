@@ -60,7 +60,8 @@ func TestGatewayHandleErrorResponse_NoRuleKeepsDefault(t *testing.T) {
 	errField, ok := payload["error"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "upstream_error", errField["type"])
-	assert.Equal(t, "Upstream request failed", errField["message"])
+	// 无透传规则时不再回固定文案：上游可读 message 直接透传（2026-11-06 需求）。
+	assert.Equal(t, "Invalid schema for field messages", errField["message"])
 }
 
 func TestOpenAIHandleErrorResponse_NoRuleKeepsDefault(t *testing.T) {
@@ -86,7 +87,52 @@ func TestOpenAIHandleErrorResponse_NoRuleKeepsDefault(t *testing.T) {
 	errField, ok := payload["error"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "upstream_error", errField["type"])
-	assert.Equal(t, "Upstream request failed", errField["message"])
+	assert.Equal(t, "Invalid schema for field messages", errField["message"])
+}
+
+// 上游可读文案透传：403 的网络安全策略原文必须到达客户端，而不是通用提示。
+func TestGatewayHandleErrorResponse_ForbiddenPassesThroughUpstreamMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	svc := &GatewayService{}
+	resp := &http.Response{
+		StatusCode: http.StatusForbidden,
+		Body:       io.NopCloser(bytes.NewReader([]byte(`{"type":"error","error":{"type":"permission_error","message":"该会话已被网络安全策略屏蔽，请开启新会话"}}`))),
+		Header:     http.Header{},
+	}
+	account := &Account{ID: 21, Platform: PlatformAnthropic, Type: AccountTypeAPIKey}
+
+	_, err := svc.handleErrorResponse(context.Background(), resp, c, account)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusBadGateway, rec.Code)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	errField, ok := payload["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "upstream_error", errField["type"])
+	assert.Equal(t, "该会话已被网络安全策略屏蔽，请开启新会话", errField["message"])
+}
+
+// 401 例外：上游可能回显 key 片段，保留通用文案。
+func TestGatewayHandleErrorResponse_UnauthorizedKeepsGenericMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	svc := &GatewayService{}
+	resp := &http.Response{
+		StatusCode: http.StatusUnauthorized,
+		Body:       io.NopCloser(bytes.NewReader([]byte(`{"error":{"message":"Incorrect API key provided: sk-secret"}}`))),
+		Header:     http.Header{},
+	}
+	account := &Account{ID: 22, Platform: PlatformAnthropic, Type: AccountTypeAPIKey}
+
+	_, err := svc.handleErrorResponse(context.Background(), resp, c, account)
+	require.Error(t, err)
+	assert.NotContains(t, rec.Body.String(), "sk-secret")
+	assert.Contains(t, rec.Body.String(), "Upstream authentication failed")
 }
 
 func TestOpenAIHandleErrorResponse_ContextWindow502KeepsMessageWithoutFailover(t *testing.T) {
@@ -136,7 +182,7 @@ func TestGeminiWriteGeminiMappedError_NoRuleKeepsDefault(t *testing.T) {
 	errField, ok := payload["error"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "invalid_request_error", errField["type"])
-	assert.Equal(t, "Upstream request failed", errField["message"])
+	assert.Equal(t, "Invalid schema for field messages", errField["message"])
 }
 
 func TestGatewayHandleErrorResponse_AppliesRuleFor422(t *testing.T) {

@@ -590,7 +590,8 @@ func TestResponsesGrok429FailoverIsBounded(t *testing.T) {
 		require.Equal(t, []int64{801, 802}, repo.rateLimitedAccountIDs())
 		require.NotContains(t, recorder.Body.String(), "expired")
 		require.NotContains(t, recorder.Body.String(), "healthy-access")
-		require.NotContains(t, recorder.Body.String(), "rate limited")
+		// 上游 429 文案透传给客户端（2026-11-06 需求：只改文案，换号边界不变）。
+		require.Contains(t, recorder.Body.String(), "rate limited")
 	})
 }
 
@@ -634,7 +635,7 @@ func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
 
 		require.Equal(t, http.StatusBadGateway, recorder.Code, recorder.Body.String())
 		require.Equal(t, []int64{801, 802}, upstream.accountHits())
-		require.NotContains(t, recorder.Body.String(), "upstream unavailable")
+		require.Contains(t, recorder.Body.String(), "upstream unavailable")
 	})
 
 	t.Run("500 then 429 permits one healthy followup", func(t *testing.T) {
@@ -691,7 +692,7 @@ func TestGrokMedia429FailoverIsBounded(t *testing.T) {
 
 		require.Equal(t, http.StatusTooManyRequests, recorder.Code, recorder.Body.String())
 		require.Equal(t, []int64{801, 802}, upstream.accountHits())
-		require.NotContains(t, recorder.Body.String(), "rate limited")
+		require.Contains(t, recorder.Body.String(), "rate limited")
 	})
 }
 

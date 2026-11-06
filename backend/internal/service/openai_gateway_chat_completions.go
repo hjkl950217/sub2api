@@ -459,7 +459,13 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 			zap.Int("upstream_status", resp.StatusCode),
 		)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	// 先取消上游上下文再关 body：阻塞中的上游 Read 依赖 ctx.Done 退出，
+	// 反过来会让 Close 等到超时（回归：上游 PR #8401 的重试循环把两者拆成了
+	// 两个 defer，LIFO 顺序变成先 Close 后 Cancel）。
+	defer func() {
+		cancelUpstream()
+		_ = resp.Body.Close()
+	}()
 
 	// 8. Handle error response with failover
 	if resp.StatusCode >= 400 {

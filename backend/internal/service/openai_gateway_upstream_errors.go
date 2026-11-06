@@ -847,6 +847,13 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	if isOpenAIContextWindowError(upstreamMsg, body) && upstreamMsg != "" {
 		errMsg = upstreamMsg
 	}
+	// 尽量把上游原文回传客户端：401 保留通用文案（上游可能回显 key 片段），
+	// 其余状态在有可读 message 时优先用它。只改文案，不影响调度与失败分类。
+	if resp.StatusCode != http.StatusUnauthorized {
+		if msg := UpstreamClientMessageText(body); msg != "" {
+			errMsg = msg
+		}
+	}
 
 	c.JSON(statusCode, gin.H{
 		"error": gin.H{

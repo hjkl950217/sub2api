@@ -219,20 +219,21 @@ func TestHandleErrorResponse_NonDeterministicStatusesKeepGeneric502(t *testing.T
 		wantType   string
 		wantMsg    string
 	}{
-		// 404/405 可能是上游 base_url 配错（运营方问题），不当成客户端错误暴露。
+		// 404/405 可能是上游 base_url 配错（运营方问题），状态码仍归一为 502，
+		// 但有可读 message 时透传给客户端便于定位（2026-11-06 需求）。
 		{"not_found", http.StatusNotFound, `{"error":{"message":"Unknown request URL"}}`,
-			http.StatusBadGateway, "upstream_error", "Upstream request failed"},
+			http.StatusBadGateway, "upstream_error", "Unknown request URL"},
 		{"unprocessable", http.StatusUnprocessableEntity, `{"error":{"message":"Invalid schema for field messages"}}`,
-			http.StatusBadGateway, "upstream_error", "Upstream request failed"},
-		// 401/402/403 是网关运营方的凭据/账单问题，必须继续对客户端屏蔽上游账号状态。
-		// 403 的自由文本不能升级成 durable access-state typed failover；只有明确结构化 code 才可以。
+			http.StatusBadGateway, "upstream_error", "Invalid schema for field messages"},
+		// 401 保持通用文案：上游可能回显 key 片段，不能透传。
 		{"unauthorized", http.StatusUnauthorized, `{"error":{"message":"Incorrect API key provided: sk-abc"}}`,
 			http.StatusBadGateway, "upstream_error", "Upstream authentication failed, please contact administrator"},
+		// 402/403 的凭据/账单类可读文案同样透传。
 		{"forbidden", http.StatusForbidden, `{"error":{"message":"Your account is deactivated"}}`,
-			http.StatusBadGateway, "upstream_error", "Upstream access forbidden, please contact administrator"},
-		// 429 保持独立映射。
+			http.StatusBadGateway, "upstream_error", "Your account is deactivated"},
+		// 429 保持独立状态码映射，文案透传。
 		{"rate_limited", http.StatusTooManyRequests, `{"error":{"message":"Rate limit reached"}}`,
-			http.StatusTooManyRequests, "rate_limit_error", "Upstream rate limit exceeded, please retry later"},
+			http.StatusTooManyRequests, "rate_limit_error", "Rate limit reached"},
 	}
 
 	for _, tc := range cases {

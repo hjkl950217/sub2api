@@ -1212,3 +1212,24 @@ python -m unittest discover -s .github/release-tools -p 'test_release_matrix.py'
 ```
 
 该套件在本机有 4 个用例必然失败，与代码改动无关：3 个依赖真实 `bash` 执行 `release-images.sh`（本机 `bash` 只是未安装 WSL 的占位程序），1 个依赖 POSIX 文件权限（NTFS 上 `chmod 0o755` 不生效）。在 ubuntu runner 上正常。
+
+## 8. Go 编译与测试的资源限制（强制，长空 2026-11-06 定）
+
+本机 12 个逻辑核，`go build` / `go test` 默认按核数并行，单条命令就能吃满 CPU 并挤占内存。
+所有 Go 命令一律带上限，不要裸跑 `go test ./...`：
+
+```powershell
+$env:GOMAXPROCS = '4'   # 单个测试进程内的并发上限
+go build -p 2 ./...
+go test -tags=unit -p 2 ./internal/service -run TestXxx -count=1
+```
+
+- `-p` 管「同时编译/测试的包数」，`GOMAXPROCS` 管「单包内的并行」，两个都要设。
+- 全量包测试把 `-p` 控制在 2-4；定向测试用 `-p 2`。
+- 需要硬隔离时用进程亲和性（compile 等子进程会继承）：
+```powershell
+$p = Start-Process go -ArgumentList 'test','-tags','unit','-p','2','./...' -PassThru -NoNewWindow
+$p.ProcessorAffinity = 0x00FF   # 只用逻辑核 0-7
+$p.PriorityClass = 'BelowNormal'
+$p.WaitForExit()
+```

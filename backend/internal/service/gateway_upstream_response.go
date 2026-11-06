@@ -313,6 +313,17 @@ func extractUpstreamErrorMessage(body []byte) string {
 	return gjson.GetBytes(body, "message").String()
 }
 
+// UpstreamClientMessageText 返回可回传客户端的上游错误文案：提取上游 message、
+// 脱敏敏感查询参数并截断。返回空串时调用方应继续使用默认的状态码映射文案。
+func UpstreamClientMessageText(body []byte) string {
+	msg := strings.TrimSpace(extractUpstreamErrorMessage(body))
+	if msg == "" {
+		return ""
+	}
+	msg = sanitizeUpstreamErrorMessage(msg)
+	return truncateForLog([]byte(msg), 512)
+}
+
 func extractUpstreamErrorCode(body []byte) string {
 	if code := strings.TrimSpace(gjson.GetBytes(body, "error.code").String()); code != "" {
 		return code
@@ -515,6 +526,13 @@ func (s *GatewayService) handleErrorResponse(ctx context.Context, resp *http.Res
 		statusCode = http.StatusBadGateway
 		errType = "upstream_error"
 		errMsg = "Upstream request failed"
+	}
+	// 尽量把上游原文回传客户端：401 保留通用文案（上游可能回显 key 片段），
+	// 其余状态在有可读 message 时优先用它。只改文案，不影响调度与失败分类。
+	if resp.StatusCode != http.StatusUnauthorized {
+		if msg := UpstreamClientMessageText(body); msg != "" {
+			errMsg = msg
+		}
 	}
 
 	// 返回自定义错误响应
