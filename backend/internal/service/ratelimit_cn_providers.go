@@ -367,14 +367,30 @@ func isCNProviderQuotaExhausted429(account *Account, responseBody []byte) bool {
 	if account == nil || !account.IsCNProvider() || !account.IsCodingPlan() || len(responseBody) == 0 {
 		return false
 	}
+	return cnProviderBodyHasQuotaExhaustion429Marker(responseBody)
+}
+
+// cnQuotaExhaustion429Markers 是 429 响应里能确定「额度/窗口配额耗尽」的文案特征。
+// 只收确定性信号：智谱等国产上游用中文报窗口耗尽（如「您的5小时额度已用尽」），
+// 原来的英文清单匹配不到，这类 429 会被当成动态限流只给 5 秒兜底冷却，
+// 账号随后立刻被重新选中、继续返回 429（上游 issue #8399）。
+var cnQuotaExhaustion429Markers = []string{
+	"weekly (7-day) usage limit",
+	"7-day usage limit",
+	"5-hour usage limit",
+	"quota will reset",
+	"usage limit for this billing cycle",
+	"额度已用尽",
+	"额度用尽",
+	"额度耗尽",
+	"额度已达上限",
+	"用量已达上限",
+	"使用量已达上限",
+}
+
+func cnProviderBodyHasQuotaExhaustion429Marker(responseBody []byte) bool {
 	body := strings.ToLower(string(responseBody))
-	for _, marker := range []string{
-		"weekly (7-day) usage limit",
-		"7-day usage limit",
-		"5-hour usage limit",
-		"quota will reset",
-		"usage limit for this billing cycle",
-	} {
+	for _, marker := range cnQuotaExhaustion429Markers {
 		if strings.Contains(body, marker) {
 			return true
 		}
@@ -450,6 +466,18 @@ func (s *RateLimitService) applyCNProviderReactive429(
 	// 1) 余额不足文案：可恢复临时停调（含智谱 payg 这类无余额端点的场景）。
 	if cnProviderResponseIndicatesInsufficientBalance(responseBody) {
 		s.handleCNProviderInsufficientBalance(ctx, account, extractUpstreamErrorMessage(responseBody))
+		return true
+	}
+	// 1.5) 非 Coding Plan（payg）账号的额度耗尽 429：没有窗口快照可依，按余额不足
+	// 同口径临时停调。此前这类 429 落到秒级兜底冷却（默认 5 秒），冷却过后账号立刻
+	// 被重新选中、继续拿到同一个 429，表现为「限流不切号」（上游 issue #8399）。
+	if !account.IsCodingPlan() && cnProviderBodyHasQuotaExhaustion429Marker(responseBody) {
+		reason := cnQuotaExhaustedReasonPrefix
+		if msg := strings.TrimSpace(extractUpstreamErrorMessage(responseBody)); msg != "" {
+			reason += ": " + msg
+		}
+		until := time.Now().Add(s.cnBalanceCooldownDuration())
+		s.setCNProviderTempUnschedulable(ctx, account, until, cnQuotaExhaustedReasonPrefix, reason, "cn_quota_exhausted_429_payg")
 		return true
 	}
 	// 2) 频率型 429（"速率限制"/"请求频率"）：与滚动窗口额度无关，交给默认 429
