@@ -2319,13 +2319,15 @@ func TestChatCompletionsMappedPromptCacheOptionsCompatibility(t *testing.T) {
 		require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_breakpoint").Exists())
 		require.False(t, gjson.GetBytes(upstream.lastBody, "input.0.prompt_cache_breakpoint").Exists())
 		require.False(t, gjson.GetBytes(upstream.lastBody, "input.0.content.0.prompt_cache_breakpoint").Exists())
-		require.Equal(t, "keep", gjson.GetBytes(upstream.lastBody, "input.1.prompt_cache_breakpoint").String())
+		// FORK-ANCHOR: prompt-cache-hint-scope (二开：item 级缓存提示一律清理，
+		// arguments 字符串内的同名字段保持原样)
+		require.False(t, gjson.GetBytes(upstream.lastBody, "input.1.prompt_cache_breakpoint").Exists())
 		require.Contains(t, gjson.GetBytes(upstream.lastBody, "input.1.arguments").String(), "prompt_cache_breakpoint")
 		require.Contains(t, gjson.GetBytes(upstream.lastBody, "tools").Raw, "prompt_cache_breakpoint")
 		require.Equal(t, "keep-key", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
 	})
 
-	t.Run("non GPT keeps explicit cache hints", func(t *testing.T) {
+	t.Run("unsupported model strips explicit cache hints", func(t *testing.T) {
 		body := []byte(`{"model":"public","stream":false,"prompt_cache_options":{"mode":"explicit"},"prompt_cache_key":"keep-key","messages":[{"role":"user","content":[{"type":"text","text":"hello","prompt_cache_breakpoint":true}]}]}`)
 		response := "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_test\",\"model\":\"custom-model\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"ok\"}]}],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n"
 		upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(response))}}
@@ -2337,8 +2339,25 @@ func TestChatCompletionsMappedPromptCacheOptionsCompatibility(t *testing.T) {
 		result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "keep-key", "")
 		require.NoError(t, err)
 		require.NotNil(t, result)
+		require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_options").Exists())
+		require.False(t, gjson.GetBytes(upstream.lastBody, "input.0.content.0.prompt_cache_breakpoint").Exists())
+		require.Equal(t, "keep-key", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+	})
+
+	// 账号显式声明 prompt_cache_hints=allow 时保留显式缓存提示（上游 #8401 的逃生阀）。
+	t.Run("credential allow keeps explicit cache hints", func(t *testing.T) {
+		body := []byte(`{"model":"public","stream":false,"prompt_cache_options":{"mode":"explicit"},"prompt_cache_key":"keep-key","messages":[{"role":"user","content":[{"type":"text","text":"hello","prompt_cache_breakpoint":true}]}]}`)
+		response := "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_test\",\"model\":\"custom-model\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"ok\"}]}],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n"
+		upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(response))}}
+		svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+		account := &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1, Credentials: map[string]any{"api_key": "fixture-key", "base_url": "https://api.openai.com", "prompt_cache_hints": "allow", "model_mapping": map[string]any{"public": "custom-model"}}}
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+
+		result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "keep-key", "")
+		require.NoError(t, err)
+		require.NotNil(t, result)
 		require.Equal(t, "explicit", gjson.GetBytes(upstream.lastBody, "prompt_cache_options.mode").String())
 		require.True(t, gjson.GetBytes(upstream.lastBody, "input.0.content.0.prompt_cache_breakpoint").Bool())
-		require.Equal(t, "keep-key", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
 	})
 }
