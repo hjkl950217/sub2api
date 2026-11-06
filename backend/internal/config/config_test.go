@@ -2806,3 +2806,14 @@ func TestLoadMaxCapacityShedSameAccountRetries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, cfg.Gateway.MaxCapacityShedSameAccountRetries)
 }
+
+func TestLoadAnthropicImageGuard(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.False(t, cfg.Gateway.AnthropicImageGuardEnabled)
+	t.Setenv("GATEWAY_ANTHROPIC_IMAGE_GUARD_ENABLED", "true")
+	cfg, err = Load()
+	require.NoError(t, err)
+	require.True(t, cfg.Gateway.AnthropicImageGuardEnabled)
+}
