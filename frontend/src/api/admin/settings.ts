@@ -1461,6 +1461,7 @@ export interface RectifierSettings {
   enabled: boolean;
   thinking_signature_enabled: boolean;
   thinking_budget_enabled: boolean;
+  max_tokens_enabled: boolean;
   apikey_signature_enabled: boolean;
   apikey_signature_patterns: string[];
 }
