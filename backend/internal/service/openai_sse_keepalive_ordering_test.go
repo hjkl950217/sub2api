@@ -69,9 +69,10 @@ func TestOpenAIResponseFlush_KeepaliveDoesNotJumpBufferedFrame(t *testing.T) {
 	waitOpenAIResponseFlushSignal(t, burstWaiting)
 	close(allowBurst)
 
-	// 读侧停在终止帧前，主循环空转，心跳拍子（1s）必然到点。
+	// 读侧停在终止帧前，主循环空转。等两个心跳周期：上一次下游写入可能刚
+	// 落在首个 tick 之前不到 1ms，time.Since 不足一个间隔会被跳过。
 	waitOpenAIResponseFlushSignal(t, terminalWaiting)
-	time.Sleep(1500 * time.Millisecond)
+	time.Sleep(2500 * time.Millisecond)
 	close(allowTerminal)
 
 	<-errCh
