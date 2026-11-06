@@ -134,6 +134,7 @@ deploy/docker-compose.override.yml
 vite.config.js
 docs/*
 !docs/agent-resource-safety.md
+!docs/ANTHROPIC_API_VERSION.md
 !docs/admin-api-keys.md
 !docs/mcp.md
 !docs/PAYMENT.md

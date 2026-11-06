@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -57,7 +58,7 @@ func TestAnthropicMessagesURL_EntryPoints(t *testing.T) {
 				require.Equal(t, "Bearer upstream-anthropic-key", getHeaderRaw(req.Header, "authorization"))
 				require.Empty(t, getHeaderRaw(req.Header, "x-api-key"))
 				require.Equal(t, "synthetic-gateway", getHeaderRaw(req.Header, "cf-aig-gateway-id"))
-				require.Equal(t, "2023-06-01", getHeaderRaw(req.Header, "anthropic-version"))
+				require.Equal(t, claude.DefaultAPIVersion, getHeaderRaw(req.Header, "anthropic-version"))
 			}
 			svc := &GatewayService{cfg: &config.Config{}}
 			t.Run("forward", func(t *testing.T) {

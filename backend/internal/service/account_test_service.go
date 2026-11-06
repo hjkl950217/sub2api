@@ -704,6 +704,10 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
 	}
+	apiVersion := resolveAnthropicAPIVersion(nil, account)
+	if apiVersion == claude.DefaultAPIVersion {
+		delete(payload, "temperature")
+	}
 	payloadBytes, _ := json.Marshal(payload)
 
 	// Send test_start event
@@ -714,7 +718,28 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		return s.sendErrorAndEnd(c, "Failed to create request")
 	}
 
-	applyClaudeAccountTestHeaders(req, account, authToken)
+	// Set common headers
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("anthropic-version", apiVersion)
+
+	// Apply Claude Code client headers
+	for key, value := range claude.DefaultHeaders() {
+		req.Header.Set(key, value)
+	}
+
+	// Set authentication header
+	if account.IsOAuth() {
+		req.Header.Set("anthropic-beta", claude.DefaultBetaHeader)
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	} else {
+		req.Header.Set("anthropic-beta", claude.APIKeyBetaHeader)
+		// Ollama Cloud Anthropic 兼容端点按实际 base_url 强制 Bearer，
+		// 其余保持 extra/default 行为。
+		setAnthropicAPIKeyAuthHeader(req.Header, account, authToken, account.GetBaseURL())
+	}
+
+	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
+	account.ApplyHeaderOverrides(req.Header)
 
 	// Get proxy URL
 	proxyURL := ""
