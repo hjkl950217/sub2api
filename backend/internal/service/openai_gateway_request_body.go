@@ -2656,7 +2656,7 @@ func supportsOpenAIReasoningEffortMax(model string) bool {
 	}
 }
 
-// validateGPT61SolCompatRequest runs after model mapping, before conversion can
+// validateGPT61CompatRequest runs after model mapping, before conversion can
 // discard unsupported explicit effort selections or disabled thinking.
 func hasEffectiveGPT61SolCompatEffort(body []byte) bool {
 	for _, path := range []string{"reasoning.effort", "reasoning_effort"} {
@@ -2669,24 +2669,26 @@ func hasEffectiveGPT61SolCompatEffort(body []byte) bool {
 	return outputEffort.Type == gjson.String && outputEffort.String() != ""
 }
 
-func validateGPT61SolCompatRequest(body []byte, model string) error {
-	if !openai.IsGPT61SolModelSpelling(model) {
+func validateGPT61CompatRequest(body []byte, model string) error {
+	isSol := openai.IsGPT61SolModelSpelling(model)
+	isTerra := openai.IsGPT61TerraModelSpelling(model)
+	if !isSol && !isTerra {
 		return nil
 	}
 	for _, path := range []string{"reasoning.effort", "reasoning_effort", "output_config.effort"} {
-		if err := openai.ValidateGPT61SolReasoningEffort(model, gjson.GetBytes(body, path).String()); err != nil {
+		if err := openai.ValidateGPT61ReasoningEffort(model, gjson.GetBytes(body, path).String()); err != nil {
 			return err
 		}
 	}
 	if gjson.GetBytes(body, "thinking.type").String() == "disabled" {
-		return openai.ValidateGPT61SolReasoningEffort(model, "none")
+		return openai.ValidateGPT61ReasoningEffort(model, "none")
 	}
 	// Only a canonical GPT-6.1 Sol effort alias can supply an implicit effort.
 	// Arbitrary client aliases (for example "public-none") may map to this
 	// upstream model and must not be parsed as model-effort syntax.
 	// Match the normalization gates: null/empty reasoning fields do not override;
 	// output_config whitespace is non-empty and does suppress the alias suffix.
-	if !hasEffectiveGPT61SolCompatEffort(body) {
+	if isSol && !hasEffectiveGPT61SolCompatEffort(body) {
 		requestedModel := openai.CanonicalizeOpenAIModelAliasSpelling(gjson.GetBytes(body, "model").String())
 		if openai.IsGPT61SolModelSpelling(requestedModel) {
 			if effort, ok := strings.CutPrefix(requestedModel, "gpt-6.1-sol-"); ok && effort != "openai-compact" {
@@ -2694,5 +2696,19 @@ func validateGPT61SolCompatRequest(body []byte, model string) error {
 			}
 		}
 	}
+	// Terra: 模型名带 -none / -minimal 后缀时，后缀即隐式 effort（minimal 不被支持）。
+	if isTerra {
+		requestedModel := gjson.GetBytes(body, "model").String()
+		for _, effort := range []string{"none", "minimal"} {
+			if strings.HasSuffix(strings.ToLower(requestedModel), "-"+effort) {
+				return openai.ValidateGPT61ReasoningEffort(model, effort)
+			}
+		}
+	}
 	return nil
+}
+
+// validateGPT61SolCompatRequest 是 Sol 专用旧入口，保留供二开既有调用点与测试使用。
+func validateGPT61SolCompatRequest(body []byte, model string) error {
+	return validateGPT61CompatRequest(body, model)
 }
