@@ -288,6 +288,16 @@ func ProvideAccountTestService(
 	return service
 }
 
+// ProvideOpenAIResponsesProbeRetryService 构造并启动 Responses 能力补探测任务（上游 issue #8356）。
+func ProvideOpenAIResponsesProbeRetryService(
+	accountRepo AccountRepository,
+	accountTestService *AccountTestService,
+) *OpenAIResponsesProbeRetryService {
+	svc := NewOpenAIResponsesProbeRetryService(accountRepo, accountTestService.ProbeOpenAIAPIKeyResponsesSupport)
+	svc.Start()
+	return svc
+}
+
 func ProvideGrokQuotaService(
 	accountRepo AccountRepository,
 	proxyRepo ProxyRepository,
@@ -922,6 +932,7 @@ var ProviderSet = wire.NewSet(
 	ProvideRateLimitService,
 	ProvideAccountUsageService,
 	ProvideAccountTestService,
+	ProvideOpenAIResponsesProbeRetryService,
 	ProvideUpstreamBillingProbeService,
 	ProvideOllamaCloudUsageService,
 	ProvideOpenCodeGoUsageService,
