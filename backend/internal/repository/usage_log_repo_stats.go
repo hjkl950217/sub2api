@@ -569,6 +569,9 @@ func (r *usageLogRepository) GetBatchAPIKeyUsageStats(ctx context.Context, apiKe
 		result[id] = &BatchAPIKeyUsageStats{APIKeyID: id}
 	}
 
+	// 查询形态由 migration 249 的 idx_usage_logs_api_key_created_cost
+	// (api_key_id, created_at) INCLUDE (actual_cost) 覆盖，可走 index-only scan
+	// （上游 issue #8528 的慢接口）。created_at 上不要再套函数，否则索引失效。
 	query := `
 		SELECT
 			api_key_id,
