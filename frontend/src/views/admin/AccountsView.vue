@@ -1991,15 +1991,15 @@ function getAntigravityTierClass(row: any): string {
 
 // All available columns
 const allColumns = computed(() => {
-  // FORK-ANCHOR: account-column-widths (二开：ID/容量/调度/优先级/倍率/最近用等内容短，按内容收窄)
+  // FORK-ANCHOR: account-column-widths (二开：短列表头禁止折行，列宽由标题单行宽度决定)
   const c = [
     { key: 'select', label: '', sortable: false },
     { key: 'name', label: t('admin.accounts.columns.name'), sortable: true },
-    { key: 'id', label: t('admin.accounts.columns.id'), sortable: true, class: 'w-16' },
+    { key: 'id', label: t('admin.accounts.columns.id'), sortable: true, class: 'w-24 whitespace-nowrap' },
     { key: 'platform_type', label: t('admin.accounts.columns.platformType'), sortable: false },
-    { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false, class: 'w-24' },
+    { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false, class: 'w-20 whitespace-nowrap' },
     { key: 'status', label: t('admin.accounts.columns.status'), sortable: true },
-    { key: 'schedulable', label: t('admin.accounts.columns.schedulable'), sortable: true, class: 'w-14' },
+    { key: 'schedulable', label: t('admin.accounts.columns.schedulable'), sortable: true, class: 'w-16 whitespace-nowrap' },
     { key: 'today_stats', label: t('admin.accounts.columns.todayStats'), sortable: false }
   ]
   if (!authStore.isSimpleMode) {
@@ -2008,11 +2008,11 @@ const allColumns = computed(() => {
   c.push({ key: 'usage', label: t('admin.accounts.columns.usageWindows'), sortable: false })
   c.push(
     { key: 'proxy', label: t('admin.accounts.columns.proxy'), sortable: false },
-    { key: 'priority', label: t('admin.accounts.columns.priority'), sortable: true, class: 'w-24' },
+    { key: 'priority', label: t('admin.accounts.columns.priority'), sortable: true, class: 'w-24 whitespace-nowrap' },
     { key: 'scheduler_score', label: t('admin.accounts.columns.schedulerScore'), sortable: false },
-    { key: 'rate_multiplier', label: t('admin.accounts.columns.billingRateMultiplier'), sortable: true, class: 'w-20' },
-    { key: 'upstream_billing_rate', label: t('admin.accounts.columns.upstreamBillingRate'), sortable: true, class: 'w-20' },
-    { key: 'last_used_at', label: t('admin.accounts.columns.lastUsed'), sortable: true, class: 'w-20' },
+    { key: 'rate_multiplier', label: t('admin.accounts.columns.billingRateMultiplier'), sortable: true, class: 'w-24 whitespace-nowrap' },
+    { key: 'upstream_billing_rate', label: t('admin.accounts.columns.upstreamBillingRate'), sortable: true, class: 'w-24 whitespace-nowrap' },
+    { key: 'last_used_at', label: t('admin.accounts.columns.lastUsed'), sortable: true, class: 'w-20 whitespace-nowrap' },
     { key: 'created_at', label: t('admin.accounts.columns.createdAt'), sortable: true },
     { key: 'expires_at', label: t('admin.accounts.columns.expiresAt'), sortable: true },
     { key: 'notes', label: t('admin.accounts.columns.notes'), sortable: false },
