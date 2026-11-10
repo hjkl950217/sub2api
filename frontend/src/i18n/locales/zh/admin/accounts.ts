@@ -420,9 +420,13 @@ export default {
           currencyPlaceholder: '币种（默认 USD）',
           divisorPlaceholder: '换算除数（默认 500000，one-api 约定）',
           hint: '数组类响应把路径写到数组后按下标取第一项，例如 data.0.quota。探测失败会保留上次快照并显示错误。',
+          cookiePlaceholder: '登录 Cookie（浏览器请求头里的 Cookie；留空表示不修改）',
+          userIdPlaceholder: 'New-Api-User 用户 ID',
+          cookieHint: '读取账户余额（/api/user/self），不是令牌额度。每次探测会用响应里的 Set-Cookie 自动续期；Cookie 失效时需手动更新。',
           scripts: {
             auto: '自动（推荐）',
             newapi: 'New API / One API',
+            newapiCookie: 'New API / One API + Cookie',
             sub2api: 'Sub2API',
             deepseek: 'DeepSeek 官网',
             kimi: 'Kimi 官网',
@@ -646,7 +650,7 @@ export default {
         passiveSampled: '被动采样',
         activeQuery: '查询',
         showingLastData: '查询失败，显示上次数据',
-        refreshFailedSummary: '{count} 个账号额度查询失败，已保留上次数据。',
+        refreshFailedSummary: '{count} 个账号额度查询失败：{names}。已保留上次数据。',
         estimatedTotalCost: '预计总费用 ${cost}',
         estimatedTotalCostTooltip: '根据当前窗口费用和使用率估算达到 100% 使用率时的总费用'
       },

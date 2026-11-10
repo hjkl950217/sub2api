@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -27,13 +28,17 @@ const (
 	balanceProbeCurrencyKey  = "balance_probe_currency"
 	balanceProbeDivisorKey   = "balance_probe_divisor"
 	balanceProbeAvailableKey = "balance_probe_available_path"
+	// FORK-ANCHOR: balance-probe-newapi-cookie (二开：New API/One API 用户余额探测的登录凭据)
+	balanceProbeCookieKey = "balance_probe_cookie"
+	balanceProbeUserIDKey = "balance_probe_user_id"
 
-	balanceProbeScriptAuto     = "auto"
-	balanceProbeScriptKimi     = "kimi"
-	balanceProbeScriptDeepSeek = "deepseek"
-	balanceProbeScriptNewAPI   = "newapi"
-	balanceProbeScriptSub2API  = "sub2api"
-	balanceProbeScriptCustom   = "custom"
+	balanceProbeScriptAuto         = "auto"
+	balanceProbeScriptKimi         = "kimi"
+	balanceProbeScriptDeepSeek     = "deepseek"
+	balanceProbeScriptNewAPI       = "newapi"
+	balanceProbeScriptNewAPICookie = "newapi_cookie"
+	balanceProbeScriptSub2API      = "sub2api"
+	balanceProbeScriptCustom       = "custom"
 
 	defaultNewAPIBalancePath     = "data.quota"
 	defaultNewAPIBalanceCurrency = "USD"
@@ -46,11 +51,12 @@ const (
 // balanceProbeScripts 脚本登记表。新增脚本只加一条，探测流程（鉴权、出站校验、
 // 快照落盘、错误处理）不复制。
 var balanceProbeScripts = map[string]balanceProbeSpec{
-	balanceProbeScriptKimi:     {probe: singleGETBalanceProbe(kimiBalanceURL, parseKimiBalance)},
-	balanceProbeScriptDeepSeek: {probe: singleGETBalanceProbe(deepseekBalanceURL, parseDeepSeekBalance)},
-	balanceProbeScriptNewAPI:   {probe: fetchNewAPIBalance},
-	balanceProbeScriptSub2API:  {probe: singleGETBalanceProbe(sub2APIBalanceURL, parseSub2APIBalance)},
-	balanceProbeScriptCustom:   {probe: singleGETBalanceProbe(customBalanceURL, parseCustomBalance)},
+	balanceProbeScriptKimi:         {probe: singleGETBalanceProbe(kimiBalanceURL, parseKimiBalance)},
+	balanceProbeScriptDeepSeek:     {probe: singleGETBalanceProbe(deepseekBalanceURL, parseDeepSeekBalance)},
+	balanceProbeScriptNewAPI:       {probe: fetchNewAPIBalance},
+	balanceProbeScriptNewAPICookie: {probe: fetchNewAPICookieBalance},
+	balanceProbeScriptSub2API:      {probe: singleGETBalanceProbe(sub2APIBalanceURL, parseSub2APIBalance)},
+	balanceProbeScriptCustom:       {probe: singleGETBalanceProbe(customBalanceURL, parseCustomBalance)},
 }
 
 // balanceProbeAutoOrder auto 首次探测顺序：New API 最通用，Sub2API 其次，
@@ -270,7 +276,8 @@ func fetchNewAPIBalance(ctx context.Context, s *CNProviderBalanceService, accoun
 		if !ok {
 			return nil, true, fmt.Errorf("missing total_usage")
 		}
-		return []CNProviderBalanceEntry{{Currency: currency, Balance: used}}, true, nil
+		// FORK-ANCHOR: balance-probe-usage-cents (二开：OpenAI 计费口径的 total_usage 以美分为单位)
+		return []CNProviderBalanceEntry{{Currency: currency, Balance: used / 100}}, true, nil
 	})
 	if err != nil || !usage.Success {
 		return usage, err
@@ -282,6 +289,113 @@ func fetchNewAPIBalance(ctx context.Context, s *CNProviderBalanceService, accoun
 	result.Balance = remaining
 	result.Balances = []CNProviderBalanceEntry{{Currency: currency, Balance: remaining}}
 	return result, nil
+}
+
+// --- New API / One API + Cookie ---
+//
+// API Key 读不到用户余额（/api/user/self 走用户鉴权），但登录态可以：
+// GET /api/user/self + Cookie + New-Api-User → data.quota / data.used_quota。
+// 与 newapi 脚本的区别：这里是账户余额，不是令牌额度；受限的 API 令牌
+// 会把 subscription 的 hard_limit_usd 写成无限哨兵，账户余额仍可读。
+//
+// Cookie 随每次探测刷新：响应若带 Set-Cookie 就合并回凭据，4xx 时保留旧值
+// 并把失败原因落盘，等下次手动更新 Cookie。
+
+func newAPICookieBalanceURL(account *Account) string {
+	base := strings.TrimRight(strings.TrimSpace(account.GetOpenAIFormatBaseURL()), "/")
+	base = strings.TrimSuffix(base, "/v1")
+	if base == "" {
+		return ""
+	}
+	return base + "/api/user/self"
+}
+
+func fetchNewAPICookieBalance(ctx context.Context, s *CNProviderBalanceService, account *Account, _ string) (*CNProviderBalanceResult, error) {
+	targetURL := newAPICookieBalanceURL(account)
+	if targetURL == "" {
+		return nil, fmt.Errorf("base_url is empty")
+	}
+	cookie := strings.TrimSpace(account.GetCredential(balanceProbeCookieKey))
+	if cookie == "" {
+		return nil, fmt.Errorf("missing balance_probe_cookie")
+	}
+	userID := strings.TrimSpace(account.GetCredential(balanceProbeUserIDKey))
+	if userID == "" {
+		return nil, fmt.Errorf("missing balance_probe_user_id")
+	}
+	headers := http.Header{}
+	headers.Set("Cookie", cookie)
+	headers.Set("New-Api-User", userID)
+	status, respHeaders, body, err := s.doBalanceGETWithHeaders(ctx, account, "", targetURL, headers)
+	if err != nil {
+		return nil, err
+	}
+	result := &CNProviderBalanceResult{StatusCode: status, Available: true}
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		result.Error = fmt.Sprintf("Authentication failed (HTTP %d)", status)
+		return result, nil
+	}
+	if status < 200 || status >= 300 {
+		result.Error = fmt.Sprintf("API error (HTTP %d): %s", status, truncate(strings.TrimSpace(string(body)), 240))
+		return result, nil
+	}
+	raw := gjson.GetBytes(body, "data.quota")
+	if !raw.Exists() {
+		result.Error = `balance path "data.quota" not found`
+		return result, nil
+	}
+	value, ok := cnParseF64(raw.Value())
+	if !ok {
+		result.Error = `balance path "data.quota" is not a number`
+		return result, nil
+	}
+	divisor := defaultNewAPIBalanceDivisor
+	if v, ok := credentialNumber(account, balanceProbeDivisorKey); ok && v > 0 {
+		divisor = v
+	}
+	currency := strings.ToUpper(strings.TrimSpace(account.GetCredential(balanceProbeCurrencyKey)))
+	if currency == "" {
+		currency = defaultNewAPIBalanceCurrency
+	}
+	balance := value / divisor
+	result.Balance = balance
+	result.Currency = currency
+	result.Balances = []CNProviderBalanceEntry{{Currency: currency, Balance: balance}}
+	result.Success = true
+
+	if fresh := mergeSetCookieHeader(cookie, respHeaders.Values("Set-Cookie")); fresh != cookie {
+		s.persistBalanceProbeCookie(ctx, account, fresh)
+	}
+	return result, nil
+}
+
+// mergeSetCookieHeader 把响应 Set-Cookie 的 name=value 合并进现有 Cookie 头；
+// 只保留请求头形态，丢弃 Path/Expires 等属性。新值覆盖同名旧值。
+func mergeSetCookieHeader(current string, setCookies []string) string {
+	pairs := make([]string, 0, len(setCookies)+4)
+	index := make(map[string]int, len(setCookies)+4)
+	upsert := func(name, value string) {
+		if i, ok := index[name]; ok {
+			pairs[i] = name + "=" + value
+			return
+		}
+		index[name] = len(pairs)
+		pairs = append(pairs, name+"="+value)
+	}
+	for _, pair := range strings.Split(current, ";") {
+		kv := strings.SplitN(strings.TrimSpace(pair), "=", 2)
+		if len(kv) == 2 && strings.TrimSpace(kv[0]) != "" {
+			upsert(strings.TrimSpace(kv[0]), strings.TrimSpace(kv[1]))
+		}
+	}
+	for _, raw := range setCookies {
+		first := strings.SplitN(strings.TrimSpace(raw), ";", 2)[0]
+		kv := strings.SplitN(first, "=", 2)
+		if len(kv) == 2 && strings.TrimSpace(kv[0]) != "" {
+			upsert(strings.TrimSpace(kv[0]), strings.TrimSpace(kv[1]))
+		}
+	}
+	return strings.Join(pairs, "; ")
 }
 
 // --- 自定义（沿用聚合中转的手填端点/JSON 路径） ---

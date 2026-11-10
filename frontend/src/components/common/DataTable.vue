@@ -957,8 +957,8 @@ defineExpose({
   position: relative;
   overflow-x: auto;
   overflow-y: auto;
-  /* FORK-ANCHOR: table-wrapper-overscroll-contain (二开：滚到表格末尾后不再把滚轮事件传给页面) */
-  overscroll-behavior: contain;
+  /* FORK-ANCHOR: table-wrapper-overscroll-auto (二开：列表有纵向滚动时滚列表，没有或滚到边界时交给页面) */
+  overscroll-behavior: auto;
   flex: 1;
   min-height: 0;
   isolation: isolate;

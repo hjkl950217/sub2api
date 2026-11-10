@@ -1659,12 +1659,23 @@ const refreshCurrentPage = (manual: boolean): Promise<void> => {
         }
       }
       if (!current()) return
-      const results = await quotaRefresh.refreshPage([...accounts.value], canStartQuota)
-      if (manual && current() && results.some(result => result === null)) {
-        appStore.showWarning(t('admin.accounts.usageWindow.refreshFailedSummary', {
-          count: results.filter(result => result === null).length
-        }))
+      const quotaTargets = accounts.value.filter(accountQuotaRefreshKind)
+      if (manual) {
+        // 手动刷新先结束本轮，额度查询在后台继续；失败时再补一条带账号名的提示。
+        void quotaRefresh.refreshPage(quotaTargets, canStartQuota).then(results => {
+          if (!current()) return
+          const failedNames = quotaTargets
+            .filter((_, index) => results[index] === null)
+            .map(account => account.name)
+          if (failedNames.length === 0) return
+          appStore.showWarning(t('admin.accounts.usageWindow.refreshFailedSummary', {
+            count: failedNames.length,
+            names: failedNames.join('、')
+          }))
+        })
+        return
       }
+      await quotaRefresh.refreshPage(quotaTargets, canStartQuota)
     } catch (error) {
       if (current()) {
         console.error('Account refresh failed:', error)

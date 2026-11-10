@@ -686,6 +686,12 @@
             </option>
           </select>
           <p v-if="balanceProbeScript === 'auto'" class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.autoHint') }}</p>
+          <!-- FORK-ANCHOR: create-balance-probe-newapi-cookie (二开：New API/One API 用户余额登录凭据) -->
+          <template v-if="balanceProbeScript === 'newapi_cookie'">
+            <input v-model="balanceProbeCookie" type="password" autocomplete="off" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.cookiePlaceholder')" />
+            <input v-model="balanceProbeUserID" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.userIdPlaceholder')" />
+            <p class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.cookieHint') }}</p>
+          </template>
           <template v-if="balanceProbeScript === 'custom'">
             <input v-model="balanceProbeURL" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.urlPlaceholder')" />
             <input v-model="balanceProbePath" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.pathPlaceholder')" />
@@ -4619,6 +4625,8 @@ const balanceProbeURL = ref('')
 const balanceProbePath = ref('')
 const balanceProbeCurrency = ref('')
 const balanceProbeDivisor = ref<number | null>(null)
+const balanceProbeCookie = ref('')
+const balanceProbeUserID = ref('')
 const openCodeGoProtocolRules = ref<OpenCodeGoProtocolRule[]>(
   cloneOpenCodeGoProtocolRules(defaultOpenCodeProtocolRules('zen'))
 )
@@ -6096,6 +6104,8 @@ const resetForm = () => {
   balanceProbePath.value = ''
   balanceProbeCurrency.value = ''
   balanceProbeDivisor.value = null
+  balanceProbeCookie.value = ''
+  balanceProbeUserID.value = ''
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
   showApiKeyValue.value = false
@@ -6710,6 +6720,11 @@ const handleSubmit = async () => {
     if (balanceProbePath.value.trim()) credentials.balance_probe_path = balanceProbePath.value.trim()
     if (balanceProbeCurrency.value.trim()) credentials.balance_probe_currency = balanceProbeCurrency.value.trim()
     if (balanceProbeDivisor.value) credentials.balance_probe_divisor = balanceProbeDivisor.value
+  }
+  // FORK-ANCHOR: create-balance-probe-newapi-cookie-credentials (二开：Cookie 与 New-Api-User)
+  if (balanceProbeScript.value === 'newapi_cookie') {
+    if (balanceProbeCookie.value.trim()) credentials.balance_probe_cookie = balanceProbeCookie.value.trim()
+    if (balanceProbeUserID.value.trim()) credentials.balance_probe_user_id = balanceProbeUserID.value.trim()
   }
 
   // Add model mapping if configured（OpenAI 开启自动透传时不应用）

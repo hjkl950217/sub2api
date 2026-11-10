@@ -710,11 +710,13 @@ export function cnQuotaCellVisible(account: CNUsageCellAccount): boolean {
 
 // FORK-ANCHOR: balance-probe-platform-agnostic (二开：余额探测脚本与平台解耦)
 /** 余额探测脚本：auto 首次逐个尝试并由后端记住命中项。 */
-export type BalanceProbeScript = 'auto' | 'kimi' | 'deepseek' | 'newapi' | 'sub2api' | 'custom'
+export type BalanceProbeScript = 'auto' | 'kimi' | 'deepseek' | 'newapi' | 'newapi_cookie' | 'sub2api' | 'custom'
 
 export const BALANCE_PROBE_SCRIPT_OPTIONS: { value: BalanceProbeScript; labelKey: string }[] = [
   { value: 'auto', labelKey: 'auto' },
   { value: 'newapi', labelKey: 'newapi' },
+  // FORK-ANCHOR: balance-probe-newapi-cookie-option (二开：New API/One API 用户余额（登录 Cookie）)
+  { value: 'newapi_cookie', labelKey: 'newapiCookie' },
   { value: 'sub2api', labelKey: 'sub2api' },
   { value: 'deepseek', labelKey: 'deepseek' },
   { value: 'kimi', labelKey: 'kimi' },

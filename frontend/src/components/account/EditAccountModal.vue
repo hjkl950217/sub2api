@@ -221,6 +221,12 @@
               </option>
             </select>
             <p v-if="editBalanceProbeScript === 'auto'" class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.autoHint') }}</p>
+            <!-- FORK-ANCHOR: edit-balance-probe-newapi-cookie (二开：New API/One API 用户余额登录凭据) -->
+            <template v-if="editBalanceProbeScript === 'newapi_cookie'">
+              <input v-model="editBalanceProbeCookie" type="password" autocomplete="off" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.cookiePlaceholder')" />
+              <input v-model="editBalanceProbeUserID" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.userIdPlaceholder')" />
+              <p class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.cookieHint') }}</p>
+            </template>
             <template v-if="editBalanceProbeScript === 'custom'">
               <input v-model="editBalanceProbeURL" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.urlPlaceholder')" />
               <input v-model="editBalanceProbePath" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.pathPlaceholder')" />
@@ -4033,6 +4039,9 @@ const editBalanceProbeURL = ref('')
 const editBalanceProbePath = ref('')
 const editBalanceProbeCurrency = ref('')
 const editBalanceProbeDivisor = ref<number | null>(null)
+// Cookie 是敏感键，服务端不回传；编辑时留空表示保留旧值。
+const editBalanceProbeCookie = ref('')
+const editBalanceProbeUserID = ref('')
 // 国产厂商的接入模式只有 payg / coding。
 const cnPresetMode = computed<CnAccountMode>(() => (editAccountMode.value === 'coding' ? 'coding' : 'payg'))
 function currentOpenCodeOrCNMode(): string {
@@ -5359,6 +5368,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     editBalanceProbePath.value = typeof credentials.balance_probe_path === 'string' ? credentials.balance_probe_path : ''
     editBalanceProbeCurrency.value = typeof credentials.balance_probe_currency === 'string' ? credentials.balance_probe_currency : ''
     editBalanceProbeDivisor.value = typeof credentials.balance_probe_divisor === 'number' ? credentials.balance_probe_divisor : null
+    editBalanceProbeCookie.value = ''
+    editBalanceProbeUserID.value = typeof credentials.balance_probe_user_id === 'string' ? credentials.balance_probe_user_id : ''
     // 国产供应商：读取 account_mode 与 api_protocol 作为可编辑初始值
     // （编辑弹窗允许修正两者，用于修复早期存错默认值的账号）。
     if (isMultiProtocolApiKeyPlatform(newAccount.platform)) {
@@ -6244,6 +6255,12 @@ const handleSubmit = async () => {
         else delete newCredentials.balance_probe_currency
         if (editBalanceProbeDivisor.value) newCredentials.balance_probe_divisor = editBalanceProbeDivisor.value
         else delete newCredentials.balance_probe_divisor
+      }
+      // FORK-ANCHOR: edit-balance-probe-newapi-cookie-credentials (二开：Cookie 留空保留服务端旧值)
+      if (editBalanceProbeScript.value === 'newapi_cookie') {
+        if (editBalanceProbeCookie.value.trim()) newCredentials.balance_probe_cookie = editBalanceProbeCookie.value.trim()
+        if (editBalanceProbeUserID.value.trim()) newCredentials.balance_probe_user_id = editBalanceProbeUserID.value.trim()
+        else delete newCredentials.balance_probe_user_id
       }
 
       // FORK-ANCHOR: edit-openai-protocol-credentials (二开：openai API Key 协议复选按 CN 字段契约写入，不写分协议端点)

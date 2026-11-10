@@ -217,9 +217,13 @@ export default {
           currencyPlaceholder: 'Currency (default USD)',
           divisorPlaceholder: 'Divisor (default 500000, one-api convention)',
           hint: 'For array responses point the path at an element, e.g. data.0.quota. Failures keep the last snapshot and show the error.',
+          cookiePlaceholder: 'Login Cookie (the Cookie request header; leave empty to keep the current value)',
+          userIdPlaceholder: 'New-Api-User user ID',
+          cookieHint: 'Reads the account balance (/api/user/self), not the token quota. Each probe refreshes the Cookie from Set-Cookie; update it manually once it expires.',
           scripts: {
             auto: 'Auto (recommended)',
             newapi: 'New API / One API',
+            newapiCookie: 'New API / One API + Cookie',
             sub2api: 'Sub2API',
             deepseek: 'DeepSeek official',
             kimi: 'Kimi official',
@@ -1887,7 +1891,7 @@ export default {
         passiveSampled: 'Passive',
         activeQuery: 'Query',
         showingLastData: 'Query failed; showing last data',
-        refreshFailedSummary: 'Quota refresh failed for {count} accounts; previous data retained.',
+        refreshFailedSummary: 'Quota refresh failed for {count} accounts: {names}. Previous data retained.',
         estimatedTotalCost: 'Est. total ${cost}',
         estimatedTotalCostTooltip: 'Estimated total cost at 100% utilization, based on current window cost and utilization'
       },

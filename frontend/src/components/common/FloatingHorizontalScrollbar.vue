@@ -6,17 +6,18 @@
   <div
     ref="trackRef"
     data-testid="floating-h-scrollbar"
-    class="sticky bottom-0 z-30 flex h-6 items-center overflow-hidden border-t border-gray-200 bg-white/95 px-1 transition-opacity dark:border-dark-700 dark:bg-dark-900/95"
+    class="pointer-events-none sticky bottom-0 z-30 flex h-6 items-center overflow-hidden border-t border-gray-200 bg-white/95 px-1 transition-opacity dark:border-dark-700 dark:bg-dark-900/95"
     :class="scrollable ? '' : 'opacity-70'"
   >
     <div
       data-testid="floating-h-scrollbar-thumb"
-      class="h-3 rounded-full bg-gray-500 transition-all hover:h-4 dark:bg-dark-400"
+      class="pointer-events-auto h-3 rounded-full bg-gray-500 transition-all hover:h-4 dark:bg-dark-400"
       :class="scrollable
         ? 'cursor-grab hover:bg-gray-600 active:cursor-grabbing dark:hover:bg-dark-300'
         : 'cursor-default'"
       :style="{ width: `${thumbWidth}px`, transform: `translateX(${thumbLeft}px)` }"
       @pointerdown="onThumbPointerDown"
+      @wheel="onThumbWheel"
     />
   </div>
 </template>
@@ -69,6 +70,14 @@ function measure() {
 
 function onScrollerScroll() {
   if (scroller.value) scrollLeft.value = scroller.value.scrollLeft
+}
+
+// 鼠标落在滑块上时滚轮要能继续滚表格；表格没有纵向溢出就不拦，交给页面。
+function onThumbWheel(event: WheelEvent) {
+  const el = scroller.value
+  if (!el || el.scrollHeight <= el.clientHeight + 1) return
+  el.scrollTop += event.deltaY
+  event.preventDefault()
 }
 
 function onThumbPointerDown(event: PointerEvent) {

@@ -140,7 +140,8 @@ func (s *CNProviderBalanceService) queryBalanceForAccount(ctx context.Context, a
 	}
 
 	apiKey := balanceProbeAPIKey(account)
-	if apiKey == "" {
+	// Cookie 脚本用登录态而不是 API Key，不能在这里被挡掉。
+	if apiKey == "" && script != balanceProbeScriptNewAPICookie {
 		return nil, infraerrors.New(http.StatusBadRequest, "CN_BALANCE_NO_APIKEY", "account api_key is empty")
 	}
 
@@ -248,30 +249,60 @@ func balanceProbeAPIKey(account *Account) string {
 
 // doBalanceGET 共享探测请求：出站 URL 校验、鉴权头、超时、代理与 header 覆写。
 func (s *CNProviderBalanceService) doBalanceGET(ctx context.Context, account *Account, apiKey, targetURL string) (int, []byte, error) {
+	status, _, body, err := s.doBalanceGETWithHeaders(ctx, account, apiKey, targetURL, nil)
+	return status, body, err
+}
+
+// doBalanceGETWithHeaders 在共享探测请求上追加脚本专用头并回传响应头。
+// FORK-ANCHOR: balance-probe-cookie-headers (二开：New API+Cookie 需要 Cookie/New-Api-User 与 Set-Cookie)
+func (s *CNProviderBalanceService) doBalanceGETWithHeaders(ctx context.Context, account *Account, apiKey, targetURL string, extraHeaders http.Header) (int, http.Header, []byte, error) {
 	// 探测发起前过出站 URL 安全策略（与网关转发/Grok 探测同一套校验）：
 	// 端点由账号 base_url 衍生，不得把 API key 发往策略外主机。
 	validatedURL, err := cnValidateProbeURL(s.cfg, targetURL)
 	if err != nil {
-		return 0, nil, infraerrors.New(http.StatusForbidden, "CN_BALANCE_URL_REJECTED", err.Error())
+		return 0, nil, nil, infraerrors.New(http.StatusForbidden, "CN_BALANCE_URL_REJECTED", err.Error())
 	}
 	proxyURL := s.resolveProxyURL(ctx, account)
 	callCtx, cancel := context.WithTimeout(ctx, cnBalanceUpstreamTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(callCtx, http.MethodGet, validatedURL, nil)
 	if err != nil {
-		return 0, nil, infraerrors.Newf(http.StatusInternalServerError, "CN_BALANCE_REQUEST_BUILD_FAILED", "build request: %v", err)
+		return 0, nil, nil, infraerrors.Newf(http.StatusInternalServerError, "CN_BALANCE_REQUEST_BUILD_FAILED", "build request: %v", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
 	req.Header.Set("Accept", "application/json")
+	for name, values := range extraHeaders {
+		for _, value := range values {
+			req.Header.Add(name, value)
+		}
+	}
 	account.ApplyHeaderOverrides(req.Header)
 
 	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, maxInt(account.Concurrency, 1))
 	if err != nil {
-		return 0, nil, infraerrors.Newf(http.StatusBadGateway, "CN_BALANCE_REQUEST_FAILED", "upstream request failed: %v", err)
+		return 0, nil, nil, infraerrors.Newf(http.StatusBadGateway, "CN_BALANCE_REQUEST_FAILED", "upstream request failed: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, cnBalanceMaxBodyBytes))
-	return resp.StatusCode, bodyBytes, nil
+	return resp.StatusCode, resp.Header.Clone(), bodyBytes, nil
+}
+
+// persistBalanceProbeCookie 把响应刷新后的 Cookie 写回账号凭据。
+// 只改这一个敏感键，其余凭据原样带回，避免替换式写入丢配置。
+func (s *CNProviderBalanceService) persistBalanceProbeCookie(ctx context.Context, account *Account, cookie string) {
+	if s == nil || s.accountRepo == nil || account == nil || cookie == "" {
+		return
+	}
+	credentials := make(map[string]any, len(account.Credentials)+1)
+	for key, value := range account.Credentials {
+		credentials[key] = value
+	}
+	credentials[balanceProbeCookieKey] = cookie
+	if err := persistAccountCredentials(ctx, s.accountRepo, account, credentials); err != nil {
+		slog.Warn("balance_probe_cookie_persist_failed", "account_id", account.ID, "error", err)
+	}
 }
 
 // runBalanceGET 单端点脚本的公共流程：请求 → 状态判定 → 解析。

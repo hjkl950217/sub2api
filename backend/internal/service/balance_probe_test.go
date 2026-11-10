@@ -39,20 +39,25 @@ type cnBalanceRouteUpstream struct {
 }
 
 type cnBalanceRoute struct {
-	match  string
-	status int
-	body   string
+	match   string
+	status  int
+	body    string
+	headers http.Header
 }
 
 func (u *cnBalanceRouteUpstream) Do(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
 	status, body := http.StatusNotFound, "not found"
+	header := make(http.Header)
 	for _, route := range u.routes {
 		if strings.Contains(req.URL.String(), route.match) {
 			status, body = route.status, route.body
+			if route.headers != nil {
+				header = route.headers.Clone()
+			}
 			break
 		}
 	}
-	return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: header}, nil
 }
 
 func (u *cnBalanceRouteUpstream) DoWithTLS(req *http.Request, proxyURL string, accountID int64, concurrency int, _ *tlsfingerprint.Profile) (*http.Response, error) {
@@ -65,7 +70,8 @@ func TestBalanceProbe_NewAPIFiniteQuota(t *testing.T) {
 	repo := &cnBalanceProbeRepo{account: account}
 	upstream := &cnBalanceRouteUpstream{routes: []cnBalanceRoute{
 		{match: "/v1/dashboard/billing/subscription", status: http.StatusOK, body: `{"hard_limit_usd":10}`},
-		{match: "/v1/dashboard/billing/usage", status: http.StatusOK, body: `{"total_usage":2.5}`},
+		// total_usage 是美分口径：250 分 = $2.5。
+		{match: "/v1/dashboard/billing/usage", status: http.StatusOK, body: `{"total_usage":250}`},
 	}}
 	svc := NewCNProviderBalanceService(repo, nil, upstream, nil)
 
@@ -92,6 +98,46 @@ func TestBalanceProbe_NewAPIUnlimited(t *testing.T) {
 	require.True(t, result.Success)
 	require.True(t, result.Balances[0].Unlimited)
 	require.Equal(t, true, repo.extraWrites[0]["ag_hub_balance_unlimited"])
+}
+
+func TestBalanceProbe_NewAPICookieQuota(t *testing.T) {
+	account := newAggregateHubBalanceProbeAccount()
+	account.Credentials[balanceProbeScriptKey] = balanceProbeScriptNewAPICookie
+	account.Credentials[balanceProbeCookieKey] = "session=old"
+	account.Credentials[balanceProbeUserIDKey] = "218417"
+	repo := &cnBalanceProbeRepo{account: account}
+	upstream := &cnBalanceRouteUpstream{routes: []cnBalanceRoute{
+		{
+			match:  "/api/user/self",
+			status: http.StatusOK,
+			body:   `{"success":true,"data":{"quota":824533915,"used_quota":466085}}`,
+			headers: http.Header{
+				"Set-Cookie": []string{"session=fresh; Path=/; HttpOnly"},
+			},
+		},
+	}}
+	svc := NewCNProviderBalanceService(repo, nil, upstream, nil)
+
+	result, err := svc.QueryBalance(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.True(t, result.Success)
+	require.InDelta(t, 1649.06783, result.Balance, 0.00001)
+	require.Equal(t, "USD", result.Currency)
+	require.NotEmpty(t, repo.credentialWrites)
+	require.Equal(t, "session=fresh", repo.credentialWrites[0][balanceProbeCookieKey])
+}
+
+func TestBalanceProbe_NewAPICookieMissingCredentials(t *testing.T) {
+	account := newAggregateHubBalanceProbeAccount()
+	account.Credentials[balanceProbeScriptKey] = balanceProbeScriptNewAPICookie
+	repo := &cnBalanceProbeRepo{account: account}
+	svc := NewCNProviderBalanceService(repo, nil, &cnBalanceRouteUpstream{}, nil)
+
+	_, err := svc.QueryBalance(context.Background(), account.ID)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "balance_probe_cookie")
 }
 
 func TestBalanceProbe_Sub2APIUsage(t *testing.T) {

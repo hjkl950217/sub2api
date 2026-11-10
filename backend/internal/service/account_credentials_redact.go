@@ -7,6 +7,8 @@ var SensitiveCredentialKeys = []string{
 	"access_token", "refresh_token", "id_token", "agent_private_key",
 	// API Key 类
 	"api_key", "session_key", "cookie",
+	// FORK-ANCHOR: balance-probe-cookie-sensitive (二开：New API+Cookie 余额探测的登录 Cookie 不回传前端)
+	"balance_probe_cookie",
 	// Grok Web SSO / password (must never persist or echo after Build OAuth)
 	"password", "sso_token", "sso", "sso-rw", "clearTextPassword",
 	// 云服务凭据
