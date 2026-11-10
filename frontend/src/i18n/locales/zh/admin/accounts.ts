@@ -422,7 +422,9 @@ export default {
           hint: '数组类响应把路径写到数组后按下标取第一项，例如 data.0.quota。探测失败会保留上次快照并显示错误。',
           cookiePlaceholder: '登录 Cookie（浏览器请求头里的 Cookie；留空表示不修改）',
           userIdPlaceholder: 'New-Api-User 用户 ID（本站用户 ID，可在站点登录后按下方说明获取）',
-          cookieHint: '读取账户余额（/api/user/self），不是令牌额度。Cookie 填浏览器请求头里的整行值。用户 ID 获取：登录站点后按 F12 打开开发者工具，切到 Console，执行 JSON.parse(localStorage.getItem(\'user\')).id，输出的数字就是。每次探测会用响应里的 Set-Cookie 自动续期；Cookie 失效时需手动更新。',
+          cookieHint: 'Cookie 填浏览器请求头里的整行值。',
+          userIdHint: '用户 ID 获取：登录站点后按 F12 打开开发者工具，切到 Console，执行 JSON.parse(localStorage.getItem(\'user\')).id，输出的数字就是。',
+          cookieRenewHint: '每次探测会用响应里的 Set-Cookie 自动续期；Cookie 失效时需手动更新。',
           scripts: {
             auto: '自动（推荐）',
             newapi: 'New API / One API',

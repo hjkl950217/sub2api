@@ -709,8 +709,11 @@
                 <Icon :name="balanceProbeCookieRevealed ? 'eyeOff' : 'eye'" size="md" />
               </button>
             </div>
-            <input v-model="balanceProbeUserID" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.userIdPlaceholder')" />
+            <!-- FORK-ANCHOR: balance-cookie-hint-multiline (二开：Cookie 提示按行拆开显示) -->
             <p class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.cookieHint') }}</p>
+            <input v-model="balanceProbeUserID" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.userIdPlaceholder')" />
+            <p class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.userIdHint') }}</p>
+            <p class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.cookieRenewHint') }}</p>
           </template>
           <template v-if="balanceProbeScript === 'custom'">
             <input v-model="balanceProbeURL" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.urlPlaceholder')" />
