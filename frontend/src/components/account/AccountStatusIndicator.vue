@@ -1,9 +1,15 @@
 <template>
   <div class="flex items-center gap-2">
-    <!-- Rate Limit Display (429) - Two-line layout -->
+    <!-- Rate Limit Display (429) - Two-line layout（FORK: 限流时补出具体模型与到点时间，不再显示裸 429） -->
     <div v-if="isRateLimited" class="flex flex-col items-center gap-1">
       <span class="badge text-xs badge-warning">{{ t('admin.accounts.status.rateLimited') }}</span>
       <span class="text-[11px] text-gray-400 dark:text-gray-500">{{ rateLimitResumeText }}</span>
+      <span
+        v-if="rateLimitedModelText"
+        class="max-w-[200px] text-center text-[11px] leading-4 text-amber-600 dark:text-amber-400"
+      >
+        {{ rateLimitedModelText }}
+      </span>
     </div>
 
     <!-- Overload Display (529) - Two-line layout -->
@@ -62,27 +68,11 @@
     </div>
 
     <!-- Rate Limit Indicator (429) -->
-    <div v-if="isRateLimited" class="group relative">
-      <span
-        class="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-      >
-        <Icon name="exclamationTriangle" size="xs" :stroke-width="2" />
-        429
-      </span>
-      <!-- Tooltip -->
-      <div
-        class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-56 -translate-x-1/2 whitespace-normal rounded bg-gray-900 px-3 py-2 text-center text-xs leading-relaxed text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
-      >
-        {{ t('admin.accounts.status.rateLimitedUntil', { time: formatDateTime(account.rate_limit_reset_at) }) }}
-        <div
-          class="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-gray-700"
-        ></div>
-      </div>
-    </div>
+    <!-- FORK-ANCHOR: hide-rate-limit-code-badge (二开：限流几乎只有 429，裸状态码不再单独显示) -->
 
-    <!-- Model Status Indicators (普通限流 / 超量请求中) -->
+    <!-- Model Status Indicators (普通限流 / 超量请求中)：账号级限流时上方已列出模型，避免重复 -->
     <div
-      v-if="activeModelStatuses.length > 0"
+      v-if="!isRateLimited && activeModelStatuses.length > 0"
       :class="[
         activeModelStatuses.length <= 4
           ? 'flex flex-col gap-1'
@@ -302,6 +292,20 @@ const rateLimitCountdown = computed(() => {
 const rateLimitResumeText = computed(() => {
   if (!rateLimitCountdown.value) return ''
   return t('admin.accounts.status.rateLimitedAutoResume', { time: rateLimitCountdown.value })
+})
+
+// FORK-ANCHOR: rate-limit-model-reason (二开：限流时显示具体模型与到点时间，替代裸 429 数字)
+const rateLimitedModelText = computed(() => {
+  const models = activeModelStatuses.value
+    .filter(item => item.kind !== 'credits_exhausted')
+    .map(item => `${formatScopeName(item.model)} ${t('admin.accounts.status.rateLimitedUntilShort', {
+      time: formatDateTimeToMinute(item.reset_at)
+    })}`)
+  if (models.length > 0) return models.join(' · ')
+  if (!props.account.rate_limit_reset_at) return ''
+  return t('admin.accounts.status.rateLimitedUntilShort', {
+    time: formatDateTimeToMinute(props.account.rate_limit_reset_at)
+  })
 })
 
 // Computed: countdown text for overload (529)

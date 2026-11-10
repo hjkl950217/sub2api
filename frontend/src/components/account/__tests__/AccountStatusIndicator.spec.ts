@@ -86,8 +86,33 @@ describe('AccountStatusIndicator', () => {
     expect(wrapper.text()).not.toContain('claude-sonnet-5')
   })
 
-  it('Grok 账号额度限流时显示自动恢复时间而非临时不可调度', () => {
+  it('账号级限流时列出具体模型与到点时间，且不再渲染裸 429', () => {
     const wrapper = mount(AccountStatusIndicator, {
+      props: {
+        account: makeAccount({
+          id: 6,
+          name: 'ag-limited',
+          rate_limited_at: '2026-11-10T08:00:00Z',
+          rate_limit_reset_at: '2099-11-10T12:00:00Z',
+          extra: {
+            model_rate_limits: {
+              'claude-opus-5': {
+                rate_limited_at: '2026-11-10T08:00:00Z',
+                rate_limit_reset_at: '2099-11-10T12:00:00Z'
+              }
+            }
+          }
+        })
+      },
+      global: { stubs: { Icon: true } }
+    })
+
+    expect(wrapper.text()).toContain('COpus5')
+    expect(wrapper.text()).toContain('admin.accounts.status.rateLimitedUntilShort')
+    expect(wrapper.text()).not.toContain('429')
+  })
+
+  it('Grok 账号额度限流时显示自动恢复时间而非临时不可调度', () => {    const wrapper = mount(AccountStatusIndicator, {
       props: {
         account: makeAccount({
           id: 5,
