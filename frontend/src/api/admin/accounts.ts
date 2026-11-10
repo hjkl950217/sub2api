@@ -187,6 +187,12 @@ export async function revealApiKey(id: number): Promise<string> {
   return data?.api_key ?? ''
 }
 
+// FORK-ANCHOR: account-reveal-balance-cookie-api (二开：余额探测 Cookie 的眼睛按钮，复用同一入口)
+export async function revealBalanceProbeCookie(id: number): Promise<string> {
+  const { data } = await apiClient.get<{ balance_probe_cookie?: string }>(`/admin/accounts/${id}/credentials/reveal`)
+  return data?.balance_probe_cookie ?? ''
+}
+
 /**
  * Create new account
  * @param accountData - Account data
@@ -1349,6 +1355,8 @@ export const accountsAPI = {
   getById,
   // FORK-ANCHOR: account-reveal-api-key-api-export (二开：导出 API Key 明文接口)
   revealApiKey,
+  // FORK-ANCHOR: account-reveal-balance-cookie-api-export (二开：导出余额探测 Cookie 明文接口)
+  revealBalanceProbeCookie,
   create,
   duplicate,
   update,

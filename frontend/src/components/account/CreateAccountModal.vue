@@ -688,7 +688,27 @@
           <p v-if="balanceProbeScript === 'auto'" class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.autoHint') }}</p>
           <!-- FORK-ANCHOR: create-balance-probe-newapi-cookie (二开：New API/One API 用户余额登录凭据) -->
           <template v-if="balanceProbeScript === 'newapi_cookie'">
-            <input v-model="balanceProbeCookie" type="password" autocomplete="off" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.cookiePlaceholder')" />
+            <div class="relative">
+              <input
+                v-model="balanceProbeCookie"
+                :type="balanceProbeCookieType"
+                class="input pr-10 font-mono"
+                autocomplete="new-password"
+                data-1p-ignore
+                data-lpignore="true"
+                data-bwignore="true"
+                :placeholder="t('admin.accounts.cnProviders.balanceProbe.cookiePlaceholder')"
+              />
+              <button
+                type="button"
+                data-testid="balance-probe-cookie-reveal-toggle"
+                class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                :title="balanceProbeCookieRevealed ? t('admin.accounts.apiKeyHide') : t('admin.accounts.apiKeyReveal')"
+                @click="balanceProbeCookieRevealed = !balanceProbeCookieRevealed"
+              >
+                <Icon :name="balanceProbeCookieRevealed ? 'eyeOff' : 'eye'" size="md" />
+              </button>
+            </div>
             <input v-model="balanceProbeUserID" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.userIdPlaceholder')" />
             <p class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.cookieHint') }}</p>
           </template>
@@ -4627,6 +4647,10 @@ const balanceProbeCurrency = ref('')
 const balanceProbeDivisor = ref<number | null>(null)
 const balanceProbeCookie = ref('')
 const balanceProbeUserID = ref('')
+const balanceProbeCookieRevealed = ref(false)
+const balanceProbeCookieType = computed<'text' | 'password'>(() =>
+  balanceProbeCookieRevealed.value ? 'text' : 'password'
+)
 const openCodeGoProtocolRules = ref<OpenCodeGoProtocolRule[]>(
   cloneOpenCodeGoProtocolRules(defaultOpenCodeProtocolRules('zen'))
 )

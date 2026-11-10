@@ -996,7 +996,9 @@ func (h *AccountHandler) RevealAPIKey(c *gin.Context) {
 	}
 
 	apiKey, _ := account.Credentials["api_key"].(string)
-	response.Success(c, gin.H{"api_key": apiKey})
+	// FORK-ANCHOR: account-reveal-balance-cookie (二开：余额探测 Cookie 同样支持眼睛查看)
+	balanceProbeCookie, _ := account.Credentials["balance_probe_cookie"].(string)
+	response.Success(c, gin.H{"api_key": apiKey, "balance_probe_cookie": balanceProbeCookie})
 }
 
 // CheckMixedChannel handles checking mixed channel risk for account-group binding.

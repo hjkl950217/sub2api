@@ -218,8 +218,8 @@ export default {
           divisorPlaceholder: 'Divisor (default 500000, one-api convention)',
           hint: 'For array responses point the path at an element, e.g. data.0.quota. Failures keep the last snapshot and show the error.',
           cookiePlaceholder: 'Login Cookie (the Cookie request header; leave empty to keep the current value)',
-          userIdPlaceholder: 'New-Api-User user ID',
-          cookieHint: 'Reads the account balance (/api/user/self), not the token quota. Each probe refreshes the Cookie from Set-Cookie; update it manually once it expires.',
+          userIdPlaceholder: 'New-Api-User user ID (site user ID; see the hint below for how to get it)',
+          cookieHint: 'Reads the account balance (/api/user/self), not the token quota. Paste the whole Cookie request header value. To get the user ID: sign in to the site, press F12, open the Console tab and run JSON.parse(localStorage.getItem(\'user\')).id; the number it prints is the ID. Each probe refreshes the Cookie from Set-Cookie; update it manually once it expires.',
           scripts: {
             auto: 'Auto (recommended)',
             newapi: 'New API / One API',

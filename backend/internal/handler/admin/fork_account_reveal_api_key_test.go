@@ -52,8 +52,8 @@ func TestForkRevealAPIKeyReturnsPlaintext(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal([]byte(body), &payload))
 	require.Equal(t, "sk-fork-reveal", payload.Data["api_key"])
-	// 只回 api_key：其余敏感键（token / 私钥等）不得随响应外带
-	require.Len(t, payload.Data, 1)
+	// 只回 api_key 与余额探测 Cookie：其余敏感键（token / 私钥等）不得随响应外带
+	require.Len(t, payload.Data, 2)
 	require.NotContains(t, body, "must-not-leak")
 }
 
@@ -74,6 +74,26 @@ func TestForkRevealAPIKeyInvalidID(t *testing.T) {
 	router := newRevealAPIKeyTestRouter(&service.Account{ID: 9, Status: service.StatusActive})
 	status, _ := revealAPIKeyResponse(t, router, "/accounts/abc/credentials/reveal")
 	require.Equal(t, http.StatusBadRequest, status)
+}
+
+// FORK-ANCHOR: account-reveal-balance-cookie-test (二开：余额探测 Cookie 走同一入口返回明文)
+func TestForkRevealBalanceProbeCookie(t *testing.T) {
+	account := &service.Account{
+		ID: 11, Name: "cookie", Platform: service.PlatformAggregateHub, Type: service.AccountTypeAPIKey,
+		Status: service.StatusActive,
+		Credentials: map[string]any{
+			"base_url":              "https://example.test",
+			"api_key":               "sk-fork-reveal",
+			"balance_probe_cookie":  "session=fresh",
+			"balance_probe_user_id": "218417",
+		},
+	}
+	router := newRevealAPIKeyTestRouter(account)
+
+	status, body := revealAPIKeyResponse(t, router, "/accounts/11/credentials/reveal")
+	require.Equal(t, http.StatusOK, status)
+	require.Contains(t, body, `"balance_probe_cookie":"session=fresh"`)
+	require.NotContains(t, body, "218417")
 }
 
 // 老接口行为不变：GET /accounts/:id 仍然经 dto.RedactCredentials 剥掉 api_key。

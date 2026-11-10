@@ -223,7 +223,29 @@
             <p v-if="editBalanceProbeScript === 'auto'" class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.autoHint') }}</p>
             <!-- FORK-ANCHOR: edit-balance-probe-newapi-cookie (二开：New API/One API 用户余额登录凭据) -->
             <template v-if="editBalanceProbeScript === 'newapi_cookie'">
-              <input v-model="editBalanceProbeCookie" type="password" autocomplete="off" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.cookiePlaceholder')" />
+              <div class="relative">
+                <input
+                  v-model="editBalanceProbeCookie"
+                  :type="balanceCookieInputType"
+                  class="input pr-10 font-mono"
+                  autocomplete="new-password"
+                  data-1p-ignore
+                  data-lpignore="true"
+                  data-bwignore="true"
+                  :placeholder="t('admin.accounts.cnProviders.balanceProbe.cookiePlaceholder')"
+                  @focus="selectBalanceCookieText"
+                />
+                <button
+                  type="button"
+                  data-testid="balance-probe-cookie-reveal-toggle"
+                  class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 disabled:opacity-50 dark:hover:text-gray-300"
+                  :disabled="balanceCookieRevealLoading"
+                  :title="balanceCookieRevealed ? t('admin.accounts.apiKeyHide') : t('admin.accounts.apiKeyReveal')"
+                  @click="toggleBalanceCookieReveal"
+                >
+                  <Icon :name="balanceCookieRevealed ? 'eyeOff' : 'eye'" size="md" />
+                </button>
+              </div>
               <input v-model="editBalanceProbeUserID" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.userIdPlaceholder')" />
               <p class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.cookieHint') }}</p>
             </template>
@@ -4040,8 +4062,68 @@ const editBalanceProbePath = ref('')
 const editBalanceProbeCurrency = ref('')
 const editBalanceProbeDivisor = ref<number | null>(null)
 // Cookie 是敏感键，服务端不回传；编辑时留空表示保留旧值。
+// 已存时框里画掩码，眼睛按钮取一次明文做显隐（与 API Key 同一套交互）。
 const editBalanceProbeCookie = ref('')
 const editBalanceProbeUserID = ref('')
+const balanceCookieRevealed = ref(false)
+const balanceCookieRevealLoading = ref(false)
+const balanceCookiePlain = ref<string | null>(null)
+const BALANCE_COOKIE_MASK_FALLBACK = '****'
+const balanceCookieHasStored = computed(() => Boolean(props.account?.credentials_status?.has_balance_probe_cookie))
+const balanceCookieMask = computed(() => (balanceCookiePlain.value ? '*'.repeat(balanceCookiePlain.value.length) : ''))
+const balanceCookieMaskForDisplay = computed(() =>
+  balanceCookieHasStored.value ? balanceCookieMask.value || BALANCE_COOKIE_MASK_FALLBACK : ''
+)
+function isBalanceCookieMaskValue(value: string): boolean {
+  return /^\*+$/.test(value.trim())
+}
+const balanceCookieInputType = computed<'text' | 'password'>(() =>
+  balanceCookieRevealed.value || isBalanceCookieMaskValue(editBalanceProbeCookie.value) ? 'text' : 'password'
+)
+function selectBalanceCookieText(event: FocusEvent) {
+  const input = event.target as HTMLInputElement | null
+  if (input && isBalanceCookieMaskValue(editBalanceProbeCookie.value)) input.select()
+}
+async function loadBalanceCookiePlain(silent: boolean): Promise<string | null> {
+  const account = props.account
+  if (!account || !balanceCookieHasStored.value) return null
+  if (balanceCookiePlain.value !== null) return balanceCookiePlain.value || null
+  balanceCookieRevealLoading.value = true
+  try {
+    const plain = await adminAPI.accounts.revealBalanceProbeCookie(account.id)
+    if (props.account?.id !== account.id) return null
+    balanceCookiePlain.value = plain
+    return plain || null
+  } catch (error) {
+    if (!silent) appStore.showError(extractApiErrorMessage(error, t('admin.accounts.apiKeyRevealFailed')))
+    return null
+  } finally {
+    balanceCookieRevealLoading.value = false
+  }
+}
+async function fillBalanceCookieMaskOnOpen(accountId: number) {
+  await loadBalanceCookiePlain(true)
+  if (props.account?.id !== accountId || balanceCookieRevealed.value) return
+  if (editBalanceProbeCookie.value === '' || editBalanceProbeCookie.value === BALANCE_COOKIE_MASK_FALLBACK) {
+    editBalanceProbeCookie.value = balanceCookieMaskForDisplay.value
+  }
+}
+async function toggleBalanceCookieReveal() {
+  if (balanceCookieRevealed.value) {
+    if (balanceCookiePlain.value !== null && editBalanceProbeCookie.value === balanceCookiePlain.value) {
+      editBalanceProbeCookie.value = balanceCookieMaskForDisplay.value
+    }
+    balanceCookieRevealed.value = false
+    return
+  }
+  const plain = await loadBalanceCookiePlain(false)
+  if (!plain) {
+    appStore.showInfo(t('admin.accounts.apiKeyRevealUnavailable'))
+    return
+  }
+  editBalanceProbeCookie.value = plain
+  balanceCookieRevealed.value = true
+}
 // 国产厂商的接入模式只有 payg / coding。
 const cnPresetMode = computed<CnAccountMode>(() => (editAccountMode.value === 'coding' ? 'coding' : 'payg'))
 function currentOpenCodeOrCNMode(): string {
@@ -5368,7 +5450,6 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     editBalanceProbePath.value = typeof credentials.balance_probe_path === 'string' ? credentials.balance_probe_path : ''
     editBalanceProbeCurrency.value = typeof credentials.balance_probe_currency === 'string' ? credentials.balance_probe_currency : ''
     editBalanceProbeDivisor.value = typeof credentials.balance_probe_divisor === 'number' ? credentials.balance_probe_divisor : null
-    editBalanceProbeCookie.value = ''
     editBalanceProbeUserID.value = typeof credentials.balance_probe_user_id === 'string' ? credentials.balance_probe_user_id : ''
     // 国产供应商：读取 account_mode 与 api_protocol 作为可编辑初始值
     // （编辑弹窗允许修正两者，用于修复早期存错默认值的账号）。
@@ -5582,6 +5663,11 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   apiKeyPlain.value = null
   editApiKey.value = hasStoredApiKey(newAccount) ? API_KEY_MASK_FALLBACK : ''
   void fillApiKeyMaskOnOpen(newAccount.id)
+  // FORK-ANCHOR: edit-balance-cookie-reveal-reset (二开：余额 Cookie 同样每次打开重置掩码态)
+  balanceCookieRevealed.value = false
+  balanceCookiePlain.value = null
+  editBalanceProbeCookie.value = balanceCookieHasStored.value ? BALANCE_COOKIE_MASK_FALLBACK : ''
+  void fillBalanceCookieMaskOnOpen(newAccount.id)
 }
 
 async function loadTLSProfiles() {
@@ -6256,9 +6342,12 @@ const handleSubmit = async () => {
         if (editBalanceProbeDivisor.value) newCredentials.balance_probe_divisor = editBalanceProbeDivisor.value
         else delete newCredentials.balance_probe_divisor
       }
-      // FORK-ANCHOR: edit-balance-probe-newapi-cookie-credentials (二开：Cookie 留空保留服务端旧值)
+      // FORK-ANCHOR: edit-balance-probe-newapi-cookie-credentials (二开：Cookie 留空或掩码保留服务端旧值)
       if (editBalanceProbeScript.value === 'newapi_cookie') {
-        if (editBalanceProbeCookie.value.trim()) newCredentials.balance_probe_cookie = editBalanceProbeCookie.value.trim()
+        const cookieValue = editBalanceProbeCookie.value.trim()
+        if (cookieValue && !isBalanceCookieMaskValue(cookieValue)) {
+          newCredentials.balance_probe_cookie = cookieValue
+        }
         if (editBalanceProbeUserID.value.trim()) newCredentials.balance_probe_user_id = editBalanceProbeUserID.value.trim()
         else delete newCredentials.balance_probe_user_id
       }
