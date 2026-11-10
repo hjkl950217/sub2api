@@ -4,11 +4,24 @@
     <div v-if="isRateLimited" class="flex flex-col items-center gap-1">
       <span class="badge text-xs badge-warning">{{ t('admin.accounts.status.rateLimited') }}</span>
       <span class="text-[11px] text-gray-400 dark:text-gray-500">{{ rateLimitResumeText }}</span>
-      <span
-        v-if="rateLimitedModelText"
-        class="max-w-[200px] text-center text-[11px] leading-4 text-amber-600 dark:text-amber-400"
+      <!-- 模型级限流逐行列出模型名；账号级只有一行到点时间 -->
+      <div
+        v-if="rateLimitedModelLines.length > 0"
+        class="flex max-w-[10rem] flex-col items-center gap-0.5 text-center"
       >
-        {{ rateLimitedModelText }}
+        <span
+          v-for="line in rateLimitedModelLines"
+          :key="line"
+          class="text-[11px] leading-4 text-amber-600 dark:text-amber-400"
+        >
+          {{ line }}
+        </span>
+      </div>
+      <span
+        v-else-if="accountRateLimitLine"
+        class="whitespace-nowrap text-[11px] leading-4 text-amber-600 dark:text-amber-400"
+      >
+        {{ accountRateLimitLine }}
       </span>
     </div>
 
@@ -295,14 +308,19 @@ const rateLimitResumeText = computed(() => {
 })
 
 // FORK-ANCHOR: rate-limit-model-reason (二开：限流时显示具体模型与到点时间，替代裸 429 数字)
-const rateLimitedModelText = computed(() => {
-  const models = activeModelStatuses.value
+// 模型级限流：每个模型单独一行，不截断模型名
+const rateLimitedModelLines = computed(() => {
+  return activeModelStatuses.value
     .filter(item => item.kind !== 'credits_exhausted')
-    .map(item => `${formatScopeName(item.model)} ${t('admin.accounts.status.rateLimitedUntilShort', {
+    .map(item => t('admin.accounts.status.modelRateLimitedUntil', {
+      model: formatScopeName(item.model),
       time: formatDateTimeToMinute(item.reset_at)
-    })}`)
-  if (models.length > 0) return models.join(' · ')
-  if (!props.account.rate_limit_reset_at) return ''
+    }))
+})
+
+// 账号级限流且没有模型明细时，只显示一行到点时间
+const accountRateLimitLine = computed(() => {
+  if (rateLimitedModelLines.value.length > 0 || !props.account.rate_limit_reset_at) return ''
   return t('admin.accounts.status.rateLimitedUntilShort', {
     time: formatDateTimeToMinute(props.account.rate_limit_reset_at)
   })

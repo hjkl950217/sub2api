@@ -117,7 +117,7 @@ export default {
         notes: '备注',
         priority: '优先级',
         billingRateMultiplier: '账号倍率',
-        upstreamBillingRate: '上游声明倍率',
+        upstreamBillingRate: '上游倍率',
         weight: '权重',
         schedulerScore: '调度权值',
         status: '状态',
@@ -126,7 +126,7 @@ export default {
         groups: '分组',
         usageWindows: '用量窗口',
         proxy: '代理',
-        lastUsed: '最近使用',
+        lastUsed: '最近用',
         createdAt: '创建时间',
         expiresAt: '过期时间',
         actions: '操作'

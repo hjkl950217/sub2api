@@ -8,7 +8,11 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key
+      // 模型级限流文案带上插值参数，便于断言模型名确实渲染出来
+      t: (key: string, params?: Record<string, unknown>) =>
+        key === 'admin.accounts.status.modelRateLimitedUntil' && params
+          ? `${params.model} ${key}`
+          : key
     })
   }
 })
@@ -108,8 +112,55 @@ describe('AccountStatusIndicator', () => {
     })
 
     expect(wrapper.text()).toContain('COpus5')
-    expect(wrapper.text()).toContain('admin.accounts.status.rateLimitedUntilShort')
+    expect(wrapper.text()).toContain('admin.accounts.status.modelRateLimitedUntil')
     expect(wrapper.text()).not.toContain('429')
+  })
+
+  it('模型级限流每个模型单独一行，账号级限流只有一行到点时间', () => {
+    const modelLevel = mount(AccountStatusIndicator, {
+      props: {
+        account: makeAccount({
+          id: 7,
+          name: 'ag-model-limited',
+          rate_limited_at: '2026-11-10T08:00:00Z',
+          rate_limit_reset_at: '2099-11-10T12:00:00Z',
+          extra: {
+            model_rate_limits: {
+              'claude-opus-5': {
+                rate_limited_at: '2026-11-10T08:00:00Z',
+                rate_limit_reset_at: '2099-11-10T12:00:00Z'
+              },
+              'claude-sonnet-5': {
+                rate_limited_at: '2026-11-10T08:00:00Z',
+                rate_limit_reset_at: '2099-11-10T13:00:00Z'
+              }
+            }
+          }
+        })
+      },
+      global: { stubs: { Icon: true } }
+    })
+
+    const modelLines = modelLevel.findAll('.text-amber-600')
+    expect(modelLines).toHaveLength(2)
+    expect(modelLines[0].text()).toContain('COpus5')
+    expect(modelLines[1].text()).toContain('CSon5')
+
+    const accountLevel = mount(AccountStatusIndicator, {
+      props: {
+        account: makeAccount({
+          id: 8,
+          name: 'ag-account-limited',
+          rate_limited_at: '2026-11-10T08:00:00Z',
+          rate_limit_reset_at: '2099-11-10T12:00:00Z'
+        })
+      },
+      global: { stubs: { Icon: true } }
+    })
+
+    const accountLines = accountLevel.findAll('.text-amber-600')
+    expect(accountLines).toHaveLength(1)
+    expect(accountLines[0].text()).toBe('admin.accounts.status.rateLimitedUntilShort')
   })
 
   it('Grok 账号额度限流时显示自动恢复时间而非临时不可调度', () => {    const wrapper = mount(AccountStatusIndicator, {
