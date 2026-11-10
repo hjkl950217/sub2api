@@ -432,7 +432,7 @@ func TestAccountUsageRefresh_AntigravityForceCacheAndFlight(t *testing.T) {
 	a := &Account{ID: 1, Platform: PlatformAntigravity, Type: AccountTypeOAuth, Credentials: map[string]any{"access_token": "token"}}
 	s := &AccountUsageService{cache: NewUsageCache(), antigravityQuotaFetcher: NewAntigravityQuotaFetcher(nil, nil)}
 	s.cache.antigravityCache.Store(a.ID, &antigravityUsageCache{usageInfo: &UsageInfo{FiveHour: &UsageProgress{Utilization: 12}}, timestamp: time.Now()})
-	u, err := s.getAntigravityUsage(t.Context(), a)
+	u, err := s.getAntigravityUsage(t.Context(), a, false)
 	require.NoError(t, err)
 	require.Equal(t, 12.0, u.FiveHour.Utilization)
 	require.Zero(t, fetches.Load())
