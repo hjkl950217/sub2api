@@ -46,7 +46,7 @@ git add AGENTS.md
   `-c core.quotepath=false` 不能省：中文文件名的路径会被 git 转义成八进制，`grep -v '\.md:'` 就匹配不上，会多算。
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **758 个** = 源码 738 + `.github/` 20），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **760 个** = 源码 740 + `.github/` 20），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   其中 `.github/` 占 15 个，单独看：`git -c core.quotepath=false grep -o "FORK-ANCHOR:" -- .github | wc -l`。
 
 全量清单见 **`锚点清单.md`**：按文件分组列出每个锚点的名字，合并上游后照它逐条核对。
@@ -1104,6 +1104,19 @@ unavailable` 只差一个词，被读成「某账号返回的上游错误」。
 测试：`backend/internal/service/fork_model_rate_limit_mapping_test.go`（6 用例，新建文件，带 `FORK:` 头）。
 本机 `go test -tags=unit ./internal/service -run 'ModelRateLimit|TempUnsched|SchedulableForModel|RateLimitActive|Cline'`
 125 个测试通过、0 失败；`go build ./...` 通过。
+
+### 2.31 合并上游 0.2.21 时的三处二开保留（改上游文件，新增 2 个锚点）
+
+上游 0.2.21 重构了若干文件，以下三处若不处理会丢二开行为：
+
+| # | 文件 | 上游改法 | 保留的二开行为 | 锚点 |
+|---|---|---|---|---|
+| 1 | `backend/internal/service/model_rate_limit.go` | Antigravity 分支改成整段 `return antigravityModelRateLimitKeys(a, modelKey)` | 会让上面刚追加的别名键失效，改为 `append(keys, ...[1:]...)` | `model-rate-limit-alias-antigravity` |
+| 2 | `backend/internal/handler/openai_gateway_handler.go` | 新增 `normalizeCodexPageContext`，重新引入 `hasUniqueJSONMembers` | page context 与 automation/delegation 两者都跑；后者共用 fork 的一次结构扫描 | `bootstrap-unique-json-members` |
+| 3 | `backend/internal/handler/composite_platform.go` | 新增 `WithOpenAIReasoningEffortPolicyForMessages` 与 CN 目标早退 | CN 目标仍走 `anthropicCompatibleReasoningEffortPolicy`（minimal→low） | 无（改现有分支） |
+
+另：`frontend/src/views/admin/__tests__/AccountsView.lite.spec.ts` 中上游新增的手动刷新用例，
+fork 会给手动刷新并发跑用量查询并用 `getById` 回写整行，测试里 `getById` 需返回与列表一致的最新数据。
 
 ## 3. 发版方式
 

@@ -106,13 +106,14 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if account != nil && account.Platform == PlatformOpenAI && isOpenAIRequestScopedCapacityShed("", responseBody) {
 		// 显式配置的模型级规则优先于默认保护；账号级规则仍按请求级降载处理。
 		model := firstRequestedModel(canonicalModel)
-		if s != nil && s.rateLimitService != nil && model != "" {
-			matches := matchTempUnschedulableRules(account, statusCode, responseBody)
+		if s != nil && s.rateLimitService != nil && model != "" && account.IsTempUnschedulableEnabled() {
+			ruleBody := openAICapacityShedRuleBody(responseBody)
+			matches := matchTempUnschedulableRules(account, statusCode, ruleBody)
 			if len(matches) > 0 && matches[0].rule.Scope == TempUnschedScopeModel {
 				stateCtx, cancel := openAIAccountStateContext(ctx)
 				defer cancel()
 				stateCtx = withTempUnschedulableModel(stateCtx, canonicalModel)
-				if s.rateLimitService.HandleTempUnschedulable(stateCtx, account, statusCode, responseBody, model) {
+				if s.rateLimitService.HandleTempUnschedulable(stateCtx, account, statusCode, ruleBody, model) {
 					return true
 				}
 			}

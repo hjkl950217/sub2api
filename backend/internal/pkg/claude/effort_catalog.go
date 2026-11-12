@@ -59,6 +59,7 @@ func IsHaiku55(model string) bool {
 	return normalizeEffortModelID(model) == "claude-haiku-5-5"
 }
 
+// FORK: RequiresAdaptiveThinking / adaptiveVersionRe 为本地新增（上游以 IsFable52/IsMythos52 代替）。
 var adaptiveVersionRe = regexp.MustCompile(`claude-(haiku|sonnet|opus)-(\d+)(?:[-.](\d+))?`)
 
 // RequiresAdaptiveThinking reports whether a Claude model rejects the legacy
@@ -97,6 +98,16 @@ func RequiresAdaptiveThinking(model string) bool {
 	default:
 		return false
 	}
+}
+
+// IsFable52 identifies Fable 5.2 after provider/local suffix normalization.
+func IsFable52(model string) bool {
+	return normalizeEffortModelID(model) == "claude-fable-5-2"
+}
+
+// IsMythos52 identifies Mythos 5.2 after provider/local suffix normalization.
+func IsMythos52(model string) bool {
+	return normalizeEffortModelID(model) == "claude-mythos-5-2"
 }
 
 func normalizeEffortModelID(model string) string {

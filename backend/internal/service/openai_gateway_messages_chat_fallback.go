@@ -74,7 +74,7 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 
 	billingModel := resolveOpenAIForwardModel(account, anthropicReq.Model, defaultMappedModel)
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
-	if err := validateGPT61CompatRequest(body, upstreamModel); err != nil {
+	if err := validateGPT61RawEffort(body, upstreamModel); err != nil {
 		writeAnthropicError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return nil, err
 	}
@@ -84,6 +84,10 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 		return nil, err
 	}
 	chatReq.Model = upstreamModel
+	if openai.IsGPT61SolModelSpelling(upstreamModel) {
+		chatReq.Temperature = nil
+		chatReq.TopP = nil
+	}
 	chatReq.ReasoningEffort = openAICompatAnthropicReasoningEffort(&anthropicReq, upstreamModel, chatReq.ReasoningEffort)
 	chatReq.Stream = clientStream
 	if clientStream {
@@ -117,9 +121,14 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 		}
 	}
 	if IsCNProvider(account.Platform) {
+		// 策略可能改写 effort，CN provider 需再归一化一次。
 		if normalizedBody, normalized := NormalizeGLMOpenAIReasoningEffort(chatBody, upstreamModel); normalized {
 			chatBody = normalizedBody
 		}
+	}
+	if err := validateGPT61CompatRequest(chatBody, upstreamModel); err != nil {
+		writeAnthropicError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return nil, err
 	}
 	// Provider normalization and policy caps can both change the converted effort.
 	// Use the final outbound value for usage logs and billing.

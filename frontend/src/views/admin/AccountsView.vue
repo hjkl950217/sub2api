@@ -194,13 +194,13 @@
           @select-all-results="handleSelectAllResults"
           @toggle-schedulable="handleBulkToggleSchedulable"
         />
-        <div ref="accountTableRef" class="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div ref="accountTableRef" class="flex min-h-0 flex-1 flex-col overflow-hidden" :aria-busy="loading" :inert="loading && accounts.length > 0">
         <!-- FORK-ANCHOR: account-sort-default-id-desc（默认按账号 ID 降序，勿删） -->
         <DataTable
           ref="dataTableRef"
           :columns="cols"
           :data="accounts"
-          :loading="loading"
+          :loading="loading && accounts.length === 0"
           row-key="id"
           :server-side-sort="true"
           @sort="handleSort"

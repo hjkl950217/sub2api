@@ -174,12 +174,22 @@ func bindOpenAIReasoningEffortPolicyForMessagesRequest(c *gin.Context, apiKey *s
 		return
 	}
 	bindRequestedReasoningEffort(c, body, strings.TrimSpace(gjson.GetBytes(body, "model").String()))
+	isCNTarget := service.IsCNProvider(effectiveAPIKeyPlatform(c, apiKey))
+	if isCNTarget {
+		effort := gjson.GetBytes(body, "output_config.effort")
+		if effort.Type != gjson.String || strings.TrimSpace(effort.String()) == "" {
+			return
+		}
+	}
 	maxEffort, mappings, overLimit, ok := openAIReasoningEffortPolicyForRequest(c, apiKey)
 	if !ok {
 		return
 	}
-	if service.IsCNProvider(effectiveAPIKeyPlatform(c, apiKey)) {
+	if isCNTarget {
+		// CN 目标的 Anthropic 兼容入口不接受 minimal，降到 low。
 		maxEffort, mappings = anthropicCompatibleReasoningEffortPolicy(maxEffort, mappings)
+		c.Request = c.Request.WithContext(service.WithOpenAIReasoningEffortPolicy(c.Request.Context(), maxEffort, mappings, overLimit))
+		return
 	}
-	c.Request = c.Request.WithContext(service.WithOpenAIReasoningEffortPolicy(c.Request.Context(), maxEffort, mappings, overLimit))
+	c.Request = c.Request.WithContext(service.WithOpenAIReasoningEffortPolicyForMessages(c.Request.Context(), body, maxEffort, mappings, overLimit))
 }

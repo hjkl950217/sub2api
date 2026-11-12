@@ -2821,8 +2821,7 @@ func supportsOpenAIReasoningEffortMax(model string) bool {
 	}
 }
 
-// validateGPT61CompatRequest runs after model mapping, before conversion can
-// discard unsupported explicit effort selections or disabled thinking.
+// hasEffectiveGPT61SolCompatEffort 判断请求是否显式给出了 effort，用于决定是否按模型名后缀推导。
 func hasEffectiveGPT61SolCompatEffort(body []byte) bool {
 	for _, path := range []string{"reasoning.effort", "reasoning_effort"} {
 		effort := gjson.GetBytes(body, path)
@@ -2834,7 +2833,19 @@ func hasEffectiveGPT61SolCompatEffort(body []byte) bool {
 	return outputEffort.Type == gjson.String && outputEffort.String() != ""
 }
 
+// validateGPT61CompatRequest validates the converted request after model
+// mapping and reasoning effort policy application.
 func validateGPT61CompatRequest(body []byte, model string) error {
+	if err := validateGPT61RawEffort(body, model); err != nil {
+		return err
+	}
+	if gjson.GetBytes(body, "thinking.type").String() == "disabled" {
+		return openai.ValidateGPT61ReasoningEffort(model, "none")
+	}
+	return nil
+}
+
+func validateGPT61RawEffort(body []byte, model string) error {
 	isSol := openai.IsGPT61SolModelSpelling(model)
 	isTerra := openai.IsGPT61TerraModelSpelling(model)
 	if !isSol && !isTerra {
@@ -2844,9 +2855,6 @@ func validateGPT61CompatRequest(body []byte, model string) error {
 		if err := openai.ValidateGPT61ReasoningEffort(model, gjson.GetBytes(body, path).String()); err != nil {
 			return err
 		}
-	}
-	if gjson.GetBytes(body, "thinking.type").String() == "disabled" {
-		return openai.ValidateGPT61ReasoningEffort(model, "none")
 	}
 	// Only a canonical GPT-6.1 Sol effort alias can supply an implicit effort.
 	// Arbitrary client aliases (for example "public-none") may map to this
@@ -2861,13 +2869,10 @@ func validateGPT61CompatRequest(body []byte, model string) error {
 			}
 		}
 	}
-	// Terra: 模型名带 -none / -minimal 后缀时，后缀即隐式 effort（minimal 不被支持）。
-	if isTerra {
-		requestedModel := gjson.GetBytes(body, "model").String()
-		for _, effort := range []string{"none", "minimal"} {
-			if strings.HasSuffix(strings.ToLower(requestedModel), "-"+effort) {
-				return openai.ValidateGPT61ReasoningEffort(model, effort)
-			}
+	requestedModel := openai.CanonicalizeOpenAIModelAliasSpelling(gjson.GetBytes(body, "model").String())
+	for _, effort := range []string{"none", "minimal"} {
+		if strings.HasSuffix(strings.ToLower(requestedModel), "-"+effort) {
+			return openai.ValidateGPT61ReasoningEffort(model, effort)
 		}
 	}
 	return nil

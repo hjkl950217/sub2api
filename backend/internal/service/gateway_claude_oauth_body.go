@@ -266,7 +266,7 @@ func normalizeClaudeOAuthRequestBody(body []byte, modelID string, opts claudeOAu
 	// client parameters remain untouched so upstream validation is not bypassed.
 	samplingLocked := claude.IsSonnet55(modelID) || claude.IsHaiku55(modelID)
 	if opts.apiVersion == claude.LegacyAPIVersion &&
-		!gjson.GetBytes(out, "temperature").Exists() && !claude.IsOpus55(modelID) &&
+		!gjson.GetBytes(out, "temperature").Exists() && !claude.IsOpus55(modelID) && !claude.IsFable52(modelID) && !claude.IsMythos52(modelID) &&
 		(!samplingLocked || !gjson.GetBytes(out, "top_p").Exists()) {
 		if next, ok := setJSONValueBytes(out, "temperature", 1); ok {
 			out = next
