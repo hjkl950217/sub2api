@@ -46,7 +46,7 @@ git add AGENTS.md
   `-c core.quotepath=false` 不能省：中文文件名的路径会被 git 转义成八进制，`grep -v '\.md:'` 就匹配不上，会多算。
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **738 个** = 源码 718 + `.github/` 20），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **758 个** = 源码 738 + `.github/` 20），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   其中 `.github/` 占 15 个，单独看：`git -c core.quotepath=false grep -o "FORK-ANCHOR:" -- .github | wc -l`。
 
 全量清单见 **`锚点清单.md`**：按文件分组列出每个锚点的名字，合并上游后照它逐条核对。
@@ -1086,6 +1086,24 @@ unavailable` 只差一个词，被读成「某账号返回的上游错误」。
 **已知边界**：选号器只回裸错误 `no available accounts` 的行（近 30 天约 23 行），文案会是
 `Service temporarily unavailable (selection failure: no available accounts)`，后缀没有信息量；
 文案也只到「哪个模型、几个候选、为什么被排除」，不点名账号。要更准得让选号器把所有分支都带上统计。
+
+### 2.30 模型级冷却按请求名与映射名双向匹配（改上游文件，新增 1 个锚点）
+
+起因：temp 不可调度规则命中后，`triggerTempUnschedulable` 用**请求模型名**写
+`extra.model_rate_limits`；而调度判断 `modelRateLimitKeysForRequest` 用 `GetMappedModel`
+的**映射后名字**去查。配了 `model_mapping` 的账号（如 `glm-5.3 -> cn:glm-5.3`）两边对不上，
+模型级冷却写进去也查不到，请求仍被调度到已限流的账号上反复失败。
+
+改法：读取侧在映射名之外追加请求原文，以及账号 `model_mapping` 里映射到同一目标的其他键
+（通配符 pattern 跳过）。写入侧不动，历史数据和新数据都能命中。
+
+| # | 文件 | 改动 | 锚点 |
+|---|---|---|---|
+| 1 | `backend/internal/service/model_rate_limit.go` | `modelRateLimitKeysForRequest` 追加别名键；新增 `modelRateLimitAliasKeys` | `model-rate-limit-alias-keys` |
+
+测试：`backend/internal/service/fork_model_rate_limit_mapping_test.go`（6 用例，新建文件，带 `FORK:` 头）。
+本机 `go test -tags=unit ./internal/service -run 'ModelRateLimit|TempUnsched|SchedulableForModel|RateLimitActive|Cline'`
+125 个测试通过、0 失败；`go build ./...` 通过。
 
 ## 3. 发版方式
 

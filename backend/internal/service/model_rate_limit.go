@@ -78,6 +78,10 @@ func (a *Account) modelRateLimitKeysForRequest(ctx context.Context, requestedMod
 	}
 
 	keys := []string{modelKey}
+	// FORK-ANCHOR: model-rate-limit-alias-keys
+	// 写入侧有两种 key：temp 规则记请求模型名，网关重试记映射后的名字。
+	// 只查映射名会让配了 model_mapping 的账号漏掉其中一种，模型级冷却等于没生效。
+	keys = append(keys, a.modelRateLimitAliasKeys(requestedModel, modelKey)...)
 	switch a.Platform {
 	case PlatformAntigravity:
 		if isAntigravityGeminiModel(modelKey) && !isAntigravityGeminiImageModel(modelKey) && modelKey != antigravityGeminiModelRateLimitKey {
@@ -97,6 +101,38 @@ func (a *Account) modelRateLimitKeysForRequest(ctx context.Context, requestedMod
 		}
 	}
 	return keys
+}
+
+// modelRateLimitAliasKeys 返回与本次请求指向同一上游模型、但可能被写入侧当作
+// 冷却 key 的其他模型名：请求原文，以及账号 model_mapping 里映射到同一目标的其他键。
+// 通配符 pattern 无法反查，跳过。
+func (a *Account) modelRateLimitAliasKeys(requestedModel, modelKey string) []string {
+	if a == nil {
+		return nil
+	}
+	aliases := make([]string, 0, 2)
+	add := func(model string) {
+		model = strings.TrimSpace(model)
+		if model == "" || model == modelKey {
+			return
+		}
+		for _, existing := range aliases {
+			if existing == model {
+				return
+			}
+		}
+		aliases = append(aliases, model)
+	}
+	add(requestedModel)
+	rawMapping, _ := a.Credentials["model_mapping"].(map[string]any)
+	for pattern, target := range rawMapping {
+		mapped, _ := target.(string)
+		if strings.TrimSpace(mapped) != modelKey || strings.Contains(pattern, "*") {
+			continue
+		}
+		add(pattern)
+	}
+	return aliases
 }
 
 // isAnthropicFableModel 判断是否为 Fable 模型家族（claude-fable-5、claude-fable-5[1m] 等变体）
