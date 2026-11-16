@@ -16,7 +16,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
@@ -66,7 +65,7 @@ func openAIResponsesModeFromProbedProtocols(passed []string) openai_compat.Respo
 	return openai_compat.ResponsesSupportModeForceChatCompletions
 }
 
-// probeOpenAIAPIKeyProtocolsConnection 依次探测 chat_completions 与 responses 两个原生端点；
+// probeOpenAIAPIKeyProtocolsConnection 并发探测 chat_completions 与 responses 两个原生端点；
 // 仅显式同步时回写通过集合，普通连接测试只上报逐协议结果（对齐 CN 协议矩阵语义）。
 func (s *AccountTestService) probeOpenAIAPIKeyProtocolsConnection(c *gin.Context, account *Account, modelID string, prompt string, protocols []string, syncProtocols bool) error {
 	authToken := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
@@ -95,62 +94,20 @@ func (s *AccountTestService) probeOpenAIAPIKeyProtocolsConnection(c *gin.Context
 		probeService.accountRepo = protocolProbeAccountRepository{AccountRepository: s.accountRepo}
 	}
 
-	c.Set(accountTestSuppressErrorContextKey, true)
-	c.Set(accountTestSuppressCompletionContextKey, true)
-	defer func() {
-		c.Set(accountTestSuppressErrorContextKey, false)
-		c.Set(accountTestSuppressCompletionContextKey, false)
-	}()
-
-	passed := make([]string, 0, len(protocols))
-	for _, protocol := range protocols {
-		c.Set(accountTestActiveProtocolContextKey, protocol)
-		c.Set(accountTestSuppressContentContextKey, true)
-		contentBuilder := &strings.Builder{}
-		c.Set(accountTestContentContextKey, contentBuilder)
-		// FORK-ANCHOR: protocol-matrix-collect-error-text-openai (二开：openai 两协议矩阵同样收集失败报错)
-		errorBuilder := &strings.Builder{}
-		c.Set(accountTestErrorContextKey, errorBuilder)
-		s.sendEvent(c, TestEvent{Type: "protocol_probe", Protocol: protocol})
-
-		// FORK-ANCHOR: protocol-matrix-timing-openai (二开：openai 两协议矩阵同样打点，前端显示首字/完整耗时)
-		firstByte := time.Time{}
-		c.Set(accountTestFirstByteContextKey, &firstByte)
-		start := time.Now()
-		probeAccount := cloneAccountForProtocolProbe(account)
-		var probeErr error
+	passed, _ := s.probeProtocolsConcurrently(c, protocols, account, func(probeContext *gin.Context, probeAccount *Account, protocol string) error {
 		switch protocol {
 		case APIProtocolResponses:
 			probeAccount.Extra = withOpenAIResponsesMode(account.Extra, openai_compat.ResponsesSupportModeForceResponses)
-			probeErr = probeService.testOpenAIAccountConnection(c, probeAccount, testModelID, prompt, AccountTestModeDefault)
+			return probeService.testOpenAIAccountConnection(probeContext, probeAccount, testModelID, prompt, AccountTestModeDefault)
 		default:
-			probeErr = probeService.testOpenAIChatCompletionsConnection(c, probeAccount, testModelID, prompt, normalizedBaseURL, authToken)
+			return probeService.testOpenAIChatCompletionsConnection(probeContext, probeAccount, testModelID, prompt, normalizedBaseURL, authToken)
 		}
-		total := time.Since(start)
-		if probeErr == nil {
-			passed = append(passed, protocol)
-		}
-		event := TestEvent{Type: "protocol_result", Protocol: protocol, ProtocolOK: forkBoolPtr(probeErr == nil), Text: contentBuilder.String()}
-		event.TotalMS = total.Milliseconds()
-		if !firstByte.IsZero() {
-			event.FirstByteMS = firstByte.Sub(start).Milliseconds()
-		}
-		if probeErr != nil {
-			event.Error = probeErr.Error()
-		}
-		// FORK-ANCHOR: protocol-matrix-error-event-openai (二开：把收集到的完整报错挂到 protocol_result 上)
-		if probeErr != nil && strings.TrimSpace(errorBuilder.String()) != "" {
-			event.Error = strings.TrimSpace(errorBuilder.String())
-		}
-		s.sendEvent(c, event)
-	}
+	})
 
 	applied := false
 	if syncProtocols && len(passed) > 0 {
 		applied = s.applyProbedOpenAIAPIKeyProtocols(c, account, passed)
 	}
-	c.Set(accountTestSuppressErrorContextKey, false)
-	c.Set(accountTestSuppressCompletionContextKey, false)
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: len(passed) > 0, ProtocolApplied: applied})
 	return nil
 }

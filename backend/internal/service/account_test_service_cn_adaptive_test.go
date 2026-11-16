@@ -3,11 +3,15 @@
 package service
 
 import (
+	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -32,6 +36,18 @@ func adaptiveCNAccountTestAccount(id int64, platform string) *Account {
 	}
 }
 
+// adaptiveCNResponseKey 把探测路径归到协议键上，供按协议预置响应。
+func adaptiveCNResponseKey(path string) string {
+	switch {
+	case strings.Contains(path, "/v1/messages"):
+		return APIProtocolAnthropic
+	case strings.HasSuffix(path, "/responses"):
+		return APIProtocolResponses
+	default:
+		return APIProtocolChatCompletions
+	}
+}
+
 func adaptiveCNAccountTestService(account *Account, responses ...*http.Response) (*AccountTestService, *httpUpstreamRecorder) {
 	repo := &openAIAccountTestRepo{
 		mockAccountRepoForGemini: mockAccountRepoForGemini{
@@ -44,6 +60,91 @@ func adaptiveCNAccountTestService(account *Account, responses ...*http.Response)
 		httpUpstream: upstream,
 		cfg:          rawChatCompletionsTestConfig(),
 	}, upstream
+}
+
+// adaptiveCNProtocolUpstream 按协议路径返回预置响应，可安全并发调用。
+// 二开：adaptive/复选路径改为多协议并发后，不能再按到达顺序分配响应。
+type adaptiveCNProtocolUpstream struct {
+	mu        sync.Mutex
+	requests  []*http.Request
+	bodies    [][]byte
+	responses map[string]*http.Response
+}
+
+func (u *adaptiveCNProtocolUpstream) Do(req *http.Request, proxyURL string, accountID int64, concurrency int) (*http.Response, error) {
+	return u.DoWithTLS(req, proxyURL, accountID, concurrency, nil)
+}
+
+func (u *adaptiveCNProtocolUpstream) DoWithTLS(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	body, _ := io.ReadAll(req.Body)
+	_ = req.Body.Close()
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	key := adaptiveCNResponseKey(req.URL.Path)
+	u.mu.Lock()
+	u.requests = append(u.requests, req)
+	u.bodies = append(u.bodies, body)
+	resp := u.responses[key]
+	u.mu.Unlock()
+	if resp == nil {
+		return nil, fmt.Errorf("no mocked response for %s", req.URL.Path)
+	}
+	return resp, nil
+}
+
+func (u *adaptiveCNProtocolUpstream) requestByProtocol(t *testing.T, protocol string) *http.Request {
+	t.Helper()
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	for _, req := range u.requests {
+		if adaptiveCNResponseKey(req.URL.Path) == protocol {
+			return req
+		}
+	}
+	require.Failf(t, "missing request", "protocol %s 没有发出请求", protocol)
+	return nil
+}
+
+func (u *adaptiveCNProtocolUpstream) bodyByProtocol(t *testing.T, protocol string) []byte {
+	t.Helper()
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	for index, req := range u.requests {
+		if adaptiveCNResponseKey(req.URL.Path) == protocol {
+			return u.bodies[index]
+		}
+	}
+	return nil
+}
+
+// adaptiveCNProtocolTestService 与 adaptiveCNAccountTestService 相同，但上游按协议预置响应，
+// 供多协议并发探测的测试使用。
+func adaptiveCNProtocolTestService(account *Account, responses map[string]*http.Response) (*AccountTestService, *adaptiveCNProtocolUpstream) {
+	repo := &openAIAccountTestRepo{
+		mockAccountRepoForGemini: mockAccountRepoForGemini{
+			accountsByID: map[int64]*Account{account.ID: account},
+		},
+	}
+	upstream := &adaptiveCNProtocolUpstream{responses: responses}
+	return &AccountTestService{
+		accountRepo:  repo,
+		httpUpstream: upstream,
+		cfg:          rawChatCompletionsTestConfig(),
+	}, upstream
+}
+
+// adaptiveCNResponses 组装按协议预置的响应；nil 表示该协议没有预置（探测会报错）。
+func adaptiveCNResponses(chat, anthropic, responses *http.Response) map[string]*http.Response {
+	out := map[string]*http.Response{}
+	if chat != nil {
+		out[APIProtocolChatCompletions] = chat
+	}
+	if anthropic != nil {
+		out[APIProtocolAnthropic] = anthropic
+	}
+	if responses != nil {
+		out[APIProtocolResponses] = responses
+	}
+	return out
 }
 
 func adaptiveCNChatTestResponse() *http.Response {
@@ -84,10 +185,9 @@ data: {"type":"response.completed"}
 
 func TestAccountTestService_AdaptiveChatOnlyProvidersTestChatAndAnthropicEndpoints(t *testing.T) {
 	account := adaptiveCNAccountTestAccount(301, PlatformZhipu)
-	svc, upstream := adaptiveCNAccountTestService(
+	svc, upstream := adaptiveCNProtocolTestService(
 		account,
-		adaptiveCNChatTestResponse(),
-		adaptiveCNAnthropicTestResponse(),
+		adaptiveCNResponses(adaptiveCNChatTestResponse(), adaptiveCNAnthropicTestResponse(), nil),
 	)
 	c, recorder := newTestContext()
 
@@ -95,22 +195,23 @@ func TestAccountTestService_AdaptiveChatOnlyProvidersTestChatAndAnthropicEndpoin
 
 	require.NoError(t, err)
 	require.Len(t, upstream.requests, 2)
-	require.Equal(t, "http://chat.example/v1/chat/completions", upstream.requests[0].URL.String())
-	require.Equal(t, "http://anthropic.example/v1/messages", upstream.requests[1].URL.String())
-	require.Equal(t, "Bearer sk-adaptive-test", upstream.requests[0].Header.Get("Authorization"))
-	require.Equal(t, "sk-adaptive-test", upstream.requests[1].Header.Get("x-api-key"))
+	chatReq := upstream.requestByProtocol(t, APIProtocolChatCompletions)
+	anthropicReq := upstream.requestByProtocol(t, APIProtocolAnthropic)
+	require.Equal(t, "http://chat.example/v1/chat/completions", chatReq.URL.String())
+	require.Equal(t, "http://anthropic.example/v1/messages", anthropicReq.URL.String())
+	require.Equal(t, "Bearer sk-adaptive-test", chatReq.Header.Get("Authorization"))
+	require.Equal(t, "sk-adaptive-test", anthropicReq.Header.Get("x-api-key"))
 	require.Equal(t, 1, strings.Count(recorder.Body.String(), `"type":"test_start"`))
 	require.Equal(t, 1, strings.Count(recorder.Body.String(), `"type":"test_complete"`))
-	require.Contains(t, recorder.Body.String(), "已通过原生 /v1/messages 验证")
+	// 二开：端点探测结果改为逐协议回传，正文与结论都在 protocol_result 上
+	require.Contains(t, recorder.Body.String(), `"protocol":"anthropic","protocol_ok":true`)
 }
 
 func TestAccountTestService_AdaptiveDeepSeekAlsoTestsResponsesEndpoint(t *testing.T) {
 	account := adaptiveCNAccountTestAccount(302, PlatformDeepseek)
-	svc, upstream := adaptiveCNAccountTestService(
+	svc, upstream := adaptiveCNProtocolTestService(
 		account,
-		adaptiveCNChatTestResponse(),
-		adaptiveCNAnthropicTestResponse(),
-		adaptiveCNResponsesTestResponse(),
+		adaptiveCNResponses(adaptiveCNChatTestResponse(), adaptiveCNAnthropicTestResponse(), adaptiveCNResponsesTestResponse()),
 	)
 	c, recorder := newTestContext()
 
@@ -118,23 +219,23 @@ func TestAccountTestService_AdaptiveDeepSeekAlsoTestsResponsesEndpoint(t *testin
 
 	require.NoError(t, err)
 	require.Len(t, upstream.requests, 3)
-	require.Equal(t, "http://responses.example/responses", upstream.requests[2].URL.String())
-	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.requests[2].Context()))
-	require.Equal(t, "Bearer sk-adaptive-test", upstream.requests[2].Header.Get("Authorization"))
-	require.True(t, gjson.GetBytes(upstream.bodies[2], "stream").Bool())
-	require.False(t, gjson.GetBytes(upstream.bodies[2], "store").Bool())
-	require.False(t, gjson.GetBytes(upstream.bodies[2], "instructions").Exists())
+	responsesReq := upstream.requestByProtocol(t, APIProtocolResponses)
+	require.Equal(t, "http://responses.example/responses", responsesReq.URL.String())
+	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(responsesReq.Context()))
+	require.Equal(t, "Bearer sk-adaptive-test", responsesReq.Header.Get("Authorization"))
+	responsesBody := upstream.bodyByProtocol(t, APIProtocolResponses)
+	require.True(t, gjson.GetBytes(responsesBody, "stream").Bool())
+	require.False(t, gjson.GetBytes(responsesBody, "store").Bool())
+	require.False(t, gjson.GetBytes(responsesBody, "instructions").Exists())
 	require.Equal(t, 1, strings.Count(recorder.Body.String(), `"type":"test_complete"`))
-	require.Contains(t, recorder.Body.String(), "已通过原生 /responses 验证")
+	require.Contains(t, recorder.Body.String(), `"protocol":"responses","protocol_ok":true`)
 }
 
 func TestAccountTestService_AdaptiveKimiAlsoTestsResponsesEndpoint(t *testing.T) {
 	account := adaptiveCNAccountTestAccount(306, PlatformKimi)
-	svc, upstream := adaptiveCNAccountTestService(
+	svc, upstream := adaptiveCNProtocolTestService(
 		account,
-		adaptiveCNChatTestResponse(),
-		adaptiveCNAnthropicTestResponse(),
-		adaptiveCNResponsesTestResponse(),
+		adaptiveCNResponses(adaptiveCNChatTestResponse(), adaptiveCNAnthropicTestResponse(), adaptiveCNResponsesTestResponse()),
 	)
 	c, recorder := newTestContext()
 
@@ -142,22 +243,27 @@ func TestAccountTestService_AdaptiveKimiAlsoTestsResponsesEndpoint(t *testing.T)
 
 	require.NoError(t, err)
 	require.Len(t, upstream.requests, 3)
-	require.Equal(t, "http://responses.example/v1/responses", upstream.requests[2].URL.String())
-	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.requests[2].Context()))
-	require.Equal(t, "Bearer sk-adaptive-test", upstream.requests[2].Header.Get("Authorization"))
-	require.True(t, gjson.GetBytes(upstream.bodies[2], "stream").Bool())
-	require.False(t, gjson.GetBytes(upstream.bodies[2], "store").Bool())
-	require.False(t, gjson.GetBytes(upstream.bodies[2], "instructions").Exists())
+	responsesReq := upstream.requestByProtocol(t, APIProtocolResponses)
+	require.Equal(t, "http://responses.example/v1/responses", responsesReq.URL.String())
+	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(responsesReq.Context()))
+	require.Equal(t, "Bearer sk-adaptive-test", responsesReq.Header.Get("Authorization"))
+	responsesBody := upstream.bodyByProtocol(t, APIProtocolResponses)
+	require.True(t, gjson.GetBytes(responsesBody, "stream").Bool())
+	require.False(t, gjson.GetBytes(responsesBody, "store").Bool())
+	require.False(t, gjson.GetBytes(responsesBody, "instructions").Exists())
 	require.Equal(t, 1, strings.Count(recorder.Body.String(), `"type":"test_complete"`))
-	require.Contains(t, recorder.Body.String(), "已通过原生 /responses 验证")
+	require.Contains(t, recorder.Body.String(), `"protocol":"responses","protocol_ok":true`)
 }
 
 func TestAccountTestService_AdaptiveStopsAndNamesFailingEndpoint(t *testing.T) {
 	account := adaptiveCNAccountTestAccount(303, PlatformDeepseek)
-	svc, upstream := adaptiveCNAccountTestService(
+	svc, upstream := adaptiveCNProtocolTestService(
 		account,
-		adaptiveCNChatTestResponse(),
-		newJSONResponse(http.StatusNotFound, `{"error":{"message":"missing messages route"}}`),
+		adaptiveCNResponses(
+			adaptiveCNChatTestResponse(),
+			newJSONResponse(http.StatusNotFound, `{"error":{"message":"missing messages route"}}`),
+			adaptiveCNResponsesTestResponse(),
+		),
 	)
 	c, recorder := newTestContext()
 
@@ -165,17 +271,21 @@ func TestAccountTestService_AdaptiveStopsAndNamesFailingEndpoint(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Adaptive Anthropic endpoint returned 404")
-	require.Len(t, upstream.requests, 2)
+	// 二开：并发探测不再首错即停，三个端点都会发出去
+	require.Len(t, upstream.requests, 3)
 	require.Contains(t, recorder.Body.String(), `"type":"error"`)
 	require.NotContains(t, recorder.Body.String(), `"type":"test_complete"`)
 }
 
 func TestAccountTestService_AdaptiveRejectsInvalidAnthropicSuccessBody(t *testing.T) {
 	account := adaptiveCNAccountTestAccount(305, PlatformKimi)
-	svc, upstream := adaptiveCNAccountTestService(
+	svc, upstream := adaptiveCNProtocolTestService(
 		account,
-		adaptiveCNChatTestResponse(),
-		newJSONResponse(http.StatusOK, `<html>not an Anthropic stream</html>`),
+		adaptiveCNResponses(
+			adaptiveCNChatTestResponse(),
+			newJSONResponse(http.StatusOK, `<html>not an Anthropic stream</html>`),
+			adaptiveCNResponsesTestResponse(),
+		),
 	)
 	c, recorder := newTestContext()
 
@@ -183,7 +293,7 @@ func TestAccountTestService_AdaptiveRejectsInvalidAnthropicSuccessBody(t *testin
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Adaptive Anthropic stream ended before message_stop")
-	require.Len(t, upstream.requests, 2)
+	require.Len(t, upstream.requests, 3)
 	require.Contains(t, recorder.Body.String(), `"type":"error"`)
 	require.NotContains(t, recorder.Body.String(), `"type":"test_complete"`)
 }

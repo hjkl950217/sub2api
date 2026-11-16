@@ -189,13 +189,14 @@ func TestForkOpenAIProtocolsPlainTestProbesBothProtocols(t *testing.T) {
 		func() *http.Response { return adaptiveCNChatTestResponse() },
 		nil,
 		func() *http.Response { return adaptiveCNResponsesTestResponse() },
-	))
+	), true)
 	c, recorder := newTestContext()
 
 	err := svc.TestAccountConnection(c, account.ID, "gpt-4o", "hello", AccountTestModeDefault)
 
 	require.NoError(t, err)
 	require.Len(t, upstream.requests, 2, "chat 与 responses 各探测一次")
+	require.Equal(t, 2, upstream.maxActive, "两个协议应并发探测")
 	require.Nil(t, repo.updated, "普通测试不得回写协议配置")
 	require.Zero(t, repo.setErrorCalls, "单协议失败不得把账号状态改成 error")
 

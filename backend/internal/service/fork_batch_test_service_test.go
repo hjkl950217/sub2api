@@ -229,8 +229,8 @@ func TestForkBatchTestRunCompletesFailedTarget(t *testing.T) {
 // 前端「测试」弹窗与批量测试的失败详情都依赖它。
 func TestForkProtocolMatrixReportsFailureError(t *testing.T) {
 	account := forkBatchTestAccount(31, PlatformDeepseek, "deepseek-chat")
-	// 国产矩阵只在「赛博羊毛-DS」分组账号上跑并发三协议探测（见 isDeepseekDSGroupAccount），
-	// 不挂分组会退回单协议路径，拿不到三份逐协议结果。
+	// 挂 DS 分组让它走三协议矩阵（三个协议全测）；不挂则按勾选集合只测 chat/responses，
+	// 拿不到三份逐协议结果。
 	account.Groups = []*Group{{Name: "赛博羊毛-DS"}}
 	svc, upstream, _ := forkBatchTestService(account)
 	upstream.responses = protocolMatrixResponses(
@@ -342,5 +342,5 @@ func TestForkBatchTestRunRespectsConcurrencyLimit(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, 1, upstream.maxActive, "并发 1 时同一时刻只有一个账号在测")
+	require.Equal(t, 1, upstream.maxActiveAccounts(), "并发 1 时同一时刻只有一个账号在测")
 }

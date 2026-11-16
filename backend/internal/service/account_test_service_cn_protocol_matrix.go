@@ -63,21 +63,18 @@ func (protocolProbeAccountRepository) SetRateLimited(context.Context, int64, tim
 	return nil
 }
 
-// probeCNProviderProtocolsConnection 并发探测三个原生协议端点；仅显式同步时回写通过集合。
-func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, account *Account, modelID string, prompt string, syncProtocols bool) error {
-	if !isDeepseekDSGroupAccount(account) {
-		return s.probeCNProviderProtocolsConnectionSequential(c, account, modelID, prompt)
-	}
-	authToken := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
-	if authToken == "" {
-		return s.sendErrorAndEnd(c, "No API key available")
-	}
-	testModelID := strings.TrimSpace(modelID)
-	if testModelID == "" {
-		testModelID = openai.DefaultTestModel
-	}
-	testModelID = account.GetMappedModel(testModelID)
-
+// probeProtocolsConcurrently 并发探测多个协议，按完成顺序把 protocol_probe /
+// protocol_result 事件写回外层连接，返回探测通过的协议（按传入顺序）与失败的错误。
+//
+// 每个协议拿独立的 gin.Context（写入 recorder，事件被抑制）与账号副本，正文、报错、
+// 首字打点都收集在各自的上下文里；只有外层 c 由本函数单线程写入，不会并发写 ResponseWriter。
+// probe 收到的上下文已设好抑制开关，回调只需决定用哪套探测函数。
+func (s *AccountTestService) probeProtocolsConcurrently(
+	c *gin.Context,
+	protocols []string,
+	account *Account,
+	probe func(probeContext *gin.Context, probeAccount *Account, protocol string) error,
+) (passed []string, failed []error) {
 	type result struct {
 		protocol string
 		err      error
@@ -88,18 +85,11 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 		ttfb  time.Duration
 		total time.Duration
 	}
-	results := make(chan result, len(cnProtocolProbeOrder))
-	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
-	for _, protocol := range cnProtocolProbeOrder {
+
+	results := make(chan result, len(protocols))
+	for _, protocol := range protocols {
 		s.sendEvent(c, TestEvent{Type: "protocol_probe", Protocol: protocol})
 		go func(protocol string) {
-			if protocol == APIProtocolResponses && !account.SupportsNativeCNResponses() {
-				results <- result{protocol: protocol, err: errors.New("provider has no native Responses endpoint")}
-				return
-			}
-			// FORK-ANCHOR: protocol-matrix-collect-error-text (二开：探测失败的完整报错也要收集)
-			// 各协议的探测函数把报错塞在测试上下文的 error 事件里，只看返回值拿不到文本。
-			// 收一份到 errorBuilder，随 protocol_result 一起给前端，失败原因才看得见。
 			probeContext, _ := gin.CreateTestContext(httptest.NewRecorder())
 			probeContext.Request = c.Request.Clone(c.Request.Context())
 			probeContext.Set(accountTestSuppressErrorContextKey, true)
@@ -108,40 +98,15 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 			probeContext.Set(accountTestSuppressContentContextKey, true)
 			contentBuilder := &strings.Builder{}
 			probeContext.Set(accountTestContentContextKey, contentBuilder)
+			// FORK-ANCHOR: protocol-matrix-collect-error-text (二开：探测失败的完整报错也要收集)
+			// 各协议的探测函数把报错塞在测试上下文的 error 事件里，只看返回值拿不到文本。
 			errorBuilder := &strings.Builder{}
 			probeContext.Set(accountTestErrorContextKey, errorBuilder)
 			// FORK-ANCHOR: protocol-matrix-timing-probe (二开：首字打点，探针结束后算首字/完整耗时)
 			firstByte := time.Time{}
 			probeContext.Set(accountTestFirstByteContextKey, &firstByte)
-			probeAccount := *account
-			probeAccount.modelMappingCache = nil
-			probeAccount.modelMappingCacheReady = false
-			probeAccount.modelMappingCacheCredentialsPtr = 0
-			probeAccount.modelMappingCacheRawPtr = 0
-			probeAccount.modelMappingCacheRawLen = 0
-			probeAccount.modelMappingCacheRawSig = 0
-			probeAccount.modelMappingCacheRuntimeVersion = 0
-			probeAccount.headerOverrideCache = nil
-			probeAccount.headerOverrideCacheReady = false
-			probeAccount.headerOverrideCacheCredentialsPtr = 0
-			probeAccount.headerOverrideCacheRawPtr = 0
-			probeAccount.headerOverrideCacheRawLen = 0
-			probeAccount.headerOverrideCacheRawSig = 0
-			//nolint:govet // 只读探测副本：故意浅拷贝以替换 accountRepo，探测期间不并发使用 s 的 mutex
-			probeService := *s
-			if !syncProtocols {
-				probeService.accountRepo = protocolProbeAccountRepository{AccountRepository: s.accountRepo}
-			}
 			start := time.Now()
-			var err error
-			switch protocol {
-			case APIProtocolAnthropic:
-				err = probeService.testCNProviderAdaptiveAnthropicConnection(probeContext, &probeAccount, testModelID, authToken, prompt)
-			case APIProtocolResponses:
-				err = probeService.testCNProviderAdaptiveResponsesConnection(probeContext, &probeAccount, testModelID, authToken, prompt)
-			default:
-				err = probeService.testCNProviderChatCompletionsConnection(probeContext, &probeAccount, modelID, prompt)
-			}
+			err := probe(probeContext, cloneAccountForProtocolProbe(account), protocol)
 			total := time.Since(start)
 			var ttfb time.Duration
 			if !firstByte.IsZero() {
@@ -151,13 +116,11 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 		}(protocol)
 	}
 
-	passed := make([]string, 0, len(cnProtocolProbeOrder))
-	for range cnProtocolProbeOrder {
+	outcomes := make(map[string]result, len(protocols))
+	for range protocols {
 		result := <-results
+		outcomes[result.protocol] = result
 		ok := result.err == nil
-		if ok {
-			passed = append(passed, result.protocol)
-		}
 		event := TestEvent{Type: "protocol_result", Protocol: result.protocol, ProtocolOK: forkBoolPtr(ok), Text: result.text}
 		// FORK-ANCHOR: protocol-matrix-timing-event (二开：逐协议首字/完整耗时随 protocol_result 回传)
 		event.FirstByteMS = result.ttfb.Milliseconds()
@@ -172,15 +135,21 @@ func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, 
 		s.sendEvent(c, event)
 	}
 
-	applied := false
-	if syncProtocols && len(passed) > 0 {
-		applied = s.applyProbedCNProtocols(c, account, passed)
+	// 结果按探测顺序回传，调用方的回写与报错选择都不受完成先后影响。
+	passed = make([]string, 0, len(protocols))
+	for _, protocol := range protocols {
+		result := outcomes[protocol]
+		if result.err == nil {
+			passed = append(passed, protocol)
+			continue
+		}
+		failed = append(failed, result.err)
 	}
-	s.sendEvent(c, TestEvent{Type: "test_complete", Success: len(passed) > 0, ProtocolApplied: applied})
-	return nil
+	return passed, failed
 }
 
-func (s *AccountTestService) probeCNProviderProtocolsConnectionSequential(c *gin.Context, account *Account, modelID string, prompt string) error {
+// probeCNProviderProtocolsConnection 并发探测三个原生协议端点；仅显式同步时回写通过集合。
+func (s *AccountTestService) probeCNProviderProtocolsConnection(c *gin.Context, account *Account, modelID string, prompt string, syncProtocols bool) error {
 	authToken := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
 	if authToken == "" {
 		return s.sendErrorAndEnd(c, "No API key available")
@@ -190,65 +159,37 @@ func (s *AccountTestService) probeCNProviderProtocolsConnectionSequential(c *gin
 		testModelID = openai.DefaultTestModel
 	}
 	testModelID = account.GetMappedModel(testModelID)
-	c.Set(accountTestSuppressErrorContextKey, true)
-	c.Set(accountTestSuppressCompletionContextKey, true)
-	defer func() {
-		c.Set(accountTestSuppressErrorContextKey, false)
-		c.Set(accountTestSuppressCompletionContextKey, false)
-	}()
-	passed := make([]string, 0, len(cnProtocolProbeOrder))
-	for _, protocol := range cnProtocolProbeOrder {
+
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
+	passed, _ := s.probeProtocolsConcurrently(c, cnProtocolProbeOrder, account, func(probeContext *gin.Context, probeAccount *Account, protocol string) error {
 		if protocol == APIProtocolResponses && !account.SupportsNativeCNResponses() {
-			s.sendEvent(c, TestEvent{Type: "protocol_result", Protocol: protocol, ProtocolOK: forkBoolPtr(false), Error: "provider has no native Responses endpoint"})
-			continue
+			return errors.New("provider has no native Responses endpoint")
 		}
-		c.Set(accountTestActiveProtocolContextKey, protocol)
-		c.Set(accountTestSuppressContentContextKey, true)
-		contentBuilder := &strings.Builder{}
-		c.Set(accountTestContentContextKey, contentBuilder)
-		// FORK-ANCHOR: protocol-matrix-collect-error-text-seq (二开：串行路径同样收集失败报错)
-		errorBuilder := &strings.Builder{}
-		c.Set(accountTestErrorContextKey, errorBuilder)
-		s.sendEvent(c, TestEvent{Type: "protocol_probe", Protocol: protocol})
-		// FORK-ANCHOR: protocol-matrix-timing-seq (二开：串行路径同样打点，前端显示首字/完整耗时)
-		firstByte := time.Time{}
-		c.Set(accountTestFirstByteContextKey, &firstByte)
-		start := time.Now()
-		var err error
+		//nolint:govet // 只读探测副本：故意浅拷贝以替换 accountRepo，探测期间不并发使用 s 的 mutex
+		probeService := *s
+		if !syncProtocols {
+			probeService.accountRepo = protocolProbeAccountRepository{AccountRepository: s.accountRepo}
+		}
 		switch protocol {
 		case APIProtocolAnthropic:
-			err = s.testCNProviderAdaptiveAnthropicConnection(c, account, testModelID, authToken, prompt)
+			return probeService.testCNProviderAdaptiveAnthropicConnection(probeContext, probeAccount, testModelID, authToken, prompt)
 		case APIProtocolResponses:
-			err = s.testCNProviderAdaptiveResponsesConnection(c, account, testModelID, authToken, prompt)
+			return probeService.testCNProviderAdaptiveResponsesConnection(probeContext, probeAccount, testModelID, authToken, prompt)
 		default:
-			err = s.testCNProviderChatCompletionsConnection(c, account, modelID, prompt)
+			return probeService.testCNProviderChatCompletionsConnection(probeContext, probeAccount, modelID, prompt)
 		}
-		total := time.Since(start)
-		if err == nil {
-			passed = append(passed, protocol)
-		}
-		// FORK-ANCHOR: protocol-matrix-error-event-seq (二开：串行路径也把完整报错带回去)
-		seqEvent := TestEvent{Type: "protocol_result", Protocol: protocol, ProtocolOK: forkBoolPtr(err == nil), Text: contentBuilder.String()}
-		seqEvent.TotalMS = total.Milliseconds()
-		if !firstByte.IsZero() {
-			seqEvent.FirstByteMS = firstByte.Sub(start).Milliseconds()
-		}
-		if err != nil {
-			seqEvent.Error = err.Error()
-		}
-		if err != nil && strings.TrimSpace(errorBuilder.String()) != "" {
-			seqEvent.Error = strings.TrimSpace(errorBuilder.String())
-		}
-		s.sendEvent(c, seqEvent)
+	})
+
+	applied := false
+	if syncProtocols && len(passed) > 0 {
+		applied = s.applyProbedCNProtocols(c, account, passed)
 	}
-	applied := len(passed) > 0 && s.applyProbedCNProtocols(c, account, passed)
-	c.Set(accountTestSuppressErrorContextKey, false)
-	c.Set(accountTestSuppressCompletionContextKey, false)
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: len(passed) > 0, ProtocolApplied: applied})
 	return nil
 }
 
-// isDeepseekDSGroupAccount 报告账号是否走并发探测路径（deepseek DS 分组 + 聚合中转）。
+// isDeepseekDSGroupAccount 报告账号是否直接走三协议探测矩阵（deepseek DS 分组 + 聚合中转）。
+// 并发本身已对所有账号生效，这里只决定路由：这两类账号不按已勾选协议裁剪，三协议全测。
 // FORK-ANCHOR: ag-hub-protocol-matrix-concurrent (二开：聚合中转与 DS 分组同样并发探测)
 func isDeepseekDSGroupAccount(account *Account) bool {
 	if account == nil {

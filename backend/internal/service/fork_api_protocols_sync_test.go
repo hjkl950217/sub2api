@@ -47,24 +47,43 @@ type protocolMatrixTestUpstream struct {
 	once             sync.Once
 	requests         []*http.Request
 	responses        map[string]func() *http.Response
+	// activeByAccount / activeAccounts 按账号统计同时有在途请求的账号数，用来验证
+	// 账号级并发上限（二开：单账号内部各协议也并发，不能再按请求总数算账号并发）。
+	activeByAccount  map[int64]int
+	activeAccounts   int
+	maxActiveAccount int
 }
 
 func (u *protocolMatrixTestUpstream) Do(req *http.Request, proxyURL string, accountID int64, concurrency int) (*http.Response, error) {
 	return u.DoWithTLS(req, proxyURL, accountID, concurrency, nil)
 }
 
-func (u *protocolMatrixTestUpstream) DoWithTLS(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+func (u *protocolMatrixTestUpstream) DoWithTLS(req *http.Request, _ string, accountID int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
 	u.mu.Lock()
 	u.active++
 	u.requests = append(u.requests, req)
 	if u.active > u.maxActive {
 		u.maxActive = u.active
 	}
+	if u.activeByAccount == nil {
+		u.activeByAccount = map[int64]int{}
+	}
+	if u.activeByAccount[accountID] == 0 {
+		u.activeAccounts++
+		if u.activeAccounts > u.maxActiveAccount {
+			u.maxActiveAccount = u.activeAccounts
+		}
+	}
+	u.activeByAccount[accountID]++
 	requestCount := len(u.requests)
 	u.mu.Unlock()
 	defer func() {
 		u.mu.Lock()
 		u.active--
+		u.activeByAccount[accountID]--
+		if u.activeByAccount[accountID] == 0 {
+			u.activeAccounts--
+		}
 		u.mu.Unlock()
 	}()
 	if u.concurrent {
@@ -81,6 +100,13 @@ func (u *protocolMatrixTestUpstream) DoWithTLS(req *http.Request, _ string, _ in
 		protocol = APIProtocolResponses
 	}
 	return u.responses[protocol](), nil
+}
+
+// maxActiveAccounts 返回同时被测试的账号数峰值。
+func (u *protocolMatrixTestUpstream) maxActiveAccounts() int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.maxActiveAccount
 }
 
 func protocolMatrixResponses(chat, anthropic, responses func() *http.Response) map[string]func() *http.Response {
@@ -162,14 +188,14 @@ func TestForkProtocolSyncMatrixAppliesPassedProtocols(t *testing.T) {
 			return newJSONResponse(http.StatusBadRequest, `{"error":"no anthropic endpoint"}`)
 		},
 		func() *http.Response { return adaptiveCNResponsesTestResponse() },
-	))
+	), true)
 	c, recorder := newTestContext()
 
 	err := svc.TestAccountConnection(c, account.ID, "kimi-k2", "hello", AccountTestModeDefault, AccountTestOptions{SyncProtocols: true})
 
 	require.NoError(t, err)
 	require.Len(t, upstream.requests, 3, "三个协议各探测一次")
-	require.Equal(t, 1, upstream.maxActive, "非 DS 分组保留串行探测")
+	require.Equal(t, 3, upstream.maxActive, "非 DS 分组的国产账号同样并发探测")
 	paths := map[string]bool{}
 	for _, request := range upstream.requests {
 		paths[request.URL.Path] = true
@@ -272,7 +298,7 @@ func TestForkProtocolSyncMatrixSkipsUnsupportedResponses(t *testing.T) {
 		func() *http.Response { return adaptiveCNChatTestResponse() },
 		func() *http.Response { return adaptiveCNAnthropicTestResponse() },
 		nil,
-	))
+	), true)
 	c, recorder := newTestContext()
 
 	err := svc.TestAccountConnection(c, account.ID, "glm-4.7", "hello", AccountTestModeDefault, AccountTestOptions{SyncProtocols: true})

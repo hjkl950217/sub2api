@@ -23,6 +23,7 @@ const accountTestSuppressCompletionContextKey = "account_test_suppress_completio
 // native Responses endpoints. Endpoints the provider profile does not offer are
 // skipped.
 // FORK-ANCHOR: cn-adaptive-prompt-routing (国产供应商自适应协议探测传递弹窗提示词)
+// FORK-ANCHOR: cn-adaptive-concurrent-probe (二开：各原生端点并发探测，不再逐个串行)
 func (s *AccountTestService) testCNProviderAdaptiveConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
 	requestedModelID := strings.TrimSpace(modelID)
 	if requestedModelID == "" {
@@ -38,35 +39,38 @@ func (s *AccountTestService) testCNProviderAdaptiveConnection(c *gin.Context, ac
 		return s.sendErrorAndEnd(c, "No API key available")
 	}
 
-	// The existing Chat probe owns the SSE lifecycle. Suppress intermediate
-	// completion events until every native adaptive endpoint has passed.
-	c.Set(accountTestSuppressCompletionContextKey, true)
-	defer c.Set(accountTestSuppressCompletionContextKey, false)
-	if err := s.testCNProviderChatCompletionsConnection(c, account, requestedModelID, prompt); err != nil {
-		return err
-	}
-
+	// 各端点并发探测，中间 completion 事件全部抑制，由本函数统一收尾。
+	protocols := []string{APIProtocolChatCompletions}
 	if account.providerSupportsProtocol(APIProtocolAnthropic) {
-		if err := s.testCNProviderAdaptiveAnthropicConnection(c, account, testModelID, authToken, prompt); err != nil {
-			return err
-		}
+		protocols = append(protocols, APIProtocolAnthropic)
 	}
-
 	if account.SupportsNativeCNResponses() {
-		if err := s.testCNProviderAdaptiveResponsesConnection(c, account, testModelID, authToken, prompt); err != nil {
-			return err
-		}
+		protocols = append(protocols, APIProtocolResponses)
 	}
-
-	c.Set(accountTestSuppressCompletionContextKey, false)
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
+	_, failed := s.probeProtocolsConcurrently(c, protocols, account, func(probeContext *gin.Context, probeAccount *Account, protocol string) error {
+		switch protocol {
+		case APIProtocolAnthropic:
+			return s.testCNProviderAdaptiveAnthropicConnection(probeContext, probeAccount, testModelID, authToken, prompt)
+		case APIProtocolResponses:
+			return s.testCNProviderAdaptiveResponsesConnection(probeContext, probeAccount, testModelID, authToken, prompt)
+		default:
+			return s.testCNProviderChatCompletionsConnection(probeContext, probeAccount, requestedModelID, prompt)
+		}
+	})
+	if len(failed) > 0 {
+		// 保持原来的失败语义：任一端点失败即整体失败。内层已抑制 error 事件，这里补发一条。
+		return s.sendErrorAndEnd(c, failed[0].Error())
+	}
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 	return nil
 }
 
 // FORK-ANCHOR: fork-api-protocols-test-selected (二开：协议复选账号按勾选集合逐个探测上游端点)
-// testCNProviderSelectedProtocolsConnection 验证协议复选账号勾选的每一个上游端点，
+// testCNProviderSelectedProtocolsConnection 并发验证协议复选账号勾选的每一个上游端点，
 // 与 adaptive 探针语义一致：中间端点全部通过前不发 test_complete。
 // FORK-ANCHOR: cn-selected-protocol-prompt-routing (国产协议复选测试传递弹窗提示词)
+// FORK-ANCHOR: cn-selected-concurrent-probe (二开：勾选的多个协议并发探测，不再逐个串行)
 func (s *AccountTestService) testCNProviderSelectedProtocolsConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
 	protocols := account.GetSelectedAPIProtocols()
 	if len(protocols) == 0 {
@@ -82,39 +86,17 @@ func (s *AccountTestService) testCNProviderSelectedProtocolsConnection(c *gin.Co
 		return s.sendErrorAndEnd(c, "No API key available")
 	}
 
-	c.Set(accountTestSuppressCompletionContextKey, true)
-	defer c.Set(accountTestSuppressCompletionContextKey, false)
-	hasFailure := false
-	// FORK-ANCHOR: cn-selected-protocol-events (二开：复选顺序测试逐协议发 probe/result 事件，
-	// 弹窗协议框靠这两个事件变色；顺序路径不发的话三张卡永远停在「未测试」)
-	for _, protocol := range protocols {
-		s.sendEvent(c, TestEvent{Type: "protocol_probe", Protocol: protocol})
-		c.Set(accountTestActiveProtocolContextKey, protocol)
-		c.Set(accountTestSuppressContentContextKey, true)
-		contentBuilder := &strings.Builder{}
-		c.Set(accountTestContentContextKey, contentBuilder)
-		var err error
+	_, failed := s.probeProtocolsConcurrently(c, protocols, account, func(probeContext *gin.Context, probeAccount *Account, protocol string) error {
 		switch protocol {
 		case APIProtocolAnthropic:
-			err = s.testCNProviderAdaptiveAnthropicConnection(c, account, testModelID, authToken, prompt)
+			return s.testCNProviderAdaptiveAnthropicConnection(probeContext, probeAccount, testModelID, authToken, prompt)
 		case APIProtocolResponses:
-			err = s.testCNProviderAdaptiveResponsesConnection(c, account, testModelID, authToken, prompt)
+			return s.testCNProviderAdaptiveResponsesConnection(probeContext, probeAccount, testModelID, authToken, prompt)
 		default:
-			err = s.testCNProviderChatCompletionsConnection(c, account, modelID, prompt)
+			return s.testCNProviderChatCompletionsConnection(probeContext, probeAccount, modelID, prompt)
 		}
-		seqEvent := TestEvent{Type: "protocol_result", Protocol: protocol, ProtocolOK: forkBoolPtr(err == nil), Text: contentBuilder.String()}
-		if err != nil {
-			seqEvent.Error = err.Error()
-		}
-		s.sendEvent(c, seqEvent)
-		c.Set(accountTestSuppressContentContextKey, false)
-		// FORK-ANCHOR: cn-selected-protocol-continue (二开：单协议失败继续测其余协议，失败记录在 result 事件里)
-		// 单协议失败不再终止：剩余协议继续探测，各协议结果由 protocol_result 事件独立回传，
-		// 全部失败时最后发 test_complete success=false（与并发矩阵路径语义一致）。
-		hasFailure = hasFailure || err != nil
-	}
-	c.Set(accountTestSuppressCompletionContextKey, false)
-	s.sendEvent(c, TestEvent{Type: "test_complete", Success: !hasFailure})
+	})
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: len(failed) == 0})
 	return nil
 }
 
