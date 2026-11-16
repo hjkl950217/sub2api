@@ -2,7 +2,7 @@
   <BaseDialog
     :show="show"
     :title="t('admin.accounts.testAccountConnection')"
-    width="normal"
+    width="extra-wide"
     @close="handleClose"
   >
     <div class="space-y-4">
@@ -47,6 +47,9 @@
         </span>
       </div>
 
+      <!-- FORK-ANCHOR: test-modal-horizontal-layout (二开：左边测试配置、右边协议结果，改成横向弹窗显示更多内容) -->
+      <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <div class="space-y-4">
       <!-- Grok: mode first, then optional model / mode params -->
       <div v-if="isGrokAccount" class="space-y-1.5">
         <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -115,6 +118,37 @@
       >
         {{ promptInputHint }}
       </p>
+
+      <!-- FORK-ANCHOR: test-modal-tool-call-toggle (二开：测试时带上工具调用，暴露「纯文本通、工具不通」的中转) -->
+      <div
+        v-if="supportsToolTest"
+        class="flex items-start justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2.5 dark:border-dark-500"
+        data-testid="tool-test-row"
+      >
+        <div class="min-w-0">
+          <div class="text-sm font-medium text-gray-700 dark:text-gray-300">
+            {{ t('admin.accounts.toolTestToggle') }}
+          </div>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.toolTestHint') }}
+          </p>
+        </div>
+        <label class="relative mt-0.5 inline-flex shrink-0 cursor-pointer items-center">
+          <input
+            v-model="withTools"
+            type="checkbox"
+            class="peer sr-only"
+            data-testid="tool-test-toggle"
+            :disabled="status === 'connecting'"
+          />
+          <span
+            class="h-5 w-9 rounded-full bg-gray-300 transition-colors peer-checked:bg-primary-500 peer-disabled:cursor-not-allowed dark:bg-dark-500"
+          ></span>
+          <span
+            class="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4"
+          ></span>
+        </label>
+      </div>
 
       <!-- Optional media uploads for real generation / transcription -->
       <div v-if="supportsImageUpload" class="space-y-1.5">
@@ -188,6 +222,10 @@
         <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.grok.audioUploadHint') }}</p>
       </div>
 
+        </div>
+
+        <!-- 右栏：测试结果 -->
+        <div class="space-y-4">
       <!-- FORK-ANCHOR: test-modal-protocol-results (二开：协议探测矩阵的逐协议结果) -->
       <div v-if="hasProtocolPanel" class="space-y-1.5" data-testid="protocol-results">
         <div class="text-xs font-medium text-gray-600 dark:text-gray-300">
@@ -532,6 +570,9 @@
         </div>
       </div>
 
+        </div>
+      </div>
+
       <!-- FORK-ANCHOR: test-modal-remove-test-info (二开：删掉上游底部那行「测试模型 / 提示词：…」信息行)
            长空 2026-10-15 反馈：这行本该跟在「测试消息」输入框下面，放在弹窗底部位置不对，直接去掉。
            它原来用的 testModeSummary computed 已一并删除。 -->
@@ -557,10 +598,10 @@
           <Icon name="refresh" size="sm" :stroke-width="2" :class="savingProtocols ? 'animate-spin' : ''" />
           <span>{{ t('admin.accounts.syncProtocols') }}</span>
           <span
-            v-if="testedProtocolCount > 0"
+            v-if="passedProtocolCount > 0"
             data-testid="sync-protocols-count"
             class="rounded-full bg-white/20 px-1.5 py-0.5 text-xs font-semibold"
-          >{{ testedProtocolCount }}/{{ expectedProtocolCount }}</span>
+          >{{ passedProtocolCount }}/{{ expectedProtocolCount }}</span>
         </button>
         <button
           @click="handleClose"
@@ -659,6 +700,10 @@ const supportsProtocolSync = computed(
     (CN_PROTOCOL_PLATFORMS.includes(props.account.platform) ||
       (props.account.platform === 'openai' && props.account.type === 'apikey'))
 )
+// FORK-ANCHOR: test-modal-tool-call-support (二开：工具调用开关只在会跑多协议探测的账号上出现)
+const supportsToolTest = computed(
+  () => supportsProtocolSync.value && testMode.value !== 'compact' && !supportsImageTest.value
+)
 interface ProtocolProbeResult {
   protocol: string
   // null = 还没测（灰色占位），true/false 才是探测结论
@@ -707,8 +752,14 @@ const hasProtocolPanel = computed(() => protocolPlaceholderOrder.value.length > 
 // FORK-ANCHOR: test-modal-tested-protocol-count (二开：已出结论的协议数)
 // 占位卡片开着弹窗就在了，所以「能不能同步」不能看 protocolResults.length（永远等于协议数），
 // 必须数 success !== null 的那些。
+// FORK-ANCHOR: test-modal-tested-protocol-count (二开：至少一个协议出结论即可同步)
 const testedProtocolCount = computed(
   () => protocolResults.value.filter((item) => item.success !== null).length
+)
+// FORK-ANCHOR: test-modal-passed-protocol-count (二开：同步按钮显示「通过数/协议总数」，
+// 失败协议不再计入，避免出现「有失败却显示 2/2」的误导)
+const passedProtocolCount = computed(
+  () => protocolResults.value.filter((item) => item.success === true).length
 )
 const syncingProtocols = ref(false)
 const savingProtocols = ref(false)
@@ -965,6 +1016,8 @@ const generatedAudios = ref<PreviewMedia[]>([])
 const generatedVideos = ref<PreviewMedia[]>([])
 const previewImageUrl = ref('')
 const testMode = ref<'default' | 'compact'>('default')
+// FORK-ANCHOR: test-modal-tool-call-state (二开：测试时带上工具调用的开关)
+const withTools = ref(false)
 const grokTestMode = ref<'text' | 'image' | 'video' | 'search' | 'tts' | 'stt' | 'realtime'>('text')
 const uploadImageDataURL = ref('')
 const uploadImagePreview = ref('')
@@ -1210,7 +1263,7 @@ const currentTestPrompt = computed(() => {
     if (grokTestMode.value === 'tts') return t('admin.accounts.grok.ttsTextDefault')
   }
   if (supportsImageTest.value) return t('admin.accounts.imagePromptDefault')
-  return t('admin.accounts.textPromptDefault')
+  return withTools.value ? t('admin.accounts.toolTestPromptDefault') : t('admin.accounts.textPromptDefault')
 })
 
 const canStartTest = computed(() => {
@@ -1256,7 +1309,9 @@ const applyDefaultPromptForMode = () => {
   } else if (grokTestMode.value === 'tts') {
     testPrompt.value = t('admin.accounts.grok.ttsTextDefault')
   } else {
-    testPrompt.value = t('admin.accounts.textPromptDefault')
+    testPrompt.value = withTools.value
+      ? t('admin.accounts.toolTestPromptDefault')
+      : t('admin.accounts.textPromptDefault')
   }
 }
 
@@ -1264,6 +1319,7 @@ const applyDefaultPromptForMode = () => {
 watch(selectedModelId, () => {
   const defaultPrompts = [
     t('admin.accounts.textPromptDefault'),
+    t('admin.accounts.toolTestPromptDefault'),
     t('admin.accounts.imagePromptDefault'),
     t('admin.accounts.videoPromptDefault'),
     t('admin.accounts.grok.searchQueryDefault'),
@@ -1272,6 +1328,17 @@ watch(selectedModelId, () => {
   if (!defaultPrompts.includes(testPrompt.value)) return
   testPrompt.value = ''
   applyDefaultPromptForMode()
+})
+
+// FORK-ANCHOR: test-modal-tool-toggle-prompt (二开：开关工具调用时同步切换默认测试消息)
+watch(withTools, (enabled) => {
+  const textDefault = t('admin.accounts.textPromptDefault')
+  const toolDefault = t('admin.accounts.toolTestPromptDefault')
+  const current = testPrompt.value.trim()
+  // 只改仍是默认消息的输入框，用户自己改过的提示词不动。
+  if (!current || current === textDefault || current === toolDefault) {
+    testPrompt.value = enabled ? toolDefault : textDefault
+  }
 })
 
 const pickDefaultModelForMode = () => {
@@ -1300,6 +1367,7 @@ watch(
       testPrompt.value = ''
       testMode.value = 'default'
       grokTestMode.value = 'text'
+      withTools.value = false
       // FORK-ANCHOR: test-modal-protocol-seed-on-open (二开：打开弹窗就按平台铺好灰色协议占位)
       protocolResults.value = buildProtocolPlaceholders()
       resetState()
@@ -1442,6 +1510,7 @@ const startTest = async (syncProtocols = false) => {
       image_data_url?: string
       audio_data_url?: string
       sync_protocols?: boolean
+      with_tools?: boolean
     } = {
       model_id: showModelSelect.value ? selectedModelId.value : '',
       prompt: supportsPromptInput.value ? testPrompt.value.trim() : ''
@@ -1449,6 +1518,10 @@ const startTest = async (syncProtocols = false) => {
     // FORK-ANCHOR: test-modal-sync-protocols-flag (二开：请求协议探测矩阵)
     if (syncingProtocols.value) {
       requestBody.sync_protocols = true
+    }
+    // FORK-ANCHOR: test-modal-tool-call-flag (二开：请求带工具调用的测试)
+    if (supportsToolTest.value && withTools.value) {
+      requestBody.with_tools = true
     }
     if (isOpenAIAccount.value) {
       requestBody.mode = testMode.value

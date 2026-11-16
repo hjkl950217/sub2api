@@ -54,6 +54,120 @@ const (
 // sendEvent 把它按当前协议收集进这个 builder，矩阵跑完后随 protocol_result 一起给前端。
 const accountTestErrorContextKey = "account_test_error"
 
+// FORK-ANCHOR: account-test-tool-call-option (二开：单账号测试可带工具调用，验证工具链路)
+// accountTestWithToolsContextKey 标记本次测试要带工具调用：请求体附上 echo 工具并强制调用，
+// 响应里没出现工具调用就判失败（纯文本能通、带工具不通的中转靠这个暴露）。
+// accountTestToolCallContextKey 挂一个 *bool，流处理函数看到工具调用事件就置位。
+const (
+	accountTestWithToolsContextKey = "account_test_with_tools"
+	accountTestToolCallContextKey  = "account_test_tool_call"
+	accountTestToolName            = "echo"
+)
+
+// defaultAccountToolTestPrompt 是带工具调用测试在提示词为空时使用的默认消息。
+const defaultAccountToolTestPrompt = "请调用 echo 工具，参数 message 填「测试」。"
+
+// accountTestToolsEnabled 报告本次测试是否要求工具调用。
+func accountTestToolsEnabled(c *gin.Context) bool {
+	return c != nil && c.GetBool(accountTestWithToolsContextKey)
+}
+
+// accountTestToolPrompt 取本次测试实际发送的提示词；带工具时为空则用工具专用默认消息。
+func accountTestToolPrompt(prompt string, withTools bool) string {
+	if !withTools {
+		return resolveAccountTestPrompt(prompt)
+	}
+	if strings.TrimSpace(prompt) != "" {
+		return prompt
+	}
+	return defaultAccountToolTestPrompt
+}
+
+// accountTestToolParameters 是 echo 工具的参数定义，三种协议格式共用。
+func accountTestToolParameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"message": map[string]any{
+				"type":        "string",
+				"description": "要原样回显的文本",
+			},
+		},
+		"required": []string{"message"},
+	}
+}
+
+// accountTestChatTools 返回 Chat Completions 格式的工具定义。
+func accountTestChatTools() []map[string]any {
+	return []map[string]any{{
+		"type": "function",
+		"function": map[string]any{
+			"name":        accountTestToolName,
+			"description": "回显 message 参数，用于验证工具调用链路",
+			"parameters":  accountTestToolParameters(),
+		},
+	}}
+}
+
+// accountTestResponsesTools 返回 Responses API 格式的工具定义。
+func accountTestResponsesTools() []map[string]any {
+	return []map[string]any{{
+		"type":        "function",
+		"name":        accountTestToolName,
+		"description": "回显 message 参数，用于验证工具调用链路",
+		"parameters":  accountTestToolParameters(),
+	}}
+}
+
+// accountTestAnthropicTools 返回 Anthropic Messages 格式的工具定义。
+func accountTestAnthropicTools() []map[string]any {
+	return []map[string]any{{
+		"name":         accountTestToolName,
+		"description":  "回显 message 参数，用于验证工具调用链路",
+		"input_schema": accountTestToolParameters(),
+	}}
+}
+
+// markAccountTestToolCall 记录流里出现了工具调用。
+func markAccountTestToolCall(c *gin.Context) {
+	marker, ok := c.Get(accountTestToolCallContextKey)
+	if !ok {
+		return
+	}
+	seen, ok := marker.(*bool)
+	if !ok || seen == nil {
+		return
+	}
+	*seen = true
+}
+
+// ensureAccountTestToolCall 在带工具调用测试时校验流里确实出现了工具调用。
+// FORK-ANCHOR: account-test-tool-call-verify (二开：工具调用测试的通过条件)
+func (s *AccountTestService) ensureAccountTestToolCall(c *gin.Context) error {
+	if !accountTestToolsEnabled(c) {
+		return nil
+	}
+	marker, _ := c.Get(accountTestToolCallContextKey)
+	seen, _ := marker.(*bool)
+	if seen == nil || !*seen {
+		return s.sendErrorAndEnd(c, "上游没有返回工具调用，工具调用链路不可用")
+	}
+	return nil
+}
+
+// finishAccountTest 收尾普通连接测试：带工具调用时没见到工具调用就判失败。
+// FORK-ANCHOR: account-test-tool-call-finish-helper (二开：带工具测试的统一收尾)
+func (s *AccountTestService) finishAccountTest(c *gin.Context, statusText string) error {
+	if err := s.ensureAccountTestToolCall(c); err != nil {
+		return err
+	}
+	if statusText != "" {
+		s.sendEvent(c, TestEvent{Type: "status", Text: statusText})
+	}
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	return nil
+}
+
 // TestEvent represents a SSE event for account testing
 type TestEvent struct {
 	Type     string `json:"type"`
@@ -92,6 +206,9 @@ type AccountTestOptions struct {
 	// SyncProtocols 为 true 时走协议探测矩阵：三个协议各测一次，并把通过的协议
 	// 写回账号的 api_protocols / fallback_protocol。
 	SyncProtocols bool
+	// WithTools 为 true 时测试请求带上 echo 工具并强制调用，响应里没有工具调用即判失败。
+	// FORK-ANCHOR: account-test-tool-call-option-field (二开：工具调用测试选项)
+	WithTools bool
 }
 
 func firstAccountTestOptions(opts []AccountTestOptions) AccountTestOptions {
@@ -389,12 +506,18 @@ func resolveAccountTestPrompt(prompt string) string {
 
 // FORK-ANCHOR: account-test-anthropic-prompt-payload (Anthropic 测试载荷使用提示词)
 func createTestPayload(modelID string, prompt string) (map[string]any, error) {
+	return createTestPayloadWithTools(modelID, prompt, false)
+}
+
+// createTestPayloadWithTools 构造 Anthropic Messages 测试请求；withTools 时附 echo 工具并强制调用。
+// FORK-ANCHOR: account-test-tool-call-anthropic-payload (二开：Anthropic 工具调用测试载荷)
+func createTestPayloadWithTools(modelID string, prompt string, withTools bool) (map[string]any, error) {
 	sessionID, err := generateSessionString()
 	if err != nil {
 		return nil, err
 	}
 
-	return map[string]any{
+	payload := map[string]any{
 		"model": modelID,
 		"messages": []map[string]any{
 			{
@@ -402,7 +525,7 @@ func createTestPayload(modelID string, prompt string) (map[string]any, error) {
 				"content": []map[string]any{
 					{
 						"type": "text",
-						"text": resolveAccountTestPrompt(prompt),
+						"text": accountTestToolPrompt(prompt, withTools),
 						"cache_control": map[string]string{
 							"type": "ephemeral",
 						},
@@ -425,7 +548,12 @@ func createTestPayload(modelID string, prompt string) (map[string]any, error) {
 		"max_tokens":  1024,
 		"temperature": 1,
 		"stream":      true,
-	}, nil
+	}
+	if withTools {
+		payload["tools"] = accountTestAnthropicTools()
+		payload["tool_choice"] = map[string]any{"type": "tool", "name": accountTestToolName}
+	}
+	return payload, nil
 }
 
 func createClaudeAccountTestPayload(account *Account, modelID string) (map[string]any, error) {
@@ -464,6 +592,12 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	initAccountTestLogger(c, accountID, modelID, mode)
 	ctx := c.Request.Context()
 	testOpts := firstAccountTestOptions(opts)
+	// FORK-ANCHOR: account-test-tool-call-context (二开：工具调用开关下发给各探测路径)
+	if testOpts.WithTools {
+		c.Set(accountTestWithToolsContextKey, true)
+		toolSeen := false
+		c.Set(accountTestToolCallContextKey, &toolSeen)
+	}
 
 	// Get account
 	account, err := s.accountRepo.GetByID(ctx, accountID)
@@ -699,7 +833,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	if account.Type == AccountTypeAPIKey {
 		payload, err = createClaudeAccountTestPayload(account, testModelID)
 	} else {
-		payload, err = createTestPayload(testModelID, prompt)
+		payload, err = createTestPayloadWithTools(testModelID, prompt, accountTestToolsEnabled(c))
 	}
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
@@ -783,7 +917,7 @@ func (s *AccountTestService) testClaudeVertexServiceAccountConnection(c *gin.Con
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
 	c.Writer.Flush()
 
-	payload, err := createTestPayload(testModelID, prompt)
+	payload, err := createTestPayloadWithTools(testModelID, prompt, accountTestToolsEnabled(c))
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
 	}
@@ -1037,7 +1171,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	if isOAuth {
 		upstreamTestModelID = normalizeOpenAIModelForUpstream(credentialAccount, testModelID)
 	}
-	payload := createOpenAITestPayloadWithPrompt(upstreamTestModelID, isOAuth, prompt)
+	payload := createOpenAITestPayloadWithPromptTools(upstreamTestModelID, isOAuth, prompt, accountTestToolsEnabled(c))
 	payloadBytes, _ := json.Marshal(payload)
 
 	// Send test_start event once. A task-invalid Agent Identity response may
@@ -2283,7 +2417,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
 	c.Writer.Flush()
 
-	payload := createOpenAIChatCompletionsTestPayload(testModelID, prompt)
+	payload := createOpenAIChatCompletionsTestPayloadTools(testModelID, prompt, accountTestToolsEnabled(c))
 	payloadBytes, _ := json.Marshal(payload)
 
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
@@ -2938,7 +3072,14 @@ func createOpenAITestPayload(modelID string, isOAuth bool) map[string]any {
 	return createOpenAITestPayloadWithPrompt(modelID, isOAuth, "hi")
 }
 
+// FORK-ANCHOR: account-test-anthropic-prompt-payload (Anthropic 测试载荷使用提示词)
 func createOpenAITestPayloadWithPrompt(modelID string, isOAuth bool, prompt string) map[string]any {
+	return createOpenAITestPayloadWithPromptTools(modelID, isOAuth, prompt, false)
+}
+
+// createOpenAITestPayloadWithPromptTools 构造 Responses 测试请求；withTools 时附 echo 工具并强制调用。
+// FORK-ANCHOR: account-test-tool-call-responses-payload (二开：Responses 工具调用测试载荷)
+func createOpenAITestPayloadWithPromptTools(modelID string, isOAuth bool, prompt string, withTools bool) map[string]any {
 	payload := map[string]any{
 		"model": modelID,
 		"input": []map[string]any{
@@ -2947,7 +3088,7 @@ func createOpenAITestPayloadWithPrompt(modelID string, isOAuth bool, prompt stri
 				"content": []map[string]any{
 					{
 						"type": "input_text",
-						"text": resolveAccountTestPrompt(prompt),
+						"text": accountTestToolPrompt(prompt, withTools),
 					},
 				},
 			},
@@ -2962,24 +3103,37 @@ func createOpenAITestPayloadWithPrompt(modelID string, isOAuth bool, prompt stri
 
 	// All accounts require instructions for Responses API
 	payload["instructions"] = openai.DefaultInstructions
+	if withTools {
+		payload["tools"] = accountTestResponsesTools()
+		payload["tool_choice"] = map[string]any{"type": "function", "name": accountTestToolName}
+	}
 
 	return payload
 }
 
 // FORK-ANCHOR: account-test-chat-prompt-default (Chat Completions 测试为空时使用统一默认消息)
 func createOpenAIChatCompletionsTestPayload(modelID string, prompt string) map[string]any {
-	testPrompt := resolveAccountTestPrompt(prompt)
+	return createOpenAIChatCompletionsTestPayloadTools(modelID, prompt, false)
+}
 
-	return map[string]any{
+// createOpenAIChatCompletionsTestPayloadTools 构造 Chat Completions 测试请求；withTools 时附 echo 工具并强制调用。
+// FORK-ANCHOR: account-test-tool-call-chat-payload (二开：Chat Completions 工具调用测试载荷)
+func createOpenAIChatCompletionsTestPayloadTools(modelID string, prompt string, withTools bool) map[string]any {
+	payload := map[string]any{
 		"model": modelID,
 		"messages": []map[string]any{
 			{
 				"role":    "user",
-				"content": testPrompt,
+				"content": accountTestToolPrompt(prompt, withTools),
 			},
 		},
 		"stream": true,
 	}
+	if withTools {
+		payload["tools"] = accountTestChatTools()
+		payload["tool_choice"] = map[string]any{"type": "function", "function": map[string]any{"name": accountTestToolName}}
+	}
+	return payload
 }
 
 // processClaudeStream processes the SSE stream from Claude API
@@ -2990,8 +3144,8 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, body io.Reader)
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
-				s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-				return nil
+				// FORK-ANCHOR: account-test-tool-call-finish (二开：带工具测试收尾时校验工具调用)
+				return s.finishAccountTest(c, "")
 			}
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Stream read error: %s", err.Error()))
 		}
@@ -3003,8 +3157,7 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, body io.Reader)
 
 		jsonStr := sseDataPrefix.ReplaceAllString(line, "")
 		if jsonStr == "[DONE]" {
-			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-			return nil
+			return s.finishAccountTest(c, "")
 		}
 
 		var data map[string]any
@@ -3015,15 +3168,23 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, body io.Reader)
 		eventType, _ := data["type"].(string)
 
 		switch eventType {
+		case "content_block_start":
+			// 工具调用以 tool_use 内容块开始。
+			// FORK-ANCHOR: account-test-tool-call-claude-stream (二开：Anthropic 流里的工具调用识别)
+			if block, ok := data["content_block"].(map[string]any); ok && block["type"] == "tool_use" {
+				markAccountTestToolCall(c)
+			}
 		case "content_block_delta":
 			if delta, ok := data["delta"].(map[string]any); ok {
+				if deltaType, _ := delta["type"].(string); deltaType == "input_json_delta" {
+					markAccountTestToolCall(c)
+				}
 				if text, ok := delta["text"].(string); ok {
 					s.sendEvent(c, TestEvent{Type: "content", Text: text})
 				}
 			}
 		case "message_stop":
-			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-			return nil
+			return s.finishAccountTest(c, "")
 		case "error":
 			errorMsg := "Unknown error"
 			if errData, ok := data["error"].(map[string]any); ok {
@@ -3048,9 +3209,7 @@ func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, 
 		if err != nil {
 			if err == io.EOF {
 				if seenFinish {
-					s.sendEvent(c, TestEvent{Type: "status", Text: "已通过 /v1/chat/completions 验证"})
-					s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-					return nil
+					return s.finishAccountTest(c, "已通过 /v1/chat/completions 验证")
 				}
 				if seenJSON {
 					return s.sendErrorAndEnd(c, "Chat Completions stream from /v1/chat/completions ended before [DONE]")
@@ -3067,9 +3226,7 @@ func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, 
 
 		jsonStr := sseDataPrefix.ReplaceAllString(line, "")
 		if jsonStr == "[DONE]" {
-			s.sendEvent(c, TestEvent{Type: "status", Text: "已通过 /v1/chat/completions 验证"})
-			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-			return nil
+			return s.finishAccountTest(c, "已通过 /v1/chat/completions 验证")
 		}
 
 		var data map[string]any
@@ -3099,14 +3256,24 @@ func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, 
 				if text, ok := delta["content"].(string); ok && text != "" {
 					s.sendEvent(c, TestEvent{Type: "content", Text: text})
 				}
+				// FORK-ANCHOR: account-test-tool-call-chat-stream (二开：Chat Completions 流里的工具调用识别)
+				if toolCalls, ok := delta["tool_calls"].([]any); ok && len(toolCalls) > 0 {
+					markAccountTestToolCall(c)
+				}
 			}
 			if message, ok := choice["message"].(map[string]any); ok {
 				if text, ok := message["content"].(string); ok && text != "" {
 					s.sendEvent(c, TestEvent{Type: "content", Text: text})
 				}
+				if toolCalls, ok := message["tool_calls"].([]any); ok && len(toolCalls) > 0 {
+					markAccountTestToolCall(c)
+				}
 			}
 			if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
 				seenFinish = true
+				if finishReason == "tool_calls" {
+					markAccountTestToolCall(c)
+				}
 			}
 		}
 	}
@@ -3122,8 +3289,7 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader)
 		if err != nil {
 			if err == io.EOF {
 				if seenCompleted {
-					s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-					return nil
+					return s.finishAccountTest(c, "")
 				}
 				return s.sendErrorAndEnd(c, "Stream ended before response.completed")
 			}
@@ -3138,8 +3304,7 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader)
 		jsonStr := sseDataPrefix.ReplaceAllString(line, "")
 		if jsonStr == "[DONE]" {
 			if seenCompleted {
-				s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-				return nil
+				return s.finishAccountTest(c, "")
 			}
 			return s.sendErrorAndEnd(c, "Stream ended before response.completed")
 		}
@@ -3157,9 +3322,16 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader)
 			if delta, ok := data["delta"].(string); ok && delta != "" {
 				s.sendEvent(c, TestEvent{Type: "content", Text: delta})
 			}
+		case "response.output_item.added", "response.output_item.done":
+			// 工具调用以 function_call 输出项出现。
+			// FORK-ANCHOR: account-test-tool-call-responses-stream (二开：Responses 流里的工具调用识别)
+			if item, ok := data["item"].(map[string]any); ok && item["type"] == "function_call" {
+				markAccountTestToolCall(c)
+			}
+		case "response.function_call_arguments.delta", "response.function_call_arguments.done":
+			markAccountTestToolCall(c)
 		case "response.completed", "response.done":
-			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-			return nil
+			return s.finishAccountTest(c, "")
 		case "response.failed":
 			errorMsg := "OpenAI response failed"
 			if responseData, ok := data["response"].(map[string]any); ok {

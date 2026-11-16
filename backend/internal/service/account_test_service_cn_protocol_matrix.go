@@ -96,6 +96,12 @@ func (s *AccountTestService) probeProtocolsConcurrently(
 			probeContext.Set(accountTestSuppressCompletionContextKey, true)
 			probeContext.Set(accountTestActiveProtocolContextKey, protocol)
 			probeContext.Set(accountTestSuppressContentContextKey, true)
+			// FORK-ANCHOR: account-test-tool-call-probe-context (二开：工具调用开关与打点随协议上下文隔离)
+			if c.GetBool(accountTestWithToolsContextKey) {
+				toolSeen := false
+				probeContext.Set(accountTestWithToolsContextKey, true)
+				probeContext.Set(accountTestToolCallContextKey, &toolSeen)
+			}
 			contentBuilder := &strings.Builder{}
 			probeContext.Set(accountTestContentContextKey, contentBuilder)
 			// FORK-ANCHOR: protocol-matrix-collect-error-text (二开：探测失败的完整报错也要收集)

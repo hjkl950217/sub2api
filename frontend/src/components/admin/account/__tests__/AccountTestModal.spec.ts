@@ -49,7 +49,8 @@ vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   const messages: Record<string, string> = {
     'admin.accounts.imagePromptDefault': 'Generate a cute orange cat astronaut sticker on a clean pastel background.',
-    'admin.accounts.textPromptDefault': '我想使用你，你是什么模型呢？只回复我名字即可'
+    'admin.accounts.textPromptDefault': '我想使用你，你是什么模型呢？只回复我名字即可',
+    'admin.accounts.toolTestPromptDefault': '请调用 echo 工具，参数 message 填「测试」。'
   }
   return {
     ...actual,
@@ -339,10 +340,48 @@ describe('AccountTestModal', () => {
 
     const button = wrapper.get('[data-testid="sync-protocols-button"]')
     expect(button.attributes('disabled')).toBeUndefined()
+    // 二开：有失败协议时计数只算通过的，不能显示 2/2
+    expect(wrapper.get('[data-testid="sync-protocols-count"]').text()).toBe('1/2')
     await button.trigger('click')
     await flushPromises()
 
     expect(updateProbedProtocols).toHaveBeenCalledWith(8, ['chat_completions'])
+  })
+
+  // FORK-ANCHOR: test-test-modal-tool-call-toggle (二开：带工具调用开关切换默认消息并随请求发送)
+  it('打开工具调用开关时切换默认测试消息并随请求发送 with_tools', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_result","protocol":"chat_completions","protocol_ok":true}\n',
+        'data: {"type":"protocol_result","protocol":"responses","protocol_ok":true}\n',
+        'data: {"type":"test_complete","success":true}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({
+      id: 9,
+      name: 'OpenAI',
+      platform: 'openai',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect((wrapper.vm as any).testPrompt).toBe('我想使用你，你是什么模型呢？只回复我名字即可')
+    await wrapper.get('[data-testid="tool-test-toggle"]').setValue(true)
+    await flushPromises()
+    expect((wrapper.vm as any).testPrompt).toBe('请调用 echo 工具，参数 message 填「测试」。')
+
+    ;(wrapper.vm as any).selectedModelId = 'gpt-5.4'
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+
+    const [, testRequest] = (global.fetch as any).mock.calls[0]
+    expect(JSON.parse(testRequest.body)).toMatchObject({
+      with_tools: true,
+      prompt: '请调用 echo 工具，参数 message 填「测试」。'
+    })
   })
 
   it('三个协议都没通过时不更新账号，并提示配置未改动', async () => {

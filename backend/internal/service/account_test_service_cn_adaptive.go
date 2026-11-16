@@ -109,7 +109,7 @@ func (s *AccountTestService) testCNProviderAdaptiveAnthropicConnection(c *gin.Co
 	apiURL := strings.TrimRight(baseURL, "/") + "/v1/messages"
 
 	// FORK-ANCHOR: cn-adaptive-anthropic-prompt (国产供应商 Anthropic 探测使用弹窗提示词)
-	payload, err := createTestPayload(testModelID, prompt)
+	payload, err := createTestPayloadWithTools(testModelID, prompt, accountTestToolsEnabled(c))
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create adaptive Anthropic test payload")
 	}
@@ -172,7 +172,7 @@ func (s *AccountTestService) processCNProviderAdaptiveAnthropicStream(c *gin.Con
 		}
 		jsonStr := sseDataPrefix.ReplaceAllString(line, "")
 		if jsonStr == "[DONE]" {
-			return nil
+			return s.ensureAccountTestToolCall(c)
 		}
 
 		var data map[string]any
@@ -180,14 +180,22 @@ func (s *AccountTestService) processCNProviderAdaptiveAnthropicStream(c *gin.Con
 			continue
 		}
 		switch eventType, _ := data["type"].(string); eventType {
+		case "content_block_start":
+			// FORK-ANCHOR: account-test-tool-call-adaptive-stream (二开：adaptive Anthropic 流里的工具调用识别)
+			if block, ok := data["content_block"].(map[string]any); ok && block["type"] == "tool_use" {
+				markAccountTestToolCall(c)
+			}
 		case "content_block_delta":
 			if delta, ok := data["delta"].(map[string]any); ok {
+				if deltaType, _ := delta["type"].(string); deltaType == "input_json_delta" {
+					markAccountTestToolCall(c)
+				}
 				if text, ok := delta["text"].(string); ok && text != "" {
 					s.sendEvent(c, TestEvent{Type: "content", Text: text})
 				}
 			}
 		case "message_stop":
-			return nil
+			return s.ensureAccountTestToolCall(c)
 		case "error":
 			errorMsg := "Unknown error"
 			if errData, ok := data["error"].(map[string]any); ok {
@@ -209,7 +217,7 @@ func (s *AccountTestService) testCNProviderAdaptiveResponsesConnection(c *gin.Co
 	apiURL := buildOpenAIResponsesURLForPlatform(account.Platform, baseURL)
 
 	// FORK-ANCHOR: cn-adaptive-responses-prompt (国产供应商 Responses 探测使用弹窗提示词)
-	payload := createOpenAITestPayloadWithPrompt(testModelID, false, prompt)
+	payload := createOpenAITestPayloadWithPromptTools(testModelID, false, prompt, accountTestToolsEnabled(c))
 	// DeepSeek / Kimi native Responses endpoints are stateless and do not need
 	// the OpenAI probe's synthetic instructions.
 	delete(payload, "instructions")
@@ -296,7 +304,7 @@ func (s *AccountTestService) testCNProviderAnthropicConnection(c *gin.Context, a
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
 	c.Writer.Flush()
 
-	payload, err := createTestPayload(testModelID, prompt)
+	payload, err := createTestPayloadWithTools(testModelID, prompt, accountTestToolsEnabled(c))
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Anthropic test payload")
 	}

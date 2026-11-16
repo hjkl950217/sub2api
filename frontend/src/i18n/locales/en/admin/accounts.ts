@@ -1803,6 +1803,10 @@ export default {
       textPromptLabel: 'Test message',
       textPromptPlaceholder: 'Enter the test message to send to the model',
       textPromptDefault: '我想使用你，你是什么模型呢？只回复我名字即可',
+      // FORK-ANCHOR: test-modal-tool-call-i18n-en (二开：带工具调用测试的开关文案与默认消息)
+      toolTestToggle: 'Include a tool call in the test',
+      toolTestHint: 'Makes the upstream actually run an echo tool call, exposing relays where plain text works but tools do not.',
+      toolTestPromptDefault: '调用 echo 工具，参数 message 填「测试」。',
       imagePromptLabel: 'Image prompt',
       imagePromptPlaceholder: 'Example: Generate an orange cat astronaut sticker in pixel-art style on a solid background.',
       imagePromptDefault: 'Generate a cute orange cat astronaut sticker on a clean pastel background.',
