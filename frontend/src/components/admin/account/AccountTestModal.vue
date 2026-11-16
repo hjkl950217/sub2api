@@ -47,9 +47,9 @@
         </span>
       </div>
 
-      <!-- FORK-ANCHOR: test-modal-horizontal-layout (二开：左边测试配置、右边协议结果，改成横向弹窗显示更多内容) -->
-      <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <div class="space-y-4">
+      <!-- FORK-ANCHOR: test-modal-horizontal-layout (二开：左边测试配置、右边协议结果，改成横向弹窗并固定高度，结果增多时不改变弹窗高度) -->
+      <div class="grid grid-cols-1 gap-5 lg:h-[clamp(26rem,calc(90vh-16.5rem),35rem)] lg:grid-cols-2">
+        <div class="space-y-3 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
       <!-- Grok: mode first, then optional model / mode params -->
       <div v-if="isGrokAccount" class="space-y-1.5">
         <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -225,7 +225,8 @@
         </div>
 
         <!-- 右栏：测试结果 -->
-        <div class="space-y-4">
+        <!-- FORK-ANCHOR: test-modal-results-scroll (二开：右栏固定高度内滚动，测试结果撑高时不再带动整个弹窗变高) -->
+        <div class="space-y-4 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
       <!-- FORK-ANCHOR: test-modal-protocol-results (二开：协议探测矩阵的逐协议结果) -->
       <div v-if="hasProtocolPanel" class="space-y-1.5" data-testid="protocol-results">
         <div class="text-xs font-medium text-gray-600 dark:text-gray-300">
