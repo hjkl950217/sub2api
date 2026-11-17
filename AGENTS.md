@@ -1136,6 +1136,7 @@ fork 会给手动刷新并发跑用量查询并用 `getById` 回写整行，测�
 | `backend/internal/service/openai_gateway_messages_chat_fallback.go` | 序列化前接入纯历史判定，命中后禁用该次工具调用，并只对该轮流式／非流式返回执行禁工具约束 | `deepseek-3351-noop-finalize` / `deepseek-3351-noop-buffer-response` / `deepseek-3351-noop-stream-response` |
 | `backend/internal/service/deepseek_noop_finalizer.go` | 试点范围、结束文本、命令和结果判定，以及已命中请求的返回检查 | 新文件，`FORK:` 头 |
 | `backend/internal/service/deepseek_noop_finalizer_test.go` | 真实转发请求的正反例，覆盖流式与非流式 | 新文件，`FORK:` 头 |
+| `backend/internal/service/fork_deepseek_3351_alias_test.go` | 覆盖3351别名准入、canonical映射、其他账号隔离和未批准名称拒绝 | 新文件，`FORK:` 头 |
 | `backend/internal/service/fork_deepseek_3351_alias_test.go` | 覆盖3351别名筛选、canonical映射、其他账号隔离与未批准别名拒绝 | 新文件，`FORK:` 头 |
 | `backend/internal/service/account_test_service.go` | 经用户确认修复已有 lint：普通连接测试调用默认载荷包装函数，工具测试保持原路径，不改变测试请求内容 | `account-test-chat-default-call` |
 
