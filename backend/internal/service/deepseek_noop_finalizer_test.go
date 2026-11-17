@@ -1,6 +1,6 @@
 //go:build unit
 
-// FORK: 验证 2026-11-17 账号 3351/deepseek-flash 连续空转收尾试点。
+// FORK: 验证 2026-11-17 账号 3351/deepseek-flash 及两个已确认别名的连续空转收尾试点。
 package service
 
 import (

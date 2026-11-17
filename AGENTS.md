@@ -46,7 +46,7 @@ git add AGENTS.md
   `-c core.quotepath=false` 不能省：中文文件名的路径会被 git 转义成八进制，`grep -v '\.md:'` 就匹配不上，会多算。
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **787 个** = 源码 767 + `.github/` 20），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+- 合并上游后先跑上面那条命令对数量（当前 **789 个** = 源码 769 + `.github/` 20），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
   其中 `.github/` 占 15 个，单独看：`git -c core.quotepath=false grep -o "FORK-ANCHOR:" -- .github | wc -l`。
 
 全量清单见 **`锚点清单.md`**：按文件分组列出每个锚点的名字，合并上游后照它逐条核对。
@@ -1122,6 +1122,8 @@ fork 会给手动刷新并发跑用量查询并用 `getById` 回写整行，测�
 
 仅限账号 ID **3351** 的 `/v1/messages → chat_completions` 路径。2026-11-17 用户确认客户端请求名 `deepseek-flash`、`deepseek-v4.1-flash`、`deepseek-v4.1-flash-1017` 是同一模型，本试点只精确接受这三个名称。目前只是试点，未来可能扩大处理范围，但必须先复核实际误判样本并另行确认；不自动扩展到其他账号、模型名或协议。
 
+- 账号筛选与账号映射在转发前把后两个名称精确归一成 `deepseek-flash`，只对账号 3351 生效；`deepseek-v4.1-flash-sg`、`deepseek-v4.1-flash[1M]` 等未批准名称不归一。
+
 - 末尾连续两组 assistant/tool_result 交互均已表示结束、每组仅调用一次 Bash 或 PowerShell，且命令只是输出固定结束词或数字时，下一次上游请求设 `tool_choice: "none"`，让模型返回文字并结束。
 - 结果必须与输出字面量相符、工具没有报错；新用户文字、其他工具、复合命令、变量、命令替换或有新信息的结果都不命中。
 - 判定只读取本次请求的历史，不写会话状态；下一条新用户指令会自然恢复工具。不会删除历史工具结果，也不会改模型或账号配置。
@@ -1130,6 +1132,7 @@ fork 会给手动刷新并发跑用量查询并用 `getById` 回写整行，测�
 
 | 文件 | 改动 | 标记 |
 |---|---|---|
+| `backend/internal/service/account.go` | 3351账号筛选与映射的两个确认别名归一 | `deepseek-3351-model-alias-scheduling` / `deepseek-3351-model-alias-mapping` |
 | `backend/internal/service/openai_gateway_messages_chat_fallback.go` | 序列化前接入纯历史判定，命中后禁用该次工具调用，并只对该轮流式／非流式返回执行禁工具约束 | `deepseek-3351-noop-finalize` / `deepseek-3351-noop-buffer-response` / `deepseek-3351-noop-stream-response` |
 | `backend/internal/service/deepseek_noop_finalizer.go` | 试点范围、结束文本、命令和结果判定，以及已命中请求的返回检查 | 新文件，`FORK:` 头 |
 | `backend/internal/service/deepseek_noop_finalizer_test.go` | 真实转发请求的正反例，覆盖流式与非流式 | 新文件，`FORK:` 头 |

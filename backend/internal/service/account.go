@@ -966,6 +966,8 @@ func (a *Account) IsModelSupported(requestedModel string) bool {
 }
 
 func (a *Account) isModelMappingSupported(requestedModel string) bool {
+	// FORK-ANCHOR: deepseek-3351-model-alias-scheduling（2026-11-17：仅账号3351将两个已确认别名归一到deepseek-flash）
+	requestedModel = normalizeDeepSeek3351ModelAlias(a.ID, requestedModel)
 	// 透传模式仅替换认证、模型语义完全交由上游决定，因此放行所有模型。
 	// 该短路必须在 model_mapping 判定之前：账号从"白名单模式"切换到透传后，
 	// credentials 里常残留旧的非空 model_mapping，若不在此放行，透传账号会被
@@ -1015,6 +1017,8 @@ func (a *Account) TrustsUpstreamBillingTier() bool {
 // ResolveMappedModel 获取映射后的模型名，并返回是否命中了账号级映射。
 // matched=true 表示命中了精确映射或通配符映射，即使映射结果与原模型名相同。
 func (a *Account) ResolveMappedModel(requestedModel string) (mappedModel string, matched bool) {
+	// FORK-ANCHOR: deepseek-3351-model-alias-mapping（2026-11-17：映射前复用3351别名归一，其他账号不变）
+	requestedModel = normalizeDeepSeek3351ModelAlias(a.ID, requestedModel)
 	mapping := a.GetModelMapping()
 	if len(mapping) == 0 {
 		return requestedModel, false

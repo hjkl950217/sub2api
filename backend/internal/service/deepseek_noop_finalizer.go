@@ -12,18 +12,25 @@ import (
 const deepseekNoopFinalizerContextKey = "fork.deepseek3351.noopFinalizing"
 const deepseekNoopFinalizerNotice = "检测到连续空命令，已停止本轮工具调用。"
 
+func normalizeDeepSeek3351ModelAlias(accountID int64, model string) string {
+	if accountID != 3351 {
+		return model
+	}
+	switch model {
+	case "deepseek-v4.1-flash", "deepseek-v4.1-flash-1017":
+		return "deepseek-flash"
+	default:
+		return model
+	}
+}
+
 var deepseekNoopCommand = regexp.MustCompile(`(?i)^(?:echo|write-output)[\t ]+(?:"([a-z0-9.-]+)"|'([a-z0-9.-]+)'|([a-z0-9.-]+))$`)
 var deepseekNoopNumber = regexp.MustCompile(`^[0-9]{1,6}$`)
 
 func shouldFinalizeDeepSeekNoop(accountID int64, model string, messages []apicompat.AnthropicMessage) bool {
 	// 2026-11-17：仅账号 3351、仅下列三个同模型名称，目前只是试点。
 	// 未来可能扩大处理范围，须先复核误判样本并另行确认，不自动扩展账号或模型。
-	if accountID != 3351 || len(messages) < 4 {
-		return false
-	}
-	switch model {
-	case "deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4.1-flash-1017":
-	default:
+	if accountID != 3351 || len(messages) < 4 || normalizeDeepSeek3351ModelAlias(accountID, model) != "deepseek-flash" {
 		return false
 	}
 	for i := len(messages) - 4; i < len(messages); i += 2 {
