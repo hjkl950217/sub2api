@@ -30,6 +30,7 @@ func TestDeepSeekNoopFinalizerForwarding(t *testing.T) {
 		stream         bool
 		wantNone       bool
 		withoutClosing bool
+		closingText    string
 		newUser        bool
 		onlyOneRound   bool
 		mixedTool      bool
@@ -46,6 +47,9 @@ func TestDeepSeekNoopFinalizerForwarding(t *testing.T) {
 		{name: "new user instruction", newUser: true},
 		{name: "one completed echo round", onlyOneRound: true},
 		{name: "no completed reply", withoutClosing: true},
+		{name: "unfinished task", closingText: "任务尚未完成，先验证输出2。"},
+		{name: "task not ended", closingText: "任务还未结束，接着验证输出2。"},
+		{name: "future completion", closingText: "需要完成后续诊断，继续验证输出2。"},
 		{name: "mixed useful tool", mixedTool: true},
 		{name: "tool failed", resultError: true},
 		{name: "unmatched result", resultID: "call_unrelated"},
@@ -61,7 +65,7 @@ func TestDeepSeekNoopFinalizerForwarding(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			messages := deepseekNoopHistoryForTest(t)
-			if tt.command != "" || tt.withoutClosing || tt.mixedTool {
+			if tt.command != "" || tt.withoutClosing || tt.closingText != "" || tt.mixedTool {
 				var blocks []apicompat.AnthropicContentBlock
 				require.NoError(t, json.Unmarshal(messages[3].Content, &blocks))
 				if tt.command != "" {
@@ -72,6 +76,9 @@ func TestDeepSeekNoopFinalizerForwarding(t *testing.T) {
 				}
 				if tt.withoutClosing {
 					blocks[0].Text = "继续获取下一项诊断证据。"
+				}
+				if tt.closingText != "" {
+					blocks[0].Text = tt.closingText
 				}
 				if tt.mixedTool {
 					blocks = append(blocks, apicompat.AnthropicContentBlock{
