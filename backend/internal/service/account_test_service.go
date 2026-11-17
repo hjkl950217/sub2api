@@ -2417,7 +2417,13 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
 	c.Writer.Flush()
 
-	payload := createOpenAIChatCompletionsTestPayloadTools(testModelID, prompt, accountTestToolsEnabled(c))
+	// FORK-ANCHOR: account-test-chat-default-call（普通连接测试复用默认载荷入口，避免包装函数仅被单测引用）
+	var payload map[string]any
+	if accountTestToolsEnabled(c) {
+		payload = createOpenAIChatCompletionsTestPayloadTools(testModelID, prompt, true)
+	} else {
+		payload = createOpenAIChatCompletionsTestPayload(testModelID, prompt)
+	}
 	payloadBytes, _ := json.Marshal(payload)
 
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})

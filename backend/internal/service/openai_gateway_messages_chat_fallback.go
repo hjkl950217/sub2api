@@ -94,6 +94,14 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 		chatReq.StreamOptions = &apicompat.ChatStreamOptions{IncludeUsage: true}
 	}
 
+	// FORK-ANCHOR: deepseek-3351-noop-finalize（2026-11-17：仅账号3351/deepseek-flash试点，扩大范围须另行确认）
+	if shouldFinalizeDeepSeekNoop(account.ID, originalModel, anthropicReq.Messages) {
+		chatReq.ToolChoice = json.RawMessage(`"none"`)
+		logger.L().Info("deepseek noop finalizer: disabled tools for completed loop",
+			zap.Int64("account_id", account.ID),
+			zap.String("model", originalModel),
+		)
+	}
 	serviceTier := extractOpenAIServiceTierFromBody(body)
 
 	chatBody, err := json.Marshal(chatReq)

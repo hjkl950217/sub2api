@@ -148,7 +148,8 @@ func TestDeepSeekNoopFinalizerForwarding(t *testing.T) {
 			}
 			require.Equal(t, wantChoice, gjson.GetBytes(upstream.lastBody, "tool_choice").String())
 			require.Equal(t, "cn:"+model, gjson.GetBytes(upstream.lastBody, "model").String())
-			require.Equal(t, len(messages), int(gjson.GetBytes(upstream.lastBody, "messages.#").Int()))
+			require.Equal(t, "测试通过后汇报结果并结束。", gjson.GetBytes(upstream.lastBody, "messages.0.content").String())
+			require.Contains(t, string(upstream.lastBody), "call_echo_1")
 			require.Equal(t, http.StatusOK, recorder.Code)
 		})
 	}
