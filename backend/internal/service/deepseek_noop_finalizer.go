@@ -34,13 +34,13 @@ func completedDeepSeekNoopRound(assistant, result apicompat.AnthropicMessage) bo
 	if json.Unmarshal(assistant.Content, &blocks) != nil {
 		return false
 	}
-	var text strings.Builder
+	var text string
 	var call *apicompat.AnthropicContentBlock
 	for i := range blocks {
 		block := &blocks[i]
 		switch block.Type {
 		case "text":
-			text.WriteString(block.Text)
+			text += block.Text
 		case "thinking", "redacted_thinking":
 		case "tool_use":
 			if call != nil || block.ID == "" || (block.Name != "Bash" && block.Name != "PowerShell") {
@@ -51,7 +51,7 @@ func completedDeepSeekNoopRound(assistant, result apicompat.AnthropicMessage) bo
 			return false
 		}
 	}
-	if call == nil || !deepseekNoopClosingText(text.String()) {
+	if call == nil || !deepseekNoopClosingText(text) {
 		return false
 	}
 	var input struct {
@@ -85,9 +85,19 @@ func completedDeepSeekNoopRound(assistant, result apicompat.AnthropicMessage) bo
 }
 
 func deepseekNoopClosingText(text string) bool {
-	text = strings.ToLower(text)
-	for _, marker := range []string{"结束", "完成", "收工", "无待办", "无待执行", "done", "finished"} {
-		if strings.Contains(text, marker) {
+	clauses := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return strings.ContainsRune("，,。.!！?？；;\n\r", r)
+	})
+	for _, clause := range clauses {
+		clause = strings.Trim(clause, " \t*#：:")
+		switch clause {
+		case "结束", "完成", "收工", "停止操作", "无待办", "无待执行", "done", "finished":
+			return true
+		case "本轮结束", "本轮已结束", "本次结束", "本次已结束", "本轮完成", "本轮已完成", "本次完成", "本次已完成":
+			return true
+		case "任务结束", "任务已结束", "任务完成", "任务已完成", "工作结束", "工作已结束", "工作完成", "工作已完成":
+			return true
+		case "已完成", "全部完成", "所有收尾完成", "今天签到结束", "今天签到已全部结束":
 			return true
 		}
 	}
