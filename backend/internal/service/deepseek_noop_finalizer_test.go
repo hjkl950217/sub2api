@@ -41,6 +41,10 @@ func TestDeepSeekNoopFinalizerForwarding(t *testing.T) {
 	}{
 		{name: "two completed echo rounds", wantNone: true},
 		{name: "streaming completed echo rounds", stream: true, wantNone: true},
+		{name: "DeepSeek flash alias", model: "deepseek-v4.1-flash", wantNone: true},
+		{name: "DeepSeek flash dated alias", model: "deepseek-v4.1-flash-1017", stream: true, wantNone: true},
+		{name: "alias on another account", accountID: 3352, model: "deepseek-v4.1-flash-1017"},
+		{name: "unapproved model alias", model: "deepseek-v4.1-flash-sg"},
 		{name: "quoted Write-Output", command: `Write-Output "final"`, resultText: "final", wantNone: true},
 		{name: "single quoted Bash echo", command: `echo 'done'`, resultText: "done", wantNone: true},
 		{name: "another account", accountID: 3352},
