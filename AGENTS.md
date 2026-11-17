@@ -1122,7 +1122,7 @@ fork 会给手动刷新并发跑用量查询并用 `getById` 回写整行，测�
 
 仅限账号 ID **3351** 的 `/v1/messages → chat_completions` 路径。2026-11-17 用户确认客户端请求名 `deepseek-flash`、`deepseek-v4.1-flash`、`deepseek-v4.1-flash-1017` 是同一模型，本试点只精确接受这三个名称。目前只是试点，未来可能扩大处理范围，但必须先复核实际误判样本并另行确认；不自动扩展到其他账号、模型名或协议。
 
-- 账号筛选与账号映射在转发前把后两个名称精确归一成 `deepseek-flash`，只对账号 3351 生效；`deepseek-v4.1-flash-sg`、`deepseek-v4.1-flash[1M]` 等未批准名称不归一。
+- 账号筛选与账号映射在转发前，在未配置别名自身显式映射时把后两个名称精确归一成 `deepseek-flash`，只对账号 3351 生效；已有显式映射优先，`deepseek-v4.1-flash-sg`、`deepseek-v4.1-flash[1M]` 等未批准名称不归一。
 
 - 末尾连续两组 assistant/tool_result 交互均已表示结束、每组仅调用一次 Bash 或 PowerShell，且命令只是输出固定结束词或数字时，下一次上游请求设 `tool_choice: "none"`，让模型返回文字并结束。
 - 结果必须与输出字面量相符、工具没有报错；新用户文字、其他工具、复合命令、变量、命令替换或有新信息的结果都不命中。
@@ -1136,6 +1136,7 @@ fork 会给手动刷新并发跑用量查询并用 `getById` 回写整行，测�
 | `backend/internal/service/openai_gateway_messages_chat_fallback.go` | 序列化前接入纯历史判定，命中后禁用该次工具调用，并只对该轮流式／非流式返回执行禁工具约束 | `deepseek-3351-noop-finalize` / `deepseek-3351-noop-buffer-response` / `deepseek-3351-noop-stream-response` |
 | `backend/internal/service/deepseek_noop_finalizer.go` | 试点范围、结束文本、命令和结果判定，以及已命中请求的返回检查 | 新文件，`FORK:` 头 |
 | `backend/internal/service/deepseek_noop_finalizer_test.go` | 真实转发请求的正反例，覆盖流式与非流式 | 新文件，`FORK:` 头 |
+| `backend/internal/service/fork_deepseek_3351_alias_test.go` | 覆盖3351别名筛选、canonical映射、其他账号隔离与未批准别名拒绝 | 新文件，`FORK:` 头 |
 | `backend/internal/service/account_test_service.go` | 经用户确认修复已有 lint：普通连接测试调用默认载荷包装函数，工具测试保持原路径，不改变测试请求内容 | `account-test-chat-default-call` |
 
 后端测试按管理中心约定由 GitHub CI 执行，本机只格式化。
