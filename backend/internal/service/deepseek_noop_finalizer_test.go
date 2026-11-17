@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -158,6 +159,133 @@ func TestDeepSeekNoopFinalizerForwarding(t *testing.T) {
 			require.Equal(t, "测试通过后汇报结果并结束。", gjson.GetBytes(upstream.lastBody, "messages.0.content").String())
 			require.Contains(t, string(upstream.lastBody), "call_echo_1")
 			require.Equal(t, http.StatusOK, recorder.Code)
+		})
+	}
+}
+
+func TestDeepSeekNoopFinalizerResponseContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name       string
+		stream     bool
+		onlyTool   bool
+		newUser    bool
+		otherID    bool
+		legacy     bool
+		readError  bool
+		finish     string
+		wantTool   bool
+		wantNotice bool
+	}{
+		{name: "buffered ignores upstream tool", finish: "tool_calls"},
+		{name: "stream ignores fragmented tool", stream: true, finish: "tool_calls"},
+		{name: "buffered tool only has notice", onlyTool: true, finish: "tool_calls", wantNotice: true},
+		{name: "stream tool only has notice", stream: true, onlyTool: true, finish: "tool_calls", wantNotice: true},
+		{name: "buffered legacy function", legacy: true, onlyTool: true, finish: "function_call", wantNotice: true},
+		{name: "stop cannot carry tool", stream: true, finish: "stop"},
+		{name: "buffered length preserved", finish: "length"},
+		{name: "stream length preserved", stream: true, finish: "length"},
+		{name: "buffered filter preserved", finish: "content_filter"},
+		{name: "stream filter preserved", stream: true, finish: "content_filter"},
+		{name: "broken stream not completed", stream: true, onlyTool: true, readError: true},
+		{name: "new user restores buffered tool", newUser: true, finish: "tool_calls", wantTool: true},
+		{name: "new user restores stream tool", stream: true, newUser: true, finish: "tool_calls", wantTool: true},
+		{name: "other account retains tool", otherID: true, finish: "tool_calls", wantTool: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			messages := deepseekNoopHistoryForTest(t)
+			if tt.newUser {
+				messages = append(messages, apicompat.AnthropicMessage{Role: "user", Content: json.RawMessage(`"新任务：请检查当前目录。"`)})
+			}
+			body := deepseekNoopJSONForTest(t, map[string]any{
+				"model": "deepseek-flash", "max_tokens": 128, "stream": tt.stream, "messages": messages,
+				"tools":       []map[string]any{{"name": "PowerShell", "input_schema": map[string]any{"type": "object"}}},
+				"tool_choice": map[string]string{"type": "auto"},
+			})
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			text := "测试通过，本轮结束。"
+			if tt.onlyTool {
+				text = ""
+			}
+			const tool = `{"index":0,"id":"call_unwanted","type":"function","function":{"name":"PowerShell","arguments":"{\"command\":\"echo 5\"}"}}`
+			message := map[string]any{"role": "assistant", "content": text, "reasoning_content": "核验已结束。"}
+			if tt.legacy {
+				message["function_call"] = map[string]string{"name": "PowerShell", "arguments": `{"command":"echo 5"}`}
+			} else {
+				message["tool_calls"] = json.RawMessage("[" + tool + "]")
+			}
+			responseBody := string(deepseekNoopJSONForTest(t, map[string]any{
+				"id": "chatcmpl_none_contract", "object": "chat.completion", "model": "deepseek-flash",
+				"choices": []map[string]any{{"index": 0, "message": message, "finish_reason": tt.finish}},
+				"usage":   map[string]int{"prompt_tokens": 8, "completion_tokens": 7, "total_tokens": 15},
+			}))
+			contentType := "application/json"
+			if tt.stream {
+				contentType = "text/event-stream"
+				responseBody = "data: " + string(deepseekNoopJSONForTest(t, map[string]any{
+					"id": "chatcmpl_none_contract", "object": "chat.completion.chunk", "model": "deepseek-flash",
+					"choices": []map[string]any{{"index": 0, "delta": map[string]any{
+						"role": "assistant", "content": text, "reasoning_content": "核验已结束。",
+						"tool_calls": json.RawMessage("[" + tool + "]"),
+					}}},
+				})) + "\n\n"
+				if !tt.readError {
+					responseBody += "data: " + `{"id":"chatcmpl_none_contract","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":" "}}]},"finish_reason":null}]}` + "\n\n"
+					responseBody += "data: " + string(deepseekNoopJSONForTest(t, map[string]any{
+						"id": "chatcmpl_none_contract", "choices": []map[string]any{{"index": 0, "delta": map[string]any{}, "finish_reason": tt.finish}},
+					})) + "\n\ndata: " + `{"id":"chatcmpl_none_contract","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":7,"total_tokens":15}}` + "\n\ndata: [DONE]\n\n"
+				}
+			}
+			var responseReader io.ReadCloser = io.NopCloser(strings.NewReader(responseBody))
+			if tt.readError {
+				responseReader = &errTailReader{data: []byte(responseBody), err: errors.New("diagnostic upstream disconnect")}
+			}
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{contentType}}, Body: responseReader,
+			}}
+			account := rawChatCompletionsTestAccount()
+			account.ID = 3351
+			account.Platform = "ag_hub"
+			if tt.otherID {
+				account.ID = 3352
+			}
+			svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig(), httpUpstream: upstream}
+			result, err := svc.forwardAnthropicViaRawChatCompletions(context.Background(), c, account, body, "")
+			output := recorder.Body.String()
+			if tt.readError {
+				require.ErrorContains(t, err, "diagnostic upstream disconnect")
+				require.NotContains(t, output, "message_stop")
+				require.NotContains(t, output, `"type":"tool_use"`)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, 7, result.Usage.OutputTokens)
+			if tt.wantTool {
+				require.Contains(t, output, `"type":"tool_use"`)
+				require.Contains(t, output, `"stop_reason":"tool_use"`)
+				require.Equal(t, "auto", gjson.GetBytes(upstream.lastBody, "tool_choice").String())
+				return
+			}
+			require.Equal(t, "none", gjson.GetBytes(upstream.lastBody, "tool_choice").String())
+			require.NotContains(t, output, `"type":"tool_use"`)
+			require.NotContains(t, output, "echo 5")
+			require.Contains(t, output, "核验已结束。")
+			wantStop := "end_turn"
+			if tt.finish == "length" {
+				wantStop = "max_tokens"
+			}
+			require.Contains(t, output, `"stop_reason":"`+wantStop+`"`)
+			if tt.wantNotice {
+				require.Contains(t, output, "检测到连续空命令，已停止本轮工具调用。")
+			} else {
+				require.Contains(t, output, text)
+				require.NotContains(t, output, "检测到连续空命令")
+			}
 		})
 	}
 }
