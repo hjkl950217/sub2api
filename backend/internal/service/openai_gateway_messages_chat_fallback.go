@@ -94,7 +94,7 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 		chatReq.StreamOptions = &apicompat.ChatStreamOptions{IncludeUsage: true}
 	}
 
-	// FORK-ANCHOR: deepseek-3351-noop-finalize（2026-11-17：仅账号3351/deepseek-flash试点，扩大范围须另行确认）
+	// FORK-ANCHOR: deepseek-3351-noop-finalize（2026-11-17：仅账号3351/deepseek-flash及已确认别名试点，范围见deepseek_noop_finalizer.go，扩大须另行确认）
 	finalizeNoop := shouldFinalizeDeepSeekNoop(account.ID, originalModel, anthropicReq.Messages)
 	c.Set(deepseekNoopFinalizerContextKey, finalizeNoop)
 	if finalizeNoop {

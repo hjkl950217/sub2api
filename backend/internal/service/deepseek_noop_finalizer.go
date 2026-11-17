@@ -1,4 +1,4 @@
-// FORK: 2026-11-17 连续空命令收尾试点，仅账号 3351、请求模型 deepseek-flash。
+// FORK: 2026-11-17 连续空命令收尾试点，仅账号 3351、deepseek-flash 及用户确认的两个别名。
 package service
 
 import (
@@ -16,9 +16,14 @@ var deepseekNoopCommand = regexp.MustCompile(`(?i)^(?:echo|write-output)[\t ]+(?
 var deepseekNoopNumber = regexp.MustCompile(`^[0-9]{1,6}$`)
 
 func shouldFinalizeDeepSeekNoop(accountID int64, model string, messages []apicompat.AnthropicMessage) bool {
-	// 2026-11-17：仅账号 3351、仅 deepseek-flash，目前只是试点。
+	// 2026-11-17：仅账号 3351、仅下列三个同模型名称，目前只是试点。
 	// 未来可能扩大处理范围，须先复核误判样本并另行确认，不自动扩展账号或模型。
-	if accountID != 3351 || model != "deepseek-flash" || len(messages) < 4 {
+	if accountID != 3351 || len(messages) < 4 {
+		return false
+	}
+	switch model {
+	case "deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4.1-flash-1017":
+	default:
 		return false
 	}
 	for i := len(messages) - 4; i < len(messages); i += 2 {
