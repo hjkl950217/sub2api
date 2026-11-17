@@ -9,6 +9,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 )
 
+const deepseekNoopFinalizerContextKey = "fork.deepseek3351.noopFinalizing"
+const deepseekNoopFinalizerNotice = "检测到连续空命令，已停止本轮工具调用。"
+
 var deepseekNoopCommand = regexp.MustCompile(`(?i)^(?:echo|write-output)[\t ]+(?:"([a-z0-9.-]+)"|'([a-z0-9.-]+)'|([a-z0-9.-]+))$`)
 var deepseekNoopNumber = regexp.MustCompile(`^[0-9]{1,6}$`)
 
@@ -99,6 +102,68 @@ func deepseekNoopClosingText(text string) bool {
 			return true
 		case "已完成", "全部完成", "所有收尾完成", "今天签到结束", "今天签到已全部结束":
 			return true
+		}
+	}
+	return false
+}
+
+// 只由本次请求的试点命中标记启用，不根据响应模型或账号重新推断。
+func finalizeDeepSeekNoopResponse(response *apicompat.ChatCompletionsResponse) {
+	for i := range response.Choices {
+		choice := &response.Choices[i]
+		hadTool := len(choice.Message.ToolCalls) > 0 || choice.Message.FunctionCall != nil
+		choice.Message.ToolCalls = nil
+		choice.Message.FunctionCall = nil
+		choice.FinishReason = deepseekNoopFinishReason(choice.FinishReason)
+		if hadTool && choice.FinishReason == "stop" && !deepseekNoopContentHasText(choice.Message.Content) {
+			choice.Message.Content = json.RawMessage(`"` + deepseekNoopFinalizerNotice + `"`)
+		}
+	}
+}
+
+type deepseekNoopStreamFilter struct {
+	sawTool bool
+	sawText bool
+}
+
+func (f *deepseekNoopStreamFilter) filter(chunk *apicompat.ChatCompletionsChunk) {
+	for i := range chunk.Choices {
+		choice := &chunk.Choices[i]
+		f.sawTool = f.sawTool || len(choice.Delta.ToolCalls) > 0
+		choice.Delta.ToolCalls = nil
+		if choice.Delta.Content != nil && strings.TrimSpace(*choice.Delta.Content) != "" {
+			f.sawText = true
+		}
+		if choice.FinishReason != nil {
+			finish := deepseekNoopFinishReason(*choice.FinishReason)
+			choice.FinishReason = &finish
+			if finish == "stop" && f.sawTool && !f.sawText {
+				notice := deepseekNoopFinalizerNotice
+				choice.Delta.Content = &notice
+				f.sawText = true
+			}
+		}
+	}
+}
+
+func deepseekNoopFinishReason(reason string) string {
+	if reason == "tool_calls" || reason == "function_call" {
+		return "stop"
+	}
+	return reason
+}
+
+func deepseekNoopContentHasText(content json.RawMessage) bool {
+	var text string
+	if json.Unmarshal(content, &text) == nil {
+		return strings.TrimSpace(text) != ""
+	}
+	var parts []apicompat.ChatContentPart
+	if json.Unmarshal(content, &parts) == nil {
+		for _, part := range parts {
+			if part.Type == "text" && strings.TrimSpace(part.Text) != "" {
+				return true
+			}
 		}
 	}
 	return false

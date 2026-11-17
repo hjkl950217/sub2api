@@ -95,7 +95,9 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 	}
 
 	// FORK-ANCHOR: deepseek-3351-noop-finalize（2026-11-17：仅账号3351/deepseek-flash试点，扩大范围须另行确认）
-	if shouldFinalizeDeepSeekNoop(account.ID, originalModel, anthropicReq.Messages) {
+	finalizeNoop := shouldFinalizeDeepSeekNoop(account.ID, originalModel, anthropicReq.Messages)
+	c.Set(deepseekNoopFinalizerContextKey, finalizeNoop)
+	if finalizeNoop {
 		chatReq.ToolChoice = json.RawMessage(`"none"`)
 		logger.L().Info("deepseek noop finalizer: disabled tools for completed loop",
 			zap.Int64("account_id", account.ID),
@@ -249,6 +251,10 @@ func (s *OpenAIGatewayService) bufferChatCompletionsAsAnthropic(
 	if err != nil {
 		return nil, err
 	}
+	// FORK-ANCHOR: deepseek-3351-noop-buffer-response（2026-11-17：仅已命中3351试点的本轮响应禁止工具返回）
+	if c.GetBool(deepseekNoopFinalizerContextKey) {
+		finalizeDeepSeekNoopResponse(ccResp)
+	}
 	anthropicResp := apicompat.ChatCompletionsResponseToAnthropic(ccResp, originalModel)
 	// FORK-ANCHOR: messages-cc-empty-completion-nonstream（二开：非流式分支，上游 200 但正文为空
 	// 同样按上游异常处理并换号；判据见 chatAnthropicResponseHasContent 上方注释）
@@ -301,7 +307,13 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsAnthropic(
 
 	// 与 responses 兄弟不同：客户端断开后仍继续做事件转换（喂 anthropicState），
 	// 仅跳过写出，保证 finalize 阶段的 usage 汇总不受断开影响。
+	// FORK-ANCHOR: deepseek-3351-noop-stream-response（2026-11-17：仅已命中3351试点的本轮流禁止工具分片）
+	finalizeNoop := c.GetBool(deepseekNoopFinalizerContextKey)
+	var noopFilter deepseekNoopStreamFilter
 	emitChunk := func(chunk *apicompat.ChatCompletionsChunk) {
+		if finalizeNoop {
+			noopFilter.filter(chunk)
+		}
 		emptyBodyDetector.ObserveChatChunk(*chunk)
 		// CC chunk → Anthropic events (direct, single state machine)
 		anthropicEvents := apicompat.ChatCompletionsChunkToAnthropicEvents(chunk, anthropicState)
