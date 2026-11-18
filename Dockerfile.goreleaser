@@ -9,6 +9,10 @@ ARG ALPINE_IMAGE=alpine:3.21
 ARG POSTGRES_IMAGE=postgres:18-alpine
 # FORK-ANCHOR: dockerfile-node-build-image (二开：烘焙 lm-detector CLI 的构建阶段)
 ARG NODE_IMAGE=node:22-alpine
+# 版本钉死（长空 2026-10-15 定）：上游升版时手动改，保证同一提交产出同一镜像。
+# 必须放在第一个 FROM 之前（全局 ARG）；写在 FROM 之后会变成前一阶段的局部 ARG，
+# lm-detector 阶段的 ARG 取不到值，npm 会把 "lmfpd@" 解析成 latest。
+ARG FINGERPRINT_CLI_VERSION=0.0.1794963170343
 
 FROM ${POSTGRES_IMAGE} AS pg-client
 
@@ -21,12 +25,11 @@ FROM ${POSTGRES_IMAGE} AS pg-client
 #
 # 用独立构建阶段而不是在 alpine 里连网装：依赖解析只发生在构建期一次，
 # 最终镜像只多一个 nodejs 包，运行镜像里不留 npm 缓存与构建工具。
-# 版本钉死（长空 2026-10-15 定）：上游升版时手动改，保证同一提交产出同一镜像。
-ARG FINGERPRINT_CLI_VERSION=0.0.1793148819406
 FROM ${NODE_IMAGE} AS lm-detector
 ARG FINGERPRINT_CLI_VERSION
 WORKDIR /build
 RUN npm install --no-audit --no-fund --omit=dev "lmfpd@${FINGERPRINT_CLI_VERSION}" \
+    && node -e "const v=require('/build/node_modules/lmfpd/package.json').version;if(v!=='${FINGERPRINT_CLI_VERSION}'){console.error('lmfpd version mismatch: '+v);process.exit(1)}" \
     && test -f /build/node_modules/lmfpd/bin/fpd.js \
     && test -s /build/node_modules/lmfpd/data/unified_bank.json \
     && test -s /build/node_modules/lmfpd/data/shared_detector.bin \

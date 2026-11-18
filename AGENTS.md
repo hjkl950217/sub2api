@@ -1046,6 +1046,12 @@ zh/en 各一个锚点（`i18n-edit-account-tabs-zh` / `-en`）。i18n 完整性�
 `ARG FINGERPRINT_CLI_VERSION` 钉死），整棵 `node_modules` 拷到
 `/app/lm-detector/node_modules`；运行镜像 `apk add nodejs`（**必须构建期装**：
 compose 带 `no-new-privileges`，运行期不能 apk add）。
+
+**ARG 必须写在第一个 `FROM` 之前**。2026-11-18 发现它原先写在 `pg-client` 阶段里，
+lm-detector 阶段的 `ARG FINGERPRINT_CLI_VERSION` 取到空值，`npm install "lmfpd@"`
+实际装的是 npm latest —— 10-28 那次碰巧 latest 就是钉的版本，之后一路跟着 latest 走
+（11-17 的镜像里是 11-12 的 `0.0.1794509655417`）。现已移到全局 ARG 区，并在 RUN
+里加了「安装版本必须等于 ARG」的断言。当前钉 `0.0.1794963170343`（11-18，72 个模型）。
 **没有改 `release_matrix.py`** —— 构建上下文只多了一个 Dockerfile 里的 `COPY --from`。
 
 运行期下载的样本库落在 `/app/data/lm-detector/bank/`（`--bank` 指过去）；
