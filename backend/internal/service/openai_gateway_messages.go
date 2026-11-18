@@ -55,9 +55,8 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		}
 		return &OpenAIForwardResult{Model: res.Model, Stream: stream, Duration: res.Duration}, nil
 	}
-	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
-		SetActualOpenAIUpstreamEndpoint(c, "/v1/chat/completions")
-	}
+	// FORK-ANCHOR: openai-messages-upstream-endpoint-accurate (二开：端点标记必须在协议判定后按实际分支写，
+	// 否则 anthropic-only 账号的失败请求会被记成 /v1/chat/completions)
 	setCodexToolNameReverse(c, nil)
 	if _, err := s.prepareCodexAccountIdentitySource(ctx, c, account); err != nil {
 		return nil, err
@@ -75,10 +74,12 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	case APIProtocolAnthropic:
 		// 上游为供应商原生 Anthropic 端点：/v1/messages 零转换直通（仅模型名映射 +
 		// 少量 body 清洗），完整保留 thinking / tool_use / cache 语义。
+		SetActualOpenAIUpstreamEndpoint(c, "/v1/messages")
 		return s.forwardAnthropicViaNativeAnthropicEndpoint(ctx, c, account, body, defaultMappedModel)
 	case APIProtocolChatCompletions:
 		// 固定 chat_completions 的多协议账号、规则命中 CC 的按模型分流账号，以及
 		// 不支持 Responses 的其他 APIKey 账号，均将 Messages 转为 CC。
+		SetActualOpenAIUpstreamEndpoint(c, "/v1/chat/completions")
 		return s.forwardAnthropicViaRawChatCompletions(ctx, c, account, body, defaultMappedModel)
 	}
 	SetActualOpenAIUpstreamEndpoint(c, openAIResponsesUpstreamEndpoint)

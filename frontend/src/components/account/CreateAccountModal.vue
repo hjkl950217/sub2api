@@ -4770,10 +4770,11 @@ const cnAdaptiveProtocolOptions = computed<Array<{ value: CnNativeApiProtocol; l
     ]
   }
   const opts: Array<{ value: CnNativeApiProtocol; labelKey: string }> = [
-    { value: 'chat_completions', labelKey: 'chatCompletions' },
-    { value: 'anthropic', labelKey: 'anthropic' }
+    { value: 'chat_completions', labelKey: 'chatCompletions' }
   ]
+  // FORK-ANCHOR: create-cn-protocol-display-order (二开：协议卡片顺序 chat > responses > anthropic)
   if (cnSupportsNativeResponses(form.platform)) opts.push({ value: 'responses', labelKey: 'responses' })
+  opts.push({ value: 'anthropic', labelKey: 'anthropic' })
   return opts
 })
 

@@ -728,7 +728,7 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toMatchObject({
       account_mode: 'payg',
-      api_protocols: ['chat_completions', 'anthropic', 'responses'],
+      api_protocols: ['chat_completions', 'responses', 'anthropic'],
       fallback_protocol: 'chat_completions',
       base_url: 'https://api.moonshot.cn/v1',
       api_base_urls: {

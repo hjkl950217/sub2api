@@ -265,7 +265,7 @@ export type CnProviderPlatform = 'kimi' | 'zhipu' | 'deepseek' | 'minimax'
 export type CnApiProtocol = 'adaptive' | 'chat_completions' | 'anthropic' | 'responses'
 export type CnNativeApiProtocol = Exclude<CnApiProtocol, 'adaptive'>
 
-const NATIVE_API_PROTOCOLS: CnNativeApiProtocol[] = ['chat_completions', 'anthropic', 'responses']
+const NATIVE_API_PROTOCOLS: CnNativeApiProtocol[] = ['chat_completions', 'responses', 'anthropic']
 
 export function isCNProviderPlatform(platform: string): platform is CnProviderPlatform {
   return platform === 'kimi' || platform === 'zhipu' || platform === 'deepseek' || platform === 'minimax'
@@ -573,11 +573,8 @@ export function defaultCNAdaptiveBaseUrls(
 //   api_base_urls: 只含已勾选协议的端点；base_url: 勾选了 chat_completions 就用它，否则用兜底协议
 //   api_protocol: 兼容旧版的回退值，见 legacyProtocolFromSelection
 
-/** 国产供应商可勾选的上游原生协议（不含 adaptive）。 */
-export const CN_API_PROTOCOLS: CnNativeApiProtocol[] = ['chat_completions', 'anthropic', 'responses']
-
-/** 兜底协议的优先顺序：chat_completions > anthropic > responses。 */
-const CN_PROTOCOL_PRIORITY: CnNativeApiProtocol[] = ['chat_completions', 'anthropic', 'responses']
+/** 国产供应商可勾选的上游原生协议（不含 adaptive），顺序即界面从左到右的展示顺序。 */
+export const CN_API_PROTOCOLS: CnNativeApiProtocol[] = ['chat_completions', 'responses', 'anthropic']
 
 export function isCnNativeProtocol(v: unknown): v is CnNativeApiProtocol {
   return v === 'chat_completions' || v === 'anthropic' || v === 'responses'
@@ -603,12 +600,13 @@ export function normalizeCnProtocols(raw: unknown, platform: string): CnNativeAp
     seen.add(value)
     result.push(value)
   }
-  return result
+  // 统一按界面展示顺序输出，存量账号的旧顺序（chat > anthropic > responses）也随之规范化。
+  return result.sort((a, b) => CN_API_PROTOCOLS.indexOf(a) - CN_API_PROTOCOLS.indexOf(b))
 }
 
-/** 按 chat_completions > anthropic > responses 取兜底协议；空数组返回 ''。 */
+/** 取兜底协议：按界面从左到右第一个已勾选协议；空数组返回 ''。 */
 export function defaultFallbackProtocol(protocols: CnNativeApiProtocol[]): CnNativeApiProtocol | '' {
-  for (const candidate of CN_PROTOCOL_PRIORITY) {
+  for (const candidate of CN_API_PROTOCOLS) {
     if (protocols.includes(candidate)) return candidate
   }
   return ''

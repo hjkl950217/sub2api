@@ -4217,10 +4217,11 @@ const editAdaptiveProtocolOptions = computed<Array<{ value: CnNativeApiProtocol;
     ]
   }
   const opts: Array<{ value: CnNativeApiProtocol; labelKey: string }> = [
-    { value: 'chat_completions', labelKey: 'chatCompletions' },
-    { value: 'anthropic', labelKey: 'anthropic' }
+    { value: 'chat_completions', labelKey: 'chatCompletions' }
   ]
+  // FORK-ANCHOR: edit-cn-protocol-display-order (二开：协议卡片顺序 chat > responses > anthropic)
   if (cnSupportsNativeResponses(props.account?.platform ?? '')) opts.push({ value: 'responses', labelKey: 'responses' })
+  opts.push({ value: 'anthropic', labelKey: 'anthropic' })
   return opts
 })
 const cnProtocolOptions = computed<Array<{ value: CnApiProtocol; labelKey: string }>>(() => {

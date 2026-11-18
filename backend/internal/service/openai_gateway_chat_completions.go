@@ -102,9 +102,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return nil, err
 	}
-	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
-		SetActualOpenAIUpstreamEndpoint(c, "/v1/chat/completions")
-	}
+	// FORK-ANCHOR: openai-chat-upstream-endpoint-accurate (二开：端点标记在协议判定后按实际分支写)
 	setCodexToolNameReverse(c, nil)
 	if _, err := s.prepareCodexAccountIdentitySource(ctx, c, account); err != nil {
 		return nil, err
@@ -159,12 +157,14 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	}
 	switch s.resolveUpstreamProtocolFor(ctx, account, inbound, routingModel) {
 	case APIProtocolAnthropic:
+		SetActualOpenAIUpstreamEndpoint(c, "/v1/messages")
 		if convertResponsesShape {
 			return s.forwardResponsesViaNativeAnthropic(ctx, c, account, body, "")
 		}
 		// CC 入站经 CC→Responses→Anthropic 转换链直通供应商原生 Anthropic 端点。
 		return s.forwardChatCompletionsViaNativeAnthropic(ctx, c, account, body, defaultMappedModel)
 	case APIProtocolChatCompletions:
+		SetActualOpenAIUpstreamEndpoint(c, "/v1/chat/completions")
 		if convertResponsesShape {
 			chatBody, err := s.convertResponsesShapedChatBody(body)
 			if err != nil {

@@ -810,7 +810,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock).toHaveBeenCalledTimes(1)
     expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
       account_mode: 'payg',
-      api_protocols: ['chat_completions', 'anthropic', 'responses'],
+      api_protocols: ['chat_completions', 'responses', 'anthropic'],
       fallback_protocol: 'chat_completions',
       // 勾选了 chat_completions → base_url 用它的地址
       base_url: 'https://api.moonshot.cn/v1',
@@ -837,7 +837,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock).toHaveBeenCalledTimes(1)
     expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
       account_mode: 'coding',
-      api_protocols: ['chat_completions', 'anthropic', 'responses'],
+      api_protocols: ['chat_completions', 'responses', 'anthropic'],
       fallback_protocol: 'chat_completions',
       base_url: 'https://api.kimi.com/coding/v1',
       api_base_urls: {
@@ -861,7 +861,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock).toHaveBeenCalledTimes(1)
     expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
       account_mode: 'payg',
-      api_protocols: ['chat_completions', 'anthropic', 'responses'],
+      api_protocols: ['chat_completions', 'responses', 'anthropic'],
       fallback_protocol: 'chat_completions',
       base_url: 'https://api.minimaxi.com/v1',
       api_base_urls: {
@@ -890,15 +890,15 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(fallback.element.value).toBe('chat_completions')
     expect(Array.from(fallback.element.options).map(o => o.value)).toEqual([
       'chat_completions',
-      'anthropic',
-      'responses'
+      'responses',
+      'anthropic'
     ])
 
-    // 取消 chat_completions：勾选集合变化 → 兜底自动回落到 anthropic
+    // 取消 chat_completions：勾选集合变化 → 兜底自动回落到从左到右第一个 responses
     await chatCard.trigger('click')
     expect(chatCard.attributes('aria-pressed')).toBe('false')
-    expect(fallback.element.value).toBe('anthropic')
-    expect(Array.from(fallback.element.options).map(o => o.value)).toEqual(['anthropic', 'responses'])
+    expect(fallback.element.value).toBe('responses')
+    expect(Array.from(fallback.element.options).map(o => o.value)).toEqual(['responses', 'anthropic'])
     // 端点输入区只渲染已勾选协议
     expect(wrapper.find('[data-testid="cn-adaptive-base-url-chat_completions"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="cn-adaptive-base-url-anthropic"]').exists()).toBe(true)
