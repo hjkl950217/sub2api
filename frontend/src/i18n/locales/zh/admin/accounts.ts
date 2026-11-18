@@ -1844,6 +1844,10 @@ export default {
       reAuthorizedSuccess: '账号重新授权成功',
       // Test Modal
       testAccountConnection: '测试账号连接',
+      // FORK-ANCHOR: i18n-url-ping-zh (二开：URL 输入框旁的 ping 按钮文案)
+      pingUrl: 'Ping',
+      pingTesting: '测试中',
+      pingFailed: '连接失败',
       errorPrefix: '错误：{message}',
       imagePreviewAlt: '测试图片 {index}',
       imageLightboxAlt: '图片预览',

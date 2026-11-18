@@ -716,7 +716,11 @@
             <p class="input-hint">{{ t('admin.accounts.cnProviders.balanceProbe.cookieRenewHint') }}</p>
           </template>
           <template v-if="balanceProbeScript === 'custom'">
-            <input v-model="balanceProbeURL" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.urlPlaceholder')" />
+            <!-- FORK-ANCHOR: create-balance-probe-url-ping (二开：余额探测地址旁加 ping) -->
+            <div class="flex items-center gap-2">
+              <input v-model="balanceProbeURL" type="text" class="input min-w-0 flex-1" :placeholder="t('admin.accounts.cnProviders.balanceProbe.urlPlaceholder')" />
+              <UrlPingButton :url="balanceProbeURL" :proxy-id="form.proxy_id" />
+            </div>
             <input v-model="balanceProbePath" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.pathPlaceholder')" />
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <input v-model="balanceProbeCurrency" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.balanceProbe.currencyPlaceholder')" />
@@ -794,18 +798,22 @@
                   {{ t(`admin.accounts.cnProviders.apiProtocol.${item.labelKey}`) }}
                 </label>
                 <!-- FORK-ANCHOR: create-cn-endpoint-live-preview (二开：在第一格输入端点时，其余空格用浅色预览同一地址，失焦或保存时落定) -->
-                <input
-                  v-model="adaptiveBaseUrls[item.value]"
-                  type="text"
-                  class="input"
-                  :class="isEndpointPreview(item.value) ? 'placeholder:italic placeholder:text-gray-400 dark:placeholder:text-gray-500' : ''"
-                  :data-testid="`cn-adaptive-base-url-${item.value}`"
-                  :data-preview="isEndpointPreview(item.value) ? 'true' : undefined"
-                  :placeholder="endpointPlaceholder(item.value)"
-                  @focus="focusedEndpointProtocol = item.value"
-                  @blur="onCnEndpointBlur(item.value)"
-                  @change="onCnEndpointChange(item.value)"
-                />
+                <!-- FORK-ANCHOR: create-cn-endpoint-ping (二开：协议端点旁加 ping) -->
+                <div class="flex items-center gap-2">
+                  <input
+                    v-model="adaptiveBaseUrls[item.value]"
+                    type="text"
+                    class="input min-w-0 flex-1"
+                    :class="isEndpointPreview(item.value) ? 'placeholder:italic placeholder:text-gray-400 dark:placeholder:text-gray-500' : ''"
+                    :data-testid="`cn-adaptive-base-url-${item.value}`"
+                    :data-preview="isEndpointPreview(item.value) ? 'true' : undefined"
+                    :placeholder="endpointPlaceholder(item.value)"
+                    @focus="focusedEndpointProtocol = item.value"
+                    @blur="onCnEndpointBlur(item.value)"
+                    @change="onCnEndpointChange(item.value)"
+                  />
+                  <UrlPingButton :url="adaptiveBaseUrls[item.value]" :proxy-id="form.proxy_id" />
+                </div>
                 <!-- FORK-ANCHOR: create-cn-endpoint-presets (已勾选协议端点保留快捷预设填充) -->
                 <!-- FORK-ANCHOR: create-ag-hub-endpoint-no-presets (二开：聚合中转无官方端点，不显示预设按钮，避免点击把账号类型切成预设档) -->
                 <CnBaseUrlPresets
@@ -1347,13 +1355,17 @@
       <div v-if="form.platform === 'antigravity' && antigravityAccountType === 'upstream'" class="space-y-4">
         <div>
           <label class="input-label">{{ t('admin.accounts.upstream.baseUrl') }}</label>
-          <input
-            v-model="upstreamBaseUrl"
-            type="text"
-            required
-            class="input"
-            placeholder="https://cloudcode-pa.googleapis.com"
-          />
+          <!-- FORK-ANCHOR: create-upstream-base-url-ping (二开：上游地址旁加 ping) -->
+          <div class="flex items-center gap-2">
+            <input
+              v-model="upstreamBaseUrl"
+              type="text"
+              required
+              class="input min-w-0 flex-1"
+              placeholder="https://cloudcode-pa.googleapis.com"
+            />
+            <UrlPingButton :url="upstreamBaseUrl" :proxy-id="form.proxy_id" />
+          </div>
           <p class="input-hint">{{ t('admin.accounts.upstream.baseUrlHint') }}</p>
         </div>
         <div>
@@ -1661,12 +1673,16 @@
         <!-- FORK-ANCHOR: create-cn-base-url-single (非多协议平台，或 opencode_go 非自适应档，仍用单 base_url 输入) -->
         <div v-if="!isMultiProtocolPlatform || (isOpenCodeGoPlatform && apiProtocol !== 'adaptive')">
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
-          <input
-            v-model="apiKeyBaseUrl"
-            type="text"
-            class="input"
-            :placeholder="apiKeyBaseUrlPlaceholder"
-          />
+          <!-- FORK-ANCHOR: create-base-url-ping (二开：Base URL 旁加 ping) -->
+          <div class="flex items-center gap-2">
+            <input
+              v-model="apiKeyBaseUrl"
+              type="text"
+              class="input min-w-0 flex-1"
+              :placeholder="apiKeyBaseUrlPlaceholder"
+            />
+            <UrlPingButton :url="apiKeyBaseUrl" :proxy-id="form.proxy_id" />
+          </div>
           <p v-if="baseUrlHint" class="input-hint">{{ baseUrlHint }}</p>
           <GrokBaseUrlPresets
             v-if="form.platform === 'grok'"
@@ -1691,12 +1707,16 @@
               <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
                 {{ t(`admin.accounts.cnProviders.apiProtocol.${item.labelKey}`) }}
               </label>
-              <input
-                v-model="adaptiveBaseUrls[item.value]"
-                type="text"
-                class="input"
-                :data-testid="`cn-adaptive-base-url-${item.value}`"
-              />
+              <!-- FORK-ANCHOR: create-opencode-endpoint-ping (二开：自适应档端点旁加 ping) -->
+              <div class="flex items-center gap-2">
+                <input
+                  v-model="adaptiveBaseUrls[item.value]"
+                  type="text"
+                  class="input min-w-0 flex-1"
+                  :data-testid="`cn-adaptive-base-url-${item.value}`"
+                />
+                <UrlPingButton :url="adaptiveBaseUrls[item.value]" :proxy-id="form.proxy_id" />
+              </div>
             </div>
           </div>
           <p v-if="!cnSupportsNativeResponses(form.platform, currentOpenCodeOrCNMode())" class="input-hint">
@@ -2608,13 +2628,17 @@
           </button>
         </div>
         <div v-if="grokOAuthCustomBaseUrlEnabled" class="space-y-2">
-          <input
-            v-model="grokOAuthBaseUrl"
-            type="text"
-            class="input"
-            data-testid="grok-custom-base-url-input"
-            :placeholder="t('admin.accounts.grokCustomBaseUrl.placeholder')"
-          />
+          <!-- FORK-ANCHOR: create-grok-oauth-base-url-ping (二开：Grok 自定义上游地址旁加 ping) -->
+          <div class="flex items-center gap-2">
+            <input
+              v-model="grokOAuthBaseUrl"
+              type="text"
+              class="input min-w-0 flex-1"
+              data-testid="grok-custom-base-url-input"
+              :placeholder="t('admin.accounts.grokCustomBaseUrl.placeholder')"
+            />
+            <UrlPingButton :url="grokOAuthBaseUrl" :proxy-id="form.proxy_id" />
+          </div>
           <GrokBaseUrlPresets @select="grokOAuthBaseUrl = $event" />
         </div>
       </div>
@@ -3399,12 +3423,16 @@
             </button>
           </div>
           <div v-if="customBaseUrlEnabled" class="mt-3">
-            <input
-              v-model="customBaseUrl"
-              type="text"
-              class="input"
-              :placeholder="t('admin.accounts.quotaControl.customBaseUrl.urlHint')"
-            />
+            <!-- FORK-ANCHOR: create-quota-custom-base-url-ping (二开：额度查询自定义地址旁加 ping) -->
+            <div class="flex items-center gap-2">
+              <input
+                v-model="customBaseUrl"
+                type="text"
+                class="input min-w-0 flex-1"
+                :placeholder="t('admin.accounts.quotaControl.customBaseUrl.urlHint')"
+              />
+              <UrlPingButton :url="customBaseUrl" :proxy-id="form.proxy_id" />
+            </div>
           </div>
         </div>
       </div>
@@ -4359,6 +4387,8 @@ import {
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
+// FORK-ANCHOR: create-url-ping-import (二开：URL 输入框旁的 ping 按钮)
+import UrlPingButton from '@/components/common/UrlPingButton.vue'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'

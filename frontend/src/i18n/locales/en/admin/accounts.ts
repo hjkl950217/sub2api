@@ -1748,6 +1748,10 @@ export default {
       reAuthorizedSuccess: 'Account re-authorized successfully',
       // Test Modal
       testAccountConnection: 'Test Account Connection',
+      // FORK-ANCHOR: i18n-url-ping-en (fork: URL ping button copy)
+      pingUrl: 'Ping',
+      pingTesting: 'Testing',
+      pingFailed: 'Unreachable',
       errorPrefix: 'Error: {message}',
       imagePreviewAlt: 'Test image {index}',
       imageLightboxAlt: 'Image preview',

@@ -1,5 +1,6 @@
 .PHONY: build build-backend build-frontend test test-backend test-frontend test-frontend-critical
 
+# FORK-ANCHOR: make-critical-url-ping-spec (二开：账号表单 ping 按钮与其在测试弹窗里的折叠)
 FRONTEND_CRITICAL_VITEST := \
 	src/i18n/__tests__/localeKeyCompleteness.spec.ts \
 	src/api/__tests__/client.spec.ts \
@@ -40,7 +41,9 @@ FRONTEND_CRITICAL_VITEST := \
 	src/features/channel-monitor-v2/__tests__/designSystem.structure.spec.ts \
 	src/features/channel-monitor-v2/__tests__/monitorFormat.spec.ts \
 	src/features/channel-monitor-v2/__tests__/monitorZoom.spec.ts \
-	src/components/admin/channel/__tests__/PricingEntryCard.modelDefaultPrice.spec.ts
+	src/components/admin/channel/__tests__/PricingEntryCard.modelDefaultPrice.spec.ts \
+	src/components/common/__tests__/UrlPingButton.spec.ts \
+	src/components/admin/account/__tests__/AccountTestModal.spec.ts
 
 # 一键编译前后端
 build: build-backend build-frontend

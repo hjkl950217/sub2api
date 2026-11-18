@@ -481,6 +481,67 @@ describe('AccountTestModal', () => {
     expect(wrapper.text()).toContain('[anthropic] admin.accounts.protocolProbeErrorLabel401 invalid api key')
   })
 
+  // FORK-ANCHOR: test-modal-protocol-error-fold-spec (二开：长报错默认折叠 3 行，可展开收起)
+  it('失败的协议报错超过 3 行时折叠，可展开收起', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        `data: ${JSON.stringify({ type: 'protocol_result', protocol: 'anthropic', protocol_ok: false, error: 'x'.repeat(200) })}\n`,
+        'data: {"type":"test_complete","success":true}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({
+      id: 9,
+      name: 'DeepSeek',
+      platform: 'deepseek',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    ;(wrapper.vm as any).selectedModelId = 'deepseek-chat'
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+
+    const errorBlock = wrapper.get('[data-testid="protocol-error-anthropic"]')
+    expect(errorBlock.classes()).toContain('line-clamp-3')
+
+    await wrapper.get('[data-testid="protocol-error-toggle-anthropic"]').trigger('click')
+    expect(errorBlock.classes()).not.toContain('line-clamp-3')
+    // 展开后按钮仍在，否则收不回去
+    expect(wrapper.find('[data-testid="protocol-error-toggle-anthropic"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="protocol-error-toggle-anthropic"]').trigger('click')
+    expect(errorBlock.classes()).toContain('line-clamp-3')
+  })
+
+  it('短报错不显示展开按钮', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_result","protocol":"anthropic","protocol_ok":false,"error":"401 invalid api key"}\n',
+        'data: {"type":"test_complete","success":true}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({
+      id: 10,
+      name: 'DeepSeek',
+      platform: 'deepseek',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    ;(wrapper.vm as any).selectedModelId = 'deepseek-chat'
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="protocol-error-anthropic"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="protocol-error-toggle-anthropic"]').exists()).toBe(false)
+  })
+
   // 长空 2026-10-16 定：协议卡片按 chat → responses → anthropic 展示。
   it('协议卡片按 chat、responses、anthropic 的顺序排列', async () => {
     const wrapper = mountModal({

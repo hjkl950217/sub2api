@@ -330,6 +330,22 @@ export async function testAccount(id: number): Promise<{
   return data
 }
 
+// FORK-ANCHOR: account-ping-url-api (二开：账号表单 URL 连通性测试，可选走账号代理)
+export interface PingUrlResult {
+  success: boolean
+  latency_ms: number
+  status_code?: number
+  message?: string
+}
+
+export async function pingUrl(payload: {
+  url: string
+  proxy_id?: number | null
+}): Promise<PingUrlResult> {
+  const { data } = await apiClient.post<PingUrlResult>('/admin/accounts/ping-url', payload)
+  return data
+}
+
 /**
  * Refresh account credentials
  * @param id - Account ID
@@ -1365,6 +1381,8 @@ export const accountsAPI = {
   getGrokMediaEligibility,
   updateGrokMediaEligibility,
   checkMixedChannelRisk,
+  // FORK-ANCHOR: account-ping-url-api-export (二开：导出 URL 连通性测试)
+  pingUrl,
   delete: deleteAccount,
   toggleStatus,
   testAccount,

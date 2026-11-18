@@ -262,10 +262,25 @@
             <!-- FORK-ANCHOR: test-modal-protocol-error-view (二开：失败的协议把完整报错显示出来) -->
             <div
               v-if="item.success === false && item.error"
-              class="mt-1 whitespace-pre-wrap break-all border-t border-red-200/70 pt-1 font-mono text-[11px] leading-relaxed text-red-600 dark:border-red-500/30 dark:text-red-300"
-              :data-testid="`protocol-error-${item.protocol}`"
+              class="mt-1 border-t border-red-200/70 pt-1 dark:border-red-500/30"
             >
-              {{ item.error }}
+              <!-- FORK-ANCHOR: test-modal-protocol-error-fold (二开：报错超过 3 行折叠，展开后按钮仍在，写法同批量测试) -->
+              <div
+                class="whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-red-600 dark:text-red-300"
+                :class="item.expanded ? '' : 'line-clamp-3'"
+                :data-testid="`protocol-error-${item.protocol}`"
+              >
+                {{ item.error }}
+              </div>
+              <button
+                v-if="protocolErrorTruncated(item)"
+                type="button"
+                class="mt-1 text-[11px] text-primary-600 hover:text-primary-700 dark:text-primary-300"
+                :data-testid="`protocol-error-toggle-${item.protocol}`"
+                @click="item.expanded = !item.expanded"
+              >
+                {{ item.expanded ? t('admin.accounts.batchTest.collapse') : t('admin.accounts.batchTest.expand') }}
+              </button>
             </div>
           </div>
         </div>
@@ -716,6 +731,8 @@ interface ProtocolProbeResult {
   // FORK-ANCHOR: test-modal-protocol-timing-field (二开：首字响应 / 完整响应耗时，单位毫秒，与批量测试同口径)
   firstByteMs: number | null
   totalMs: number | null
+  // FORK-ANCHOR: test-modal-protocol-expanded-field (二开：报错超过 3 行时的展开状态)
+  expanded: boolean
 }
 const protocolResults = ref<ProtocolProbeResult[]>([])
 // FORK-ANCHOR: test-modal-expected-protocol-count (二开：同步按钮的完成条件按平台协议数，openai 只有 chat 与 responses 两个)
@@ -747,8 +764,11 @@ const timingInline = (result: ProtocolProbeResult | undefined) => {
   const label = timingLabel(result)
   return label ? `${label} ` : ''
 }
+// FORK-ANCHOR: test-modal-protocol-error-truncated (二开：报错较长才给展开/收起；
+// 展开后按钮仍要出现，否则收不回去。阈值与批量测试一致（>120 字符约 3 行）)
+const protocolErrorTruncated = (item: ProtocolProbeResult) => (item.error || '').length > 120
 const buildProtocolPlaceholders = (): ProtocolProbeResult[] =>
-  protocolPlaceholderOrder.value.map((protocol) => ({ protocol, success: null, probing: false, error: '', firstByteMs: null, totalMs: null }))
+  protocolPlaceholderOrder.value.map((protocol) => ({ protocol, success: null, probing: false, error: '', firstByteMs: null, totalMs: null, expanded: false }))
 const hasProtocolPanel = computed(() => protocolPlaceholderOrder.value.length > 0)
 // FORK-ANCHOR: test-modal-tested-protocol-count (二开：已出结论的协议数)
 // 占位卡片开着弹窗就在了，所以「能不能同步」不能看 protocolResults.length（永远等于协议数），
@@ -1669,7 +1689,9 @@ const handleEvent = (event: {
             error: event.error || '',
             // FORK-ANCHOR: test-modal-protocol-timing-capture-fallback (同上：兜底追加的协议也带耗时)
             firstByteMs: typeof event.first_byte_ms === 'number' ? event.first_byte_ms : null,
-            totalMs: typeof event.total_ms === 'number' ? event.total_ms : null
+            totalMs: typeof event.total_ms === 'number' ? event.total_ms : null,
+            // FORK-ANCHOR: test-modal-protocol-expanded-fallback (二开：兜底追加的协议默认收起)
+            expanded: false
           })
         }
         // FORK-ANCHOR: test-modal-protocol-content (二开：按协议分行显示各协议返回的正文)
