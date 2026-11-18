@@ -50,6 +50,29 @@ const accountTestFirstByteContextKey = "account_test_first_byte"
 // cnProtocolProbeOrder 探测顺序，与前端协议卡片顺序、兜底优先级一致。
 var cnProtocolProbeOrder = []string{APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses}
 
+// FORK-ANCHOR: protocol-matrix-network-ping (二开：协议测试下面加一条网络层 ping 延迟)
+// 作为协议列表之外的独立一项，与协议并发探测；不计入 passed/failed，不参与协议回写。
+const networkPingProtocol = "ping"
+
+// FORK-ANCHOR: protocol-matrix-network-ping-target (二开：ping 目标取账号主端点)
+// 多协议账号取 chat 端点，openai API Key 取 openai 基址，最后回退凭据里的 base_url。
+// 都没有时返回空，交给 PingURL 报「地址为空」，不会误测 Anthropic 默认域名。
+func accountNetworkPingTarget(account *Account) string {
+	if account == nil {
+		return ""
+	}
+	for _, candidate := range []string{
+		account.GetOpenAIBaseURL(),
+		account.GetCNProtocolBaseURL(APIProtocolChatCompletions),
+		account.GetCredential("base_url"),
+	} {
+		if value := strings.TrimSpace(candidate); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 // forkBoolPtr 取 bool 地址（本包 ops_metrics_collector.go 已有 boolPtr，避免重名）。
 func forkBoolPtr(v bool) *bool { return &v }
 
@@ -86,7 +109,7 @@ func (s *AccountTestService) probeProtocolsConcurrently(
 		total time.Duration
 	}
 
-	results := make(chan result, len(protocols))
+	results := make(chan result, len(protocols)+1)
 	for _, protocol := range protocols {
 		s.sendEvent(c, TestEvent{Type: "protocol_probe", Protocol: protocol})
 		go func(protocol string) {
@@ -122,9 +145,46 @@ func (s *AccountTestService) probeProtocolsConcurrently(
 		}(protocol)
 	}
 
+	// FORK-ANCHOR: protocol-matrix-network-ping-probe (二开：网络层 ping 延迟与协议并发)
+	// 只测到账号主地址的连通性（GET 响应头），复用一个账号已配置的代理。
+	proxyURL := ""
+	proxyUnavailable := account.ProxyID != nil && account.Proxy == nil
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+	pingTarget := accountNetworkPingTarget(account)
+	pingCtx := c.Request.Context()
+	s.sendEvent(c, TestEvent{Type: "protocol_probe", Protocol: networkPingProtocol})
+	go func() {
+		if proxyUnavailable {
+			results <- result{protocol: networkPingProtocol, err: errors.New("account proxy is unavailable")}
+			return
+		}
+		ping := s.PingURL(pingCtx, pingTarget, proxyURL)
+		if ping == nil || !ping.Success {
+			message := "ping failed"
+			if ping != nil && strings.TrimSpace(ping.Message) != "" {
+				message = strings.TrimSpace(ping.Message)
+			}
+			results <- result{protocol: networkPingProtocol, err: errors.New(message)}
+			return
+		}
+		results <- result{protocol: networkPingProtocol, total: time.Duration(ping.LatencyMs) * time.Millisecond}
+	}()
+
 	outcomes := make(map[string]result, len(protocols))
-	for range protocols {
+	for i := 0; i < len(protocols)+1; i++ {
 		result := <-results
+		// ping 只上报结果，不并入 passed/failed，避免影响协议回写与整轮成败。
+		if result.protocol == networkPingProtocol {
+			ok := result.err == nil
+			event := TestEvent{Type: "protocol_result", Protocol: networkPingProtocol, ProtocolOK: forkBoolPtr(ok), TotalMS: result.total.Milliseconds()}
+			if !ok {
+				event.Error = result.err.Error()
+			}
+			s.sendEvent(c, event)
+			continue
+		}
 		outcomes[result.protocol] = result
 		ok := result.err == nil
 		event := TestEvent{Type: "protocol_result", Protocol: result.protocol, ProtocolOK: forkBoolPtr(ok), Text: result.text}

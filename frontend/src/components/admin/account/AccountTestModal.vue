@@ -742,8 +742,10 @@ const expectedProtocolCount = computed(() => (props.account?.platform === 'opena
 // 国产三家按「chat → responses → anthropic」展示（长空 2026-10-16 定），
 // openai API Key 是前两个。
 // 只改这里的展示顺序：后端 cnProtocolProbeOrder 还兼着兜底优先级，不动它。
-const CN_PROTOCOL_PROBE_ORDER = ['chat_completions', 'responses', 'anthropic']
-const OPENAI_PROTOCOL_PROBE_ORDER = ['chat_completions', 'responses']
+// FORK-ANCHOR: test-modal-network-ping-placeholder (二开：协议占位末尾追加一条网络层 ping 延迟)
+const NETWORK_PING_PROTOCOL = 'ping'
+const CN_PROTOCOL_PROBE_ORDER = ['chat_completions', 'responses', 'anthropic', NETWORK_PING_PROTOCOL]
+const OPENAI_PROTOCOL_PROBE_ORDER = ['chat_completions', 'responses', NETWORK_PING_PROTOCOL]
 // 只有会跑协议矩阵的账号才铺占位，其他平台保持原样（面板不显示）。
 const protocolPlaceholderOrder = computed(() => {
   if (!supportsProtocolSync.value) return []
@@ -754,6 +756,8 @@ const protocolPlaceholderOrder = computed(() => {
 const formatSeconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`
 const timingLabel = (result: ProtocolProbeResult | undefined) => {
   if (!result || result.totalMs == null || result.totalMs <= 0) return ''
+  // FORK-ANCHOR: test-modal-network-ping-ms (二开：ping 延迟直接按毫秒显示，不折算成秒)
+  if (result.protocol === NETWORK_PING_PROTOCOL) return `${result.totalMs}ms`
   if (result.firstByteMs == null || result.firstByteMs <= 0) return formatSeconds(result.totalMs)
   return `${formatSeconds(result.firstByteMs)}/${formatSeconds(result.totalMs)}`
 }
@@ -775,16 +779,18 @@ const hasProtocolPanel = computed(() => protocolPlaceholderOrder.value.length > 
 // 必须数 success !== null 的那些。
 // FORK-ANCHOR: test-modal-tested-protocol-count (二开：至少一个协议出结论即可同步)
 const testedProtocolCount = computed(
-  () => protocolResults.value.filter((item) => item.success !== null).length
+  () => protocolResults.value.filter((item) => item.protocol !== NETWORK_PING_PROTOCOL && item.success !== null).length
 )
 // FORK-ANCHOR: test-modal-passed-protocol-count (二开：同步按钮显示「通过数/协议总数」，
 // 失败协议不再计入，避免出现「有失败却显示 2/2」的误导)
 const passedProtocolCount = computed(
-  () => protocolResults.value.filter((item) => item.success === true).length
+  () => protocolResults.value.filter((item) => item.protocol !== NETWORK_PING_PROTOCOL && item.success === true).length
 )
 const syncingProtocols = ref(false)
 const savingProtocols = ref(false)
+// FORK-ANCHOR: test-modal-network-ping-label (二开：ping 卡片复用协议文案通道)
 const protocolLabelKey = (protocol: string): string => {
+  if (protocol === 'ping') return 'ping'
   if (protocol === 'anthropic') return 'anthropic'
   if (protocol === 'responses') return 'responses'
   return 'chatCompletions'
@@ -818,7 +824,9 @@ const protocolStatusLabel = (item: ProtocolProbeResult) => {
 }
 
 // FORK-ANCHOR: test-modal-protocol-short-label (二开：正文前缀用的协议短名，如 [chat])
+// FORK-ANCHOR: test-modal-network-ping-short-label (二开：ping 在输出行的短标签)
 const protocolShortLabel = (protocol: string): string => {
+  if (protocol === 'ping') return 'ping'
   if (protocol === 'anthropic') return 'anthropic'
   if (protocol === 'responses') return 'responses'
   return 'chat'
@@ -1485,7 +1493,9 @@ const scrollToBottom = async () => {
 // FORK-ANCHOR: test-modal-sync-protocols-start (二开：根据已有探测结果保存协议，不重测)
 const startProtocolSync = async () => {
   if (!props.account || savingProtocols.value) return
-  const passed = protocolResults.value.filter((result) => result.success).map((result) => result.protocol)
+  const passed = protocolResults.value
+    .filter((result) => result.protocol !== NETWORK_PING_PROTOCOL && result.success)
+    .map((result) => result.protocol)
   if (passed.length === 0) {
     appStore.showError(t('admin.accounts.syncProtocolsNonePassed'))
     return

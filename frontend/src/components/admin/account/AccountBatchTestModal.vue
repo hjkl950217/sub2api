@@ -415,9 +415,12 @@ const summaryText = computed(() =>
 
 // FORK: 可写回的行 = 已经跑完（通过/失败）且至少有一个协议测通。
 // 还在跑的行不能进：协议没探完，按当前结果写回会把后面才通的那几个协议漏掉。
+// FORK-ANCHOR: batch-test-network-ping-skip-writeback (二开：ping 不算协议，不参与写回与可写回判定)
 const probedRows = computed(() =>
   rows.value.filter(
-    (row) => (row.status === 'success' || row.status === 'error') && row.protocols.some((r) => r.success)
+    (row) =>
+      (row.status === 'success' || row.status === 'error') &&
+      row.protocols.some((r) => r.protocol !== NETWORK_PING_PROTOCOL && r.success)
   )
 )
 
@@ -599,10 +602,14 @@ const protocolStatusLabel = (result: ProtocolResult) => {
 }
 
 const shortProtocolLabel = (protocol: string) => {
+  if (protocol === NETWORK_PING_PROTOCOL) return 'ping'
   if (protocol === 'anthropic') return 'anthropic'
   if (protocol === 'responses') return 'responses'
   return 'chat'
 }
+
+// FORK-ANCHOR: batch-test-network-ping-placeholder (二开：协议行下面追加一条网络层 ping 延迟)
+const NETWORK_PING_PROTOCOL = 'ping'
 
 // 占位符：协议测通但没有正文时用它，避免该行看起来是空的
 const dashPlaceholder = '—'
@@ -619,15 +626,18 @@ const protocolLineTruncated = (result: ProtocolResult) =>
 const formatSeconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`
 const timingLabel = (result: ProtocolResult) => {
   if (result.totalMs == null || result.totalMs <= 0) return ''
+  // FORK-ANCHOR: batch-test-network-ping-ms (二开：ping 延迟直接按毫秒显示，不折算成秒)
+  if (result.protocol === NETWORK_PING_PROTOCOL) return `${result.totalMs}ms`
   if (result.firstByteMs == null || result.firstByteMs <= 0) return formatSeconds(result.totalMs)
   return `${formatSeconds(result.firstByteMs)}/${formatSeconds(result.totalMs)}`
 }
 
 // FORK-ANCHOR: batch-test-failed-with-body (二开：失败协议的报错去重辅助)
 // 报错现在只在逐协议行显示，这个辅助保留给行级失败判定用：失败协议的报错集合。
+// FORK-ANCHOR: batch-test-network-ping-skip-failure-line (二开：ping 失败只影响自己那一行，不算协议失败)
 const failedProtocolErrors = (row: BatchRow) =>
   row.protocols
-    .filter((result) => result.success === false && result.error)
+    .filter((result) => result.protocol !== NETWORK_PING_PROTOCOL && result.success === false && result.error)
     .map((result) => result.error)
 
 // FORK-ANCHOR: batch-test-row-failure-render (二开：行级失败原因渲染时过滤掉已在协议行显示过的文本。
@@ -886,7 +896,10 @@ const handleEvent = (event: {
           // 整段都是已知协议报错的拼接：不重复挂；但行级 error 仍要有内容供状态列显示
           row.error = row.error || segments[0] || ''
         }
-        const hasProtocolFailure = row.protocols.some((result) => result.success === false)
+        // FORK-ANCHOR: batch-test-network-ping-skip-failure-status (二开：ping 失败不影响行级失败判定)
+        const hasProtocolFailure = row.protocols.some(
+          (result) => result.protocol !== NETWORK_PING_PROTOCOL && result.success === false
+        )
         if (!row.rowFailure && !row.error && !hasProtocolFailure) {
           row.rowFailure = t('admin.accounts.batchTest.failed')
         }
@@ -937,7 +950,9 @@ const updateProtocols = async () => {
   // 先把要写的内容快照下来：运行中还有账号在收事件，边写边取会拿到半截结果。
   const targets = probedRows.value.map((row) => ({
     id: row.id,
-    passed: row.protocols.filter((result) => result.success).map((result) => result.protocol)
+    passed: row.protocols
+      .filter((result) => result.protocol !== NETWORK_PING_PROTOCOL && result.success)
+      .map((result) => result.protocol)
   }))
   if (!targets.length) {
     appStore.showError(t('admin.accounts.batchTest.updateProtocolsNone'))

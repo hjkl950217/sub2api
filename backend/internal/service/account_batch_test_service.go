@@ -105,10 +105,12 @@ func batchTestProtocols(account *Account) []string {
 		return nil
 	}
 	if account.IsCNProvider() || account.Platform == PlatformAggregateHub {
-		return cnProtocolProbeOrder
+		// FORK-ANCHOR: batch-test-network-ping (二开：协议行下面追加一条网络层 ping 延迟)
+		// 复制一份再追加，不能直接 append 包级协议顺序切片，避免污染 cnProtocolProbeOrder。
+		return append(append([]string{}, cnProtocolProbeOrder...), networkPingProtocol)
 	}
 	if account.IsOpenAIApiKey() {
-		return openaiAPIKeyProtocolProbeOrder
+		return append(append([]string{}, openaiAPIKeyProtocolProbeOrder...), networkPingProtocol)
 	}
 	return nil
 }
@@ -268,7 +270,8 @@ func (w *batchTestWriter) forwardChunk(chunk []byte) {
 		w.completion = true
 		w.completionOK = event.Success
 	}
-	if event.Type == "protocol_result" && event.ProtocolOK != nil && !*event.ProtocolOK {
+	// FORK-ANCHOR: batch-test-network-ping-skip-failure (二开：ping 失败只影响自己那一行，不计入账号失败汇总)
+	if event.Type == "protocol_result" && event.ProtocolOK != nil && !*event.ProtocolOK && event.Protocol != networkPingProtocol {
 		w.protocolFailures = append(w.protocolFailures, batchTestProtocolFailureText(event))
 	}
 	w.sink.forwardEvent(w.accountID, event)

@@ -201,7 +201,7 @@ func TestForkOpenAIProtocolsPlainTestProbesBothProtocols(t *testing.T) {
 	require.Zero(t, repo.setErrorCalls, "单协议失败不得把账号状态改成 error")
 
 	body := recorder.Body.String()
-	require.Equal(t, 2, strings.Count(body, `"type":"protocol_result"`), "每个协议各一条结果事件")
+	require.Equal(t, 3, strings.Count(body, `"type":"protocol_result"`), "每个协议各一条结果事件，外加一条 ping 延迟")
 	require.Contains(t, body, `"protocol":"chat_completions","protocol_ok":true`)
 	require.Contains(t, body, `"protocol":"responses","protocol_ok":true`)
 	require.NotContains(t, body, `"protocol_applied":true`)

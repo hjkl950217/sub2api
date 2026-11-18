@@ -397,6 +397,8 @@ export default {
           responsesFallbackDesc: '该供应商没有原生 Responses 端点，Responses 请求将转换为 Chat Completions。',
           chatCompletions: 'Chat Completions',
           chatCompletionsDesc: '标准 OpenAI 兼容端点，其他格式请求将被转换。',
+          // FORK-ANCHOR: i18n-network-ping-zh (二开：协议卡片里的网络层 ping 延迟)
+          ping: 'Ping 延迟',
           anthropic: 'Anthropic',
           anthropicDesc: '直通供应商原生 Anthropic 端点，零转换，适配 Claude Code。',
           responses: 'Responses',

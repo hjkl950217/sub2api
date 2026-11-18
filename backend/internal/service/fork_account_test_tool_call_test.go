@@ -57,7 +57,7 @@ func TestForkAccountTestWithToolsPassesWhenToolCallSeen(t *testing.T) {
 		require.Contains(t, body, accountTestToolName)
 	}
 	body := recorder.Body.String()
-	require.Equal(t, 2, strings.Count(body, `"type":"protocol_result"`))
+	require.Equal(t, 3, strings.Count(body, `"type":"protocol_result"`))
 	require.NotContains(t, body, `"protocol_ok":false`, "两个协议都返回了工具调用")
 }
 

@@ -543,7 +543,8 @@ describe('AccountTestModal', () => {
   })
 
   // 长空 2026-10-16 定：协议卡片按 chat → responses → anthropic 展示。
-  it('协议卡片按 chat、responses、anthropic 的顺序排列', async () => {
+  // FORK-ANCHOR: test-modal-network-ping-order-spec (二开：协议卡片末尾追加 ping 延迟)
+  it('协议卡片按 chat、responses、anthropic、ping 的顺序排列', async () => {
     const wrapper = mountModal({
       id: 7,
       name: 'DeepSeek',
@@ -559,8 +560,41 @@ describe('AccountTestModal', () => {
     ).toEqual([
       'protocol-result-chat_completions',
       'protocol-result-responses',
-      'protocol-result-anthropic'
+      'protocol-result-anthropic',
+      'protocol-result-ping'
     ])
+  })
+
+  // FORK-ANCHOR: test-modal-network-ping-spec (二开：ping 结果显示毫秒，且不计入协议数)
+  it('ping 延迟显示毫秒，且不计入「更新支持协议」的协议数', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_result","protocol":"chat_completions","protocol_ok":true,"text":"chat-ok"}\n',
+        'data: {"type":"protocol_result","protocol":"responses","protocol_ok":true,"text":"resp-ok"}\n',
+        'data: {"type":"protocol_result","protocol":"anthropic","protocol_ok":false,"error":"401 invalid api key"}\n',
+        'data: {"type":"protocol_result","protocol":"ping","protocol_ok":true,"total_ms":64}\n',
+        'data: {"type":"test_complete","success":true}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({
+      id: 7,
+      name: 'DeepSeek',
+      platform: 'deepseek',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    ;(wrapper.vm as any).selectedModelId = 'deepseek-chat'
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="protocol-result-ping"]').classes()).toContain('bg-green-50')
+    expect(wrapper.get('[data-testid="protocol-timing-ping"]').text()).toBe('64ms')
+    // ping 通过也不算协议通过：chat + responses 两个 / 3 个协议
+    expect(wrapper.get('[data-testid="sync-protocols-count"]').text()).toBe('2/3')
   })
 
   // FORK-ANCHOR: test-modal-protocol-placeholder-spec (二开：打开弹窗就显示灰色协议占位)

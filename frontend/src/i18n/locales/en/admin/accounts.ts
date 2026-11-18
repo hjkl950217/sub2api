@@ -194,6 +194,8 @@ export default {
           responsesFallbackDesc: 'Responses requests are converted to Chat Completions because this provider has no native Responses endpoint.',
           chatCompletions: 'Chat Completions',
           chatCompletionsDesc: 'Standard OpenAI-compatible endpoint; requests in other formats are converted.',
+          // FORK-ANCHOR: i18n-network-ping-en (二开：协议卡片里的网络层 ping 延迟)
+          ping: 'Ping latency',
           anthropic: 'Anthropic',
           anthropicDesc: 'Native passthrough to the provider’s Anthropic endpoint — ideal for Claude Code.',
           responses: 'Responses',

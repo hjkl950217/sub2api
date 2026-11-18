@@ -106,7 +106,7 @@ function planFixture() {
             models: ['gpt-4o', 'gpt-4.1'],
             eligible: true,
             schedulable: true,
-            protocols: ['chat_completions', 'responses']
+            protocols: ['chat_completions', 'responses', 'ping']
           },
           {
             id: 2,
@@ -114,7 +114,7 @@ function planFixture() {
             models: ['gpt-4o'],
             eligible: true,
             schedulable: false,
-            protocols: ['chat_completions', 'responses']
+            protocols: ['chat_completions', 'responses', 'ping']
           }
         ]
       },
@@ -245,6 +245,34 @@ describe('AccountBatchTestModal', () => {
     expect(updateProbedProtocols).toHaveBeenCalledWith(1, ['chat_completions'])
     expect(updateProbedProtocols).toHaveBeenCalledWith(2, ['chat_completions', 'responses'])
     expect(wrapper.emitted('updated')).toHaveLength(1)
+  })
+
+  // FORK-ANCHOR: batch-test-network-ping-spec (二开：ping 延迟显示毫秒，不算协议写回)
+  it('ping 延迟显示毫秒，且不计入支持协议写回', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_result","account_id":1,"protocol":"chat_completions","protocol_ok":true,"text":"ok"}\n',
+        'data: {"type":"protocol_result","account_id":1,"protocol":"responses","protocol_ok":true,"text":"ok"}\n',
+        'data: {"type":"protocol_result","account_id":1,"protocol":"ping","protocol_ok":true,"total_ms":88}\n',
+        'data: {"type":"batch_test_complete","account_id":1,"success":true}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({ show: false, accountIds: [1] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="batch-test-start-button"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="batch-protocol-line-1-ping"]').text()).toContain('passed-protocol')
+    expect(wrapper.get('[data-testid="batch-protocol-timing-1-ping"]').text()).toBe('88ms')
+
+    await wrapper.get('[data-testid="batch-update-protocols-button"]').trigger('click')
+    await flushPromises()
+    // ping 通过也不能被当成可写回的协议
+    expect(updateProbedProtocols).toHaveBeenCalledWith(1, ['chat_completions', 'responses'])
   })
 
   it('测试进行中也能更新支持协议：只写已经跑完的行', async () => {

@@ -212,7 +212,7 @@ func TestForkProtocolSyncMatrixAppliesPassedProtocols(t *testing.T) {
 	require.Equal(t, APIProtocolChatCompletions, repo.updated.Credentials["fallback_protocol"])
 
 	body := recorder.Body.String()
-	require.Equal(t, 3, strings.Count(body, `"type":"protocol_result"`), "每个协议各一条结果事件")
+	require.Equal(t, 4, strings.Count(body, `"type":"protocol_result"`), "每个协议各一条结果事件，外加一条 ping 延迟")
 	require.Contains(t, body, `"protocol":"anthropic","protocol_ok":false`)
 	require.Contains(t, body, `"protocol":"responses","protocol_ok":true`)
 	require.Contains(t, body, `"protocol_applied":true`)
@@ -244,7 +244,7 @@ func TestForkProtocolSyncMatrixAllFailedKeepsConfig(t *testing.T) {
 	// success 带 omitempty：false 时不出现该字段，前端按"非 true 即失败"处理。
 	require.Contains(t, body, `"type":"test_complete"`, "必须发最终完成事件")
 	require.NotContains(t, body, `"success":true`, "全失败时不得报告成功")
-	require.Equal(t, 3, strings.Count(body, `"type":"protocol_result"`))
+	require.Equal(t, 4, strings.Count(body, `"type":"protocol_result"`))
 	require.Equal(t, 3, strings.Count(body, `"protocol_ok":false`))
 	require.NotContains(t, body, `"type":"error"`, "单协议失败不产生终止错误事件")
 }
@@ -269,7 +269,7 @@ func TestForkDeepseekDSConnectionTestProbesAllProtocolsConcurrently(t *testing.T
 	}
 	require.Nil(t, repo.updated, "普通连接测试不得写回协议配置")
 	require.Zero(t, repo.setErrorCalls, "单协议认证失败不得把账号状态改成 error")
-	require.Equal(t, 3, strings.Count(recorder.Body.String(), `"type":"protocol_result"`))
+	require.Equal(t, 4, strings.Count(recorder.Body.String(), `"type":"protocol_result"`))
 	require.Contains(t, recorder.Body.String(), `"protocol":"anthropic","protocol_ok":false`)
 	require.NotContains(t, recorder.Body.String(), `"protocol_applied":true`)
 }

@@ -110,9 +110,10 @@ func TestForkBatchTestPlanGroupsByPlatform(t *testing.T) {
 	require.Equal(t, []string{"gpt-4o"}, plan.Groups[2].CommonModels, "只保留两个账号共有的模型")
 
 	// 前端靠协议占位清单先渲染灰色标签，不合格的账号不给清单。
-	require.Equal(t, cnProtocolProbeOrder, plan.Groups[0].Accounts[0].Protocols, "国产账号列三个协议")
+	// FORK: 协议占位末尾追加一条网络层 ping 延迟
+	require.Equal(t, append(append([]string{}, cnProtocolProbeOrder...), networkPingProtocol), plan.Groups[0].Accounts[0].Protocols, "国产账号列三个协议，末尾加 ping")
 	require.Nil(t, plan.Groups[1].Accounts[0].Protocols, "不合格账号不给协议占位")
-	require.Equal(t, openaiAPIKeyProtocolProbeOrder, plan.Groups[2].Accounts[0].Protocols, "openai 账号列两个协议")
+	require.Equal(t, append(append([]string{}, openaiAPIKeyProtocolProbeOrder...), networkPingProtocol), plan.Groups[2].Accounts[0].Protocols, "openai 账号列两个协议，末尾加 ping")
 
 	require.Equal(t, 1, plan.SkippedCount, "只统计不合格账号")
 }
@@ -173,8 +174,8 @@ func TestForkBatchTestRunForwardsEventsWithAccountID(t *testing.T) {
 			completed[int64(accountID)] = event
 		}
 	}
-	require.Equal(t, 2, results[11], "账号 11 的 chat 与 responses 各一条结果")
-	require.Equal(t, 2, results[12])
+	require.Equal(t, 3, results[11], "账号 11 的 chat、responses 各一条结果，外加 ping")
+	require.Equal(t, 3, results[12])
 	require.Contains(t, completed, int64(11), "账号 11 有收尾事件")
 	require.Contains(t, completed, int64(12))
 	require.Equal(t, true, completed[11]["success"], "全部协议通过时判通过")
@@ -211,8 +212,12 @@ func TestForkBatchTestRunCompletesFailedTarget(t *testing.T) {
 
 	// 回归：协议矩阵在两个协议都失败时仍返回 nil，早期实现只看返回值，
 	// 结果是「协议全红却标通过」。判定必须取 test_complete 的结论。
-	require.Len(t, probeResults, 2)
+	require.Len(t, probeResults, 3, "两个协议各一条结果，外加 ping")
 	for _, result := range probeResults {
+		// ping 走真实网络（测试域名），成败随环境变化，这里只校验两个协议。
+		if result["protocol"] == networkPingProtocol {
+			continue
+		}
 		require.Equal(t, false, result["protocol_ok"], "两个协议都应探测失败")
 		// 逐协议结果必须带上失败原因，前端才能显示完整报错
 		require.NotEmpty(t, result["error"], "失败的协议要带完整报错")
@@ -251,8 +256,12 @@ func TestForkProtocolMatrixReportsFailureError(t *testing.T) {
 	for _, event := range events {
 		switch event["type"] {
 		case "protocol_result":
+			protocol, _ := event["protocol"].(string)
+			// FORK: ping 不在协议回写与失败汇总范围内，这里只统计三个原生协议。
+			if protocol == networkPingProtocol {
+				continue
+			}
 			if ok, _ := event["protocol_ok"].(bool); !ok {
-				protocol, _ := event["protocol"].(string)
 				text, _ := event["error"].(string)
 				errorsByProtocol[protocol] = text
 			}
