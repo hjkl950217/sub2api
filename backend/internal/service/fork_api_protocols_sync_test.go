@@ -245,7 +245,9 @@ func TestForkProtocolSyncMatrixAllFailedKeepsConfig(t *testing.T) {
 	require.Contains(t, body, `"type":"test_complete"`, "必须发最终完成事件")
 	require.NotContains(t, body, `"success":true`, "全失败时不得报告成功")
 	require.Equal(t, 4, strings.Count(body, `"type":"protocol_result"`))
-	require.Equal(t, 3, strings.Count(body, `"protocol_ok":false`))
+	// ping 走真实网络，成败随环境变化，这里只统计三个原生协议。
+	pingFailures := strings.Count(body, `"protocol":"ping","protocol_ok":false`)
+	require.Equal(t, 3, strings.Count(body, `"protocol_ok":false`)-pingFailures)
 	require.NotContains(t, body, `"type":"error"`, "单协议失败不产生终止错误事件")
 }
 

@@ -58,7 +58,9 @@ func TestForkAccountTestWithToolsPassesWhenToolCallSeen(t *testing.T) {
 	}
 	body := recorder.Body.String()
 	require.Equal(t, 3, strings.Count(body, `"type":"protocol_result"`))
-	require.NotContains(t, body, `"protocol_ok":false`, "两个协议都返回了工具调用")
+	// ping 走真实网络，成败随环境变化，只校验两个协议没有失败。
+	pingFailures := strings.Count(body, `"protocol":"ping","protocol_ok":false`)
+	require.Equal(t, 0, strings.Count(body, `"protocol_ok":false`)-pingFailures, "两个协议都返回了工具调用")
 }
 
 // 上游返回纯文本、没有工具调用时必须判失败，并把原因带给前端。
