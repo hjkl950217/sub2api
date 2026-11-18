@@ -2,7 +2,7 @@
 <template>
   <button
     type="button"
-    class="inline-flex h-9 min-w-[68px] shrink-0 items-center justify-center gap-1 rounded-lg border px-2 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+    class="inline-flex w-[84px] shrink-0 items-center justify-center gap-1 self-stretch whitespace-nowrap rounded-xl border px-2 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60"
     :class="stateClass"
     :disabled="disabled || testing || !url.trim()"
     :title="tooltip"

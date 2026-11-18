@@ -1751,7 +1751,7 @@ export default {
       // FORK-ANCHOR: i18n-url-ping-en (fork: URL ping button copy)
       pingUrl: 'Ping',
       pingTesting: 'Testing',
-      pingFailed: 'Unreachable',
+      pingFailed: 'Failed',
       errorPrefix: 'Error: {message}',
       imagePreviewAlt: 'Test image {index}',
       imageLightboxAlt: 'Image preview',
