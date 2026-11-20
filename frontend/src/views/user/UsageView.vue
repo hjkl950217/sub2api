@@ -336,6 +336,17 @@ let abortController: AbortController | null = null
 let chartReqSeq = 0
 let statsReqSeq = 0
 let modelStatsReqSeq = 0
+let deferredChartsTimer: number | null = null
+
+// 图表和模型统计延后加载：先出明细和顶部指标，同时起到筛选防抖作用
+const scheduleCharts = (delay = 400) => {
+  if (deferredChartsTimer != null) window.clearTimeout(deferredChartsTimer)
+  deferredChartsTimer = window.setTimeout(() => {
+    deferredChartsTimer = null
+    void loadModelStats()
+    void loadChartData()
+  }, delay)
+}
 
 const formatLocalDate = (date: Date): string =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -554,16 +565,14 @@ const applyFilters = () => {
   pagination.page = 1
   void loadLogs()
   void loadStats()
-  void loadModelStats()
-  void loadChartData()
+  scheduleCharts()
   resetErrorRows()
 }
 
 const refreshData = () => {
   void loadLogs()
   void loadStats()
-  void loadModelStats()
-  void loadChartData()
+  scheduleCharts()
   if (activeTab.value === 'errors') void loadErrors()
 }
 
@@ -940,6 +949,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   abortController?.abort()
+  if (deferredChartsTimer != null) window.clearTimeout(deferredChartsTimer)
   document.removeEventListener('click', handleColumnClickOutside)
 })
 

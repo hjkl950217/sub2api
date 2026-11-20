@@ -1,5 +1,5 @@
 <template>
-  <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+  <div class="grid grid-cols-2 gap-4 lg:grid-cols-5">
     <div class="card p-4 flex items-center gap-3">
       <div class="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30 text-blue-600">
         <Icon name="document" size="md" />
@@ -85,6 +85,16 @@
       </div>
       <div><p class="text-xs font-medium text-gray-500">{{ t('usage.avgDuration') }}</p><p class="text-xl font-bold">{{ formatDuration(stats?.average_duration_ms || 0) }}</p></div>
     </div>
+    <div class="card p-4 flex items-center gap-3">
+      <div class="rounded-lg bg-sky-100 p-2 dark:bg-sky-900/30 text-sky-600">
+        <Icon name="database" size="md" />
+      </div>
+      <div>
+        <p class="text-xs font-medium text-gray-500">{{ t('usage.cacheHitRate') }}</p>
+        <p class="text-xl font-bold">{{ cacheHitRateText }}</p>
+        <p class="text-xs text-gray-400">{{ t('usage.inSelectedRange') }}</p>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -120,4 +130,12 @@ const formatDuration = (ms: number) =>
 
 const cacheLabel = () => t('usage.cacheTotal')
 const cacheDetailLabel = () => t('usage.cacheBreakdown')
+
+// 口径与明细列、Token 浮层一致：缓存读取 / 全部提示词 token
+const cacheHitRateText = computed(() => {
+  const s = props.stats
+  const promptTokens = (s?.total_input_tokens || 0) + (s?.total_cache_read_tokens || 0) + (s?.total_cache_creation_tokens || 0)
+  if (promptTokens <= 0) return '0.00%'
+  return `${(((s?.total_cache_read_tokens || 0) / promptTokens) * 100).toFixed(2)}%`
+})
 </script>

@@ -17,6 +17,7 @@ const messages: Record<string, string> = {
   'usage.accountCost': 'Cost',
   'usage.standardCost': 'Standard',
   'usage.avgDuration': 'Avg Duration',
+  'usage.cacheHitRate': 'Cache Hit Rate',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -63,6 +64,23 @@ describe('UsageStatsCards', () => {
     expect(text).toContain('12')
     expect(text).toContain('Cache Read')
     expect(text).toContain('22')
+  })
+
+  it('shows cache hit rate computed from prompt tokens', () => {
+    const wrapper = mount(UsageStatsCards, {
+      props: {
+        stats,
+      },
+      global: {
+        stubs: {
+          Icon: true,
+        },
+      },
+    })
+
+    // 22 / (100 + 22 + 12) = 16.42%
+    expect(wrapper.text()).toContain('Cache Hit Rate')
+    expect(wrapper.text()).toContain('16.42%')
   })
 
   it('keeps the cache tooltip out of the layout while it is hidden', () => {

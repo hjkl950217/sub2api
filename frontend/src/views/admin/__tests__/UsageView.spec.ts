@@ -371,7 +371,7 @@ describe('admin UsageView native compaction filter', () => {
 
   it('propagates the filter to list/stats/model/snapshot requests and clears it on reset', async () => {
     const wrapper = mountRouteFilteredUsageView()
-    vi.advanceTimersByTime(120)
+    vi.advanceTimersByTime(400)
     await flushPromises()
 
     list.mockClear()
@@ -381,6 +381,7 @@ describe('admin UsageView native compaction filter', () => {
 
     ;(wrapper.vm as any).filters.native_compaction_v2 = true
     ;(wrapper.vm as any).applyFilters()
+    vi.advanceTimersByTime(400)
     await flushPromises()
 
     expect((wrapper.vm as any).breakdownFilters.native_compaction_v2).toBe(true)
@@ -398,6 +399,7 @@ describe('admin UsageView native compaction filter', () => {
     getSnapshotV2.mockClear()
 
     ;(wrapper.vm as any).resetFilters()
+    vi.advanceTimersByTime(400)
     await flushPromises()
 
     expect((wrapper.vm as any).filters.native_compaction_v2).toBeNull()
@@ -462,7 +464,7 @@ describe('admin UsageView distribution metric toggles', () => {
         EndpointDistributionChart: true, UserTokenRanking: true,
       } },
     })
-    vi.advanceTimersByTime(120)
+    vi.advanceTimersByTime(400)
     await flushPromises()
     expect((wrapper.vm as any).requestedModelStats).toEqual([{ model: 'A', total_tokens: 10 }])
 
@@ -470,6 +472,7 @@ describe('admin UsageView distribution metric toggles', () => {
     let resolveSecond: (v: any) => void = () => {}
     getModelStats.mockReturnValueOnce(new Promise((res) => { resolveSecond = res }))
     ;(wrapper.vm as any).refreshData()
+    vi.advanceTimersByTime(400)
     await flushPromises()
     expect((wrapper.vm as any).requestedModelStats).toEqual([{ model: 'A', total_tokens: 10 }])
 
@@ -502,7 +505,7 @@ describe('admin UsageView distribution metric toggles', () => {
       },
     })
 
-    vi.advanceTimersByTime(120)
+    vi.advanceTimersByTime(400)
     await flushPromises()
 
     expect(getSnapshotV2).toHaveBeenCalledTimes(1)
@@ -688,7 +691,7 @@ describe('admin UsageView handleUserClick', () => {
       },
     })
 
-    vi.advanceTimersByTime(120)
+    vi.advanceTimersByTime(400)
     await flushPromises()
 
     await wrapper.find('[data-test="usage-table"] .user-click').trigger('click')
@@ -732,7 +735,7 @@ describe('admin UsageView errors tab filter forwarding', () => {
         UserTokenRanking: true, OpsErrorLogTable: true, OpsErrorDetailModal: true,
       } },
     })
-    vi.advanceTimersByTime(120)
+    vi.advanceTimersByTime(400)
     await flushPromises()
 
     // 模拟用户在过滤器里选择了模型/账户/分组
@@ -788,7 +791,7 @@ describe('admin UsageView ranking tab', () => {
         UserTokenRanking: UserTokenRankingStub, OpsErrorLogTable: true, OpsErrorDetailModal: true,
       } },
     })
-    vi.advanceTimersByTime(120)
+    vi.advanceTimersByTime(400)
     await flushPromises()
 
     // 懒挂载:切到排行 tab 前不渲染
@@ -851,7 +854,7 @@ describe('admin UsageView model audit export', () => {
 
 	it('exports requested, sent, response, and mismatch as separate admin columns', async () => {
 		const wrapper = mountRouteFilteredUsageView()
-		vi.advanceTimersByTime(120)
+		vi.advanceTimersByTime(400)
 		await flushPromises()
 		;(wrapper.vm as any).filters.native_compaction_v2 = true
 

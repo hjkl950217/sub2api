@@ -171,6 +171,12 @@ function mountUsageView() {
   })
 }
 
+// 图表与模型统计延后 400ms 加载，测试里等它落地
+const waitForDeferredCharts = async () => {
+  await new Promise((resolve) => setTimeout(resolve, 450))
+  await flushPromises()
+}
+
 describe('user UsageView', () => {
   beforeEach(() => {
     query.mockReset()
@@ -220,6 +226,7 @@ describe('user UsageView', () => {
   it('loads logs, stats, model stats, and snapshot on first render', async () => {
     const wrapper = mountUsageView()
     await flushPromises()
+    await waitForDeferredCharts()
 
     expect(wrapper.findComponent(UsageTable).props('columns').map((column: { key: string }) => column.key)).toContain('latency')
     expect(query).toHaveBeenCalled()
@@ -338,7 +345,7 @@ describe('user UsageView', () => {
 
     ;(wrapper.vm as any).filters.native_compaction_v2 = true
     ;(wrapper.vm as any).applyFilters()
-    await flushPromises()
+    await waitForDeferredCharts()
 
     expect(query).toHaveBeenCalledWith(
       expect.objectContaining({ native_compaction_v2: true }),
@@ -354,7 +361,7 @@ describe('user UsageView', () => {
     getDashboardSnapshotV2.mockClear()
 
     ;(wrapper.vm as any).resetFilters()
-    await flushPromises()
+    await waitForDeferredCharts()
 
     expect((wrapper.vm as any).filters.native_compaction_v2).toBeNull()
     expect(query).toHaveBeenCalledWith(

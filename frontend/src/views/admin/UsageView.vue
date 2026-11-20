@@ -238,6 +238,17 @@ let abortController: AbortController | null = null; let exportAbortController: A
 let chartReqSeq = 0
 let statsReqSeq = 0
 let modelStatsReqSeq = 0
+let deferredChartsTimer: number | null = null
+
+// 图表和模型统计延后加载：先出明细和顶部指标，同时起到筛选防抖作用
+const scheduleCharts = (delay = 400) => {
+  if (deferredChartsTimer != null) window.clearTimeout(deferredChartsTimer)
+  deferredChartsTimer = window.setTimeout(() => {
+    deferredChartsTimer = null
+    void loadModelStats(modelDistributionSource.value, true)
+    void loadChartData()
+  }, delay)
+}
 const exportProgress = reactive({ show: false, progress: 0, current: 0, total: 0, estimatedTime: '' })
 const cleanupDialogVisible = ref(false)
 // Balance history modal state
@@ -527,8 +538,7 @@ const applyFilters = () => {
   invalidateModelStatsCache()
   loadLogs()
   loadStats()
-  loadModelStats(modelDistributionSource.value, true)
-  loadChartData()
+  scheduleCharts()
   errPage.value = 1
   if (activeTab.value === 'errors') {
     loadAdminErrors()
@@ -540,8 +550,7 @@ const refreshData = () => {
   invalidateModelStatsCache()
   loadLogs()
   loadStats(true)
-  loadModelStats(modelDistributionSource.value, true)
-  loadChartData()
+  scheduleCharts()
   if (activeTab.value === 'errors') loadAdminErrors()
   if (rankingMounted.value) rankingRef.value?.reload()
 }
@@ -880,17 +889,23 @@ onMounted(() => {
   void loadRouteUserFilterLabel()
   loadLogs()
   loadStats()
-  loadModelStats(modelDistributionSource.value, true)
-  window.setTimeout(() => {
-    void loadChartData()
-  }, 120)
+  scheduleCharts()
   loadSavedColumns()
   loadSavedErrColumns()
   document.addEventListener('click', handleColumnClickOutside)
 })
-onUnmounted(() => { abortController?.abort(); exportAbortController?.abort(); document.removeEventListener('click', handleColumnClickOutside) })
+onUnmounted(() => {
+  abortController?.abort()
+  exportAbortController?.abort()
+  if (deferredChartsTimer != null) window.clearTimeout(deferredChartsTimer)
+  document.removeEventListener('click', handleColumnClickOutside)
+})
 
 watch(modelDistributionSource, (source) => {
+  if (deferredChartsTimer != null) {
+    window.clearTimeout(deferredChartsTimer)
+    deferredChartsTimer = null
+  }
   void loadModelStats(source)
 })
 

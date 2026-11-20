@@ -86,6 +86,7 @@ const messages: Record<string, string> = {
 	'usage.upstreamResponseModel': 'Upstream response',
 	'usage.modelVariant': 'Possible version variant',
 	'usage.modelMismatch': 'Different model',
+	'usage.cacheHitRate': 'Cache hit rate',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -279,6 +280,36 @@ describe('admin UsageTable tooltip', () => {
     await tokenTrigger.trigger('mouseenter')
 
     expect(document.body.textContent).toContain('93.57%')
+  })
+
+  it('displays cache hit rate in the tokens column', () => {
+    const row = {
+      ...baseImageRow,
+      image_count: 0,
+      billing_mode: 'token',
+      input_tokens: 6452,
+      output_tokens: 168,
+      cache_read_tokens: 93824,
+      cache_creation_tokens: 0,
+    }
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [row],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('Cache hit rate')
+    expect(wrapper.text()).toContain('93.57%')
   })
 
   it('keeps the request type badge and adds a separate badge only for native compaction rows', () => {
