@@ -120,6 +120,13 @@
                 >
                   {{ shortProtocolLabel(result.protocol) }}
                 </span>
+                <!-- FORK-ANCHOR: batch-test-protocol-endpoint (二开：显示这条结果实际探测的 host，三地址不同时能对上号) -->
+                <span
+                  v-if="endpointHost(result.endpoint)"
+                  class="min-w-0 max-w-[9rem] shrink truncate text-[11px] text-gray-400"
+                  :title="result.endpoint"
+                  :data-testid="`batch-protocol-endpoint-${row.id}-${result.protocol}`"
+                >{{ endpointHost(result.endpoint) }}</span>
                 <span class="shrink-0 text-[11px]" :class="protocolTextClass(result)">
                   {{ protocolStatusLabel(result) }}
                 </span>
@@ -333,6 +340,8 @@ interface ProtocolResult {
   // FORK-ANCHOR: batch-test-protocol-timing-field (二开：首字响应 / 完整响应耗时，单位毫秒)
   firstByteMs: number | null
   totalMs: number | null
+  // FORK-ANCHOR: batch-test-protocol-endpoint-field (二开：该协议实际探测的上游基址)
+  endpoint: string
 }
 
 interface BatchRow {
@@ -632,6 +641,18 @@ const timingLabel = (result: ProtocolResult) => {
   return `${formatSeconds(result.firstByteMs)}/${formatSeconds(result.totalMs)}`
 }
 
+// FORK-ANCHOR: batch-test-protocol-endpoint-host (二开：结果行显示探测地址的 host)
+// 三个协议可能配不同地址，显示 host 才能对上「这条结论测的是哪个站点」；
+// 解析失败时原样显示，不让展示层把结果拦下来。
+const endpointHost = (endpoint: string) => {
+  if (!endpoint) return ''
+  try {
+    return new URL(endpoint).host
+  } catch {
+    return endpoint
+  }
+}
+
 // FORK-ANCHOR: batch-test-failed-with-body (二开：失败协议的报错去重辅助)
 // 报错现在只在逐协议行显示，这个辅助保留给行级失败判定用：失败协议的报错集合。
 // FORK-ANCHOR: batch-test-network-ping-skip-failure-line (二开：ping 失败只影响自己那一行，不算协议失败)
@@ -696,7 +717,8 @@ const loadPlan = async () => {
           status: 'idle',
           error: '',
           // 打开就按后端给的协议清单铺占位标签，测试推进时逐个变色
-          protocols: (account.protocols || []).map((protocol) => ({ protocol, success: null, probing: false, error: '', body: '', expanded: false, firstByteMs: null, totalMs: null })),
+          // FORK-ANCHOR: batch-test-protocol-endpoint-placeholder (二开：占位标签也带端点字段)
+          protocols: (account.protocols || []).map((protocol) => ({ protocol, success: null, probing: false, error: '', body: '', expanded: false, firstByteMs: null, totalMs: null, endpoint: '' })),
           rowFailure: '',
           schedulable: account.schedulable,
           fingerprint: { status: 'idle', predictionName: '', prediction: '', probability: null, usedOutputs: 0, error: '', elapsedMs: 0, samplesDone: 0, samplesTotal: 0 }
@@ -764,6 +786,8 @@ const startTest = async () => {
       result.expanded = false
       result.firstByteMs = null
       result.totalMs = null
+      // FORK-ANCHOR: batch-test-protocol-endpoint-reset (二开：重跑时清掉上次的端点)
+      result.endpoint = ''
     })
     row.rowFailure = ''
   })
@@ -831,6 +855,8 @@ const handleEvent = (event: {
   // FORK-ANCHOR: batch-test-protocol-timing-event-field (二开：逐协议耗时，毫秒)
   first_byte_ms?: number
   total_ms?: number
+  // FORK-ANCHOR: batch-test-protocol-endpoint-event-field (二开：该协议实际探测的地址)
+  endpoint?: string
 }) => {
   if (typeof event.account_id !== 'number') return
   const row = rowsById.value.get(event.account_id)
@@ -854,7 +880,8 @@ const handleEvent = (event: {
         const target =
           probed ||
           (() => {
-            const created = { protocol: event.protocol as string, success: null, probing: false, error: '', body: '', expanded: false, firstByteMs: null, totalMs: null }
+            // FORK-ANCHOR: batch-test-protocol-endpoint-capture-fallback (二开：兜底追加的协议也带端点)
+            const created = { protocol: event.protocol as string, success: null, probing: false, error: '', body: '', expanded: false, firstByteMs: null, totalMs: null, endpoint: '' }
             row.protocols.push(created)
             return created
           })()
@@ -867,6 +894,8 @@ const handleEvent = (event: {
         // FORK-ANCHOR: batch-test-protocol-timing-capture (二开：记下首字与完整耗时)
         target.firstByteMs = typeof event.first_byte_ms === 'number' ? event.first_byte_ms : null
         target.totalMs = typeof event.total_ms === 'number' ? event.total_ms : null
+        // FORK-ANCHOR: batch-test-protocol-endpoint-capture (二开：记下实际探测的地址)
+        target.endpoint = event.endpoint || ''
       }
       break
     case 'error':

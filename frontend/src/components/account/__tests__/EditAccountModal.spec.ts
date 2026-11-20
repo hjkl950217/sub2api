@@ -2167,6 +2167,23 @@ describe('EditAccountModal ag_hub protocol UI', () => {
     expect(saved.base_url).toBe('https://relay.example.com/v1')
   })
 
+  // FORK-ANCHOR: edit-preserve-unselected-endpoints-spec (二开：未勾选协议的已存地址不能丢，
+  // 否则重新勾选时会被自动填成上一个协议的地址，三地址不同时会静默用错站点)
+  it('keeps the stored endpoint of an unchecked protocol on save', async () => {
+    const account = buildAgHubAccount()
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+    await flushPromises()
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const saved = updateAccountMock.mock.calls[0]?.[1]?.credentials
+    expect(saved.api_protocols).toEqual(['chat_completions', 'responses'])
+    expect(saved.api_base_urls.anthropic).toBe('https://relay.example.com/v1')
+  })
+
   it('leaves unconfigured protocol endpoints empty for ag_hub', async () => {
     const account = buildAgHubAccount()
     account.credentials.api_base_urls = { chat_completions: 'https://relay.example.com/v1' }

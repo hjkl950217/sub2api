@@ -66,43 +66,10 @@ func (s *AccountTestService) testCNProviderAdaptiveConnection(c *gin.Context, ac
 	return nil
 }
 
-// FORK-ANCHOR: fork-api-protocols-test-selected (二开：协议复选账号按勾选集合逐个探测上游端点)
-// testCNProviderSelectedProtocolsConnection 并发验证协议复选账号勾选的每一个上游端点，
-// 与 adaptive 探针语义一致：中间端点全部通过前不发 test_complete。
-// FORK-ANCHOR: cn-selected-protocol-prompt-routing (国产协议复选测试传递弹窗提示词)
-// FORK-ANCHOR: cn-selected-concurrent-probe (二开：勾选的多个协议并发探测，不再逐个串行)
-func (s *AccountTestService) testCNProviderSelectedProtocolsConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
-	protocols := account.GetSelectedAPIProtocols()
-	if len(protocols) == 0 {
-		return s.testCNProviderChatCompletionsConnection(c, account, modelID, prompt)
-	}
-	testModelID := strings.TrimSpace(modelID)
-	if testModelID == "" {
-		testModelID = openai.DefaultTestModel
-	}
-	testModelID = account.GetMappedModel(testModelID)
-	authToken := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
-	if authToken == "" {
-		return s.sendErrorAndEnd(c, "No API key available")
-	}
-
-	_, failed := s.probeProtocolsConcurrently(c, protocols, account, func(probeContext *gin.Context, probeAccount *Account, protocol string) error {
-		switch protocol {
-		case APIProtocolAnthropic:
-			return s.testCNProviderAdaptiveAnthropicConnection(probeContext, probeAccount, testModelID, authToken, prompt)
-		case APIProtocolResponses:
-			return s.testCNProviderAdaptiveResponsesConnection(probeContext, probeAccount, testModelID, authToken, prompt)
-		default:
-			return s.testCNProviderChatCompletionsConnection(probeContext, probeAccount, modelID, prompt)
-		}
-	})
-	s.sendEvent(c, TestEvent{Type: "test_complete", Success: len(failed) == 0})
-	return nil
-}
-
+// FORK-ANCHOR: cn-adaptive-anthropic-probe-base-url (二开：探测用该协议自己的地址，不因未勾选改道)
 func (s *AccountTestService) testCNProviderAdaptiveAnthropicConnection(c *gin.Context, account *Account, testModelID string, authToken string, prompt string) error {
 	ctx := c.Request.Context()
-	baseURL, err := s.validateUpstreamBaseURL(account.GetCNProtocolBaseURL(APIProtocolAnthropic))
+	baseURL, err := s.validateUpstreamBaseURL(account.GetCNProtocolBaseURLForProbe(APIProtocolAnthropic))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid adaptive Anthropic base URL: %s", err.Error()))
 	}
@@ -129,7 +96,7 @@ func (s *AccountTestService) testCNProviderAdaptiveAnthropicConnection(c *gin.Co
 	req.Header.Set("anthropic-beta", claude.APIKeyBetaHeader)
 	// Ollama Cloud Anthropic 兼容端点按 adaptive 实际选用的 Anthropic
 	// base_url 强制 Bearer，其余保持 extra/default 行为。
-	setAnthropicAPIKeyAuthHeader(req.Header, account, authToken, account.GetCNProtocolBaseURL(APIProtocolAnthropic))
+	setAnthropicAPIKeyAuthHeader(req.Header, account, authToken, account.GetCNProtocolBaseURLForProbe(APIProtocolAnthropic))
 	applyOpenCodeUpstreamUserAgent(account, apiURL, req.Header)
 	account.ApplyHeaderOverrides(req.Header)
 	applyOpenCodeSessionHeader(c, account, apiURL, req.Header, payloadBytes)
@@ -210,7 +177,8 @@ func (s *AccountTestService) processCNProviderAdaptiveAnthropicStream(c *gin.Con
 
 func (s *AccountTestService) testCNProviderAdaptiveResponsesConnection(c *gin.Context, account *Account, testModelID string, authToken string, prompt string) error {
 	ctx := c.Request.Context()
-	baseURL, err := s.validateUpstreamBaseURL(account.GetCNProtocolBaseURL(APIProtocolResponses))
+	// FORK-ANCHOR: cn-adaptive-responses-probe-base-url (二开：探测用该协议自己的地址，不因未勾选改道)
+	baseURL, err := s.validateUpstreamBaseURL(account.GetCNProtocolBaseURLForProbe(APIProtocolResponses))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid adaptive Responses base URL: %s", err.Error()))
 	}

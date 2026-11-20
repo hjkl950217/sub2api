@@ -856,6 +856,42 @@ describe('AccountTestModal 协议耗时显示', () => {
   })
 })
 
+// FORK-ANCHOR: test-test-modal-protocol-endpoint (二开：三协议地址可能不同，
+// 结果行要显示这条结论实际探测的 host，ping 行显示它测的地址。)
+describe('AccountTestModal 协议端点显示', () => {
+  it('在结果行显示实际探测的 host', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_result","protocol":"chat_completions","protocol_ok":true,"text":"chat-ok","endpoint":"https://chat.example.com/v1"}\n',
+        'data: {"type":"protocol_result","protocol":"anthropic","protocol_ok":false,"error":"boom","endpoint":"https://anthropic.example.com"}\n',
+        'data: {"type":"protocol_result","protocol":"ping","protocol_ok":true,"total_ms":64,"endpoint":"https://chat.example.com/v1"}\n',
+        'data: {"type":"test_complete","success":true}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({
+      id: 12,
+      name: 'DeepSeek',
+      platform: 'deepseek',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    ;(wrapper.vm as any).selectedModelId = 'deepseek-chat'
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="protocol-endpoint-chat_completions"]').text()).toBe('chat.example.com')
+    expect(wrapper.get('[data-testid="protocol-endpoint-anthropic"]').text()).toBe('anthropic.example.com')
+    expect(wrapper.get('[data-testid="protocol-endpoint-ping"]').text()).toBe('chat.example.com')
+    expect(wrapper.get('[data-testid="protocol-endpoint-chat_completions"]').attributes('title')).toBe('https://chat.example.com/v1')
+    // 没带 endpoint 的协议不显示空标签
+    expect(wrapper.find('[data-testid="protocol-endpoint-responses"]').exists()).toBe(false)
+  })
+})
+
 // FORK-ANCHOR: test-test-modal-fingerprint (二开：模型指纹测试区块)
 // 核心约定：默认不跑、不随「开始测试」触发或清除、必须单独点「开始检测」。
 describe('AccountTestModal 模型指纹测试', () => {

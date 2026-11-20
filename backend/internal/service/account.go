@@ -1851,6 +1851,30 @@ func (a *Account) GetCNProtocolBaseURL(protocol string) string {
 	return a.defaultCNProtocolBaseURL(protocol)
 }
 
+// FORK-ANCHOR: fork-api-protocols-probe-base-url (二开：协议探测取该协议自己的端点)
+// GetCNProtocolBaseURL 是转发语义：协议没勾选时改道兜底协议。探测要验的是
+// 「这个协议的地址通不通」，跟着改道会把结论算到别的地址上，所以单独走这条解析：
+// api_base_urls[protocol] → chat 的 base_url → 平台/共享默认地址，完全不看勾选集合。
+func (a *Account) GetCNProtocolBaseURLForProbe(protocol string) string {
+	// 只有按协议分流（显式勾选或 adaptive）的账号才逐协议取地址；
+	// 旧的固定协议账号仍走 GetOpenAIBaseURL/GetAnthropicProtocolBaseURL 那套解析，
+	// 避免用到残留的 api_base_urls 而偏离实际转发端点。
+	if a == nil || !a.IsMultiProtocolAPIKey() || (!a.HasExplicitAPIProtocols() && !a.IsAdaptiveAPIProtocol()) {
+		return ""
+	}
+	if baseURLs, ok := a.Credentials["api_base_urls"].(map[string]any); ok {
+		if baseURL, ok := baseURLs[protocol].(string); ok && strings.TrimSpace(baseURL) != "" {
+			return strings.TrimSpace(baseURL)
+		}
+	}
+	if protocol == APIProtocolChatCompletions {
+		if baseURL := strings.TrimSpace(a.GetCredential("base_url")); baseURL != "" {
+			return baseURL
+		}
+	}
+	return a.defaultCNProtocolBaseURL(protocol)
+}
+
 // defaultCNProtocolBaseURL 返回平台 × 协议的内置默认端点；没有官方端点的平台返回空串。
 func (a *Account) defaultCNProtocolBaseURL(protocol string) string {
 	// FORK-ANCHOR: ag-hub-base-url-default (二开：聚合中转无官方端点，三个协议的端点都由凭据 base_url 提供)

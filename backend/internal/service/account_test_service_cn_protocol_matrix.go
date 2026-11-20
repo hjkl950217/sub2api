@@ -55,15 +55,16 @@ var cnProtocolProbeOrder = []string{APIProtocolChatCompletions, APIProtocolAnthr
 const networkPingProtocol = "ping"
 
 // FORK-ANCHOR: protocol-matrix-network-ping-target (二开：ping 目标取账号主端点)
-// 多协议账号取 chat 端点，openai API Key 取 openai 基址，最后回退凭据里的 base_url。
+// 多协议账号优先取 chat 端点本身（不看勾选集合，避免三地址不同时 ping 到别的协议），
+// openai API Key 取 openai 基址，最后回退凭据里的 base_url。
 // 都没有时返回空，交给 PingURL 报「地址为空」，不会误测 Anthropic 默认域名。
 func accountNetworkPingTarget(account *Account) string {
 	if account == nil {
 		return ""
 	}
 	for _, candidate := range []string{
+		account.GetCNProtocolBaseURLForProbe(APIProtocolChatCompletions),
 		account.GetOpenAIBaseURL(),
-		account.GetCNProtocolBaseURL(APIProtocolChatCompletions),
 		account.GetCredential("base_url"),
 	} {
 		if value := strings.TrimSpace(candidate); value != "" {
@@ -71,6 +72,18 @@ func accountNetworkPingTarget(account *Account) string {
 		}
 	}
 	return ""
+}
+
+// FORK-ANCHOR: protocol-probe-endpoint (二开：结果展示用的探测地址)
+// protocolProbeEndpoint 返回探测该协议实际使用的上游基址，只用于结果展示。
+func protocolProbeEndpoint(account *Account, protocol string) string {
+	if protocol == networkPingProtocol {
+		return accountNetworkPingTarget(account)
+	}
+	if baseURL := account.GetCNProtocolBaseURLForProbe(protocol); baseURL != "" {
+		return baseURL
+	}
+	return account.GetOpenAIBaseURL()
 }
 
 // forkBoolPtr 取 bool 地址（本包 ops_metrics_collector.go 已有 boolPtr，避免重名）。
@@ -178,7 +191,8 @@ func (s *AccountTestService) probeProtocolsConcurrently(
 		// ping 只上报结果，不并入 passed/failed，避免影响协议回写与整轮成败。
 		if result.protocol == networkPingProtocol {
 			ok := result.err == nil
-			event := TestEvent{Type: "protocol_result", Protocol: networkPingProtocol, ProtocolOK: forkBoolPtr(ok), TotalMS: result.total.Milliseconds()}
+			// FORK-ANCHOR: protocol-result-endpoint-ping (二开：ping 结果带上它测的地址)
+			event := TestEvent{Type: "protocol_result", Protocol: networkPingProtocol, ProtocolOK: forkBoolPtr(ok), TotalMS: result.total.Milliseconds(), Endpoint: pingTarget}
 			if !ok {
 				event.Error = result.err.Error()
 			}
@@ -187,7 +201,8 @@ func (s *AccountTestService) probeProtocolsConcurrently(
 		}
 		outcomes[result.protocol] = result
 		ok := result.err == nil
-		event := TestEvent{Type: "protocol_result", Protocol: result.protocol, ProtocolOK: forkBoolPtr(ok), Text: result.text}
+		// FORK-ANCHOR: protocol-result-endpoint-event (二开：结果带上该协议实际探测的地址)
+		event := TestEvent{Type: "protocol_result", Protocol: result.protocol, ProtocolOK: forkBoolPtr(ok), Text: result.text, Endpoint: protocolProbeEndpoint(account, result.protocol)}
 		// FORK-ANCHOR: protocol-matrix-timing-event (二开：逐协议首字/完整耗时随 protocol_result 回传)
 		event.FirstByteMS = result.ttfb.Milliseconds()
 		event.TotalMS = result.total.Milliseconds()
@@ -331,8 +346,15 @@ func setProbedCNProtocols(account *Account, passed []string) bool {
 	credentials[apiProtocolsCredentialKey] = selected
 	credentials[fallbackProtocolCredentialKey] = selected[0]
 	account.Credentials = credentials
-	if baseURL := account.GetCNProtocolBaseURL(APIProtocolChatCompletions); baseURL != "" {
-		credentials["base_url"] = baseURL
+	// FORK-ANCHOR: fork-api-protocols-sync-base-url (二开：只有 chat 通过才回写旧字段 base_url)
+	// 原先用 GetCNProtocolBaseURL(chat) 回写，chat 未通过时它会改道兜底协议，
+	// 把别的协议地址写进 base_url（三地址不同时会污染模型同步、余额探测等读取方）。
+	if stringSliceContains(selected, APIProtocolChatCompletions) {
+		if baseURLs, ok := credentials["api_base_urls"].(map[string]any); ok {
+			if baseURL, ok := baseURLs[APIProtocolChatCompletions].(string); ok && strings.TrimSpace(baseURL) != "" {
+				credentials["base_url"] = strings.TrimSpace(baseURL)
+			}
+		}
 	}
 	credentials["api_protocol"] = APIProtocolAdaptive
 	if len(selected) == 1 {

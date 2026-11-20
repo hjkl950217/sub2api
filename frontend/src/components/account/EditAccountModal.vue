@@ -6426,6 +6426,16 @@ const handleSubmit = async () => {
             if (!value) continue
             protocolBaseUrls[protocol] = value
           }
+          // FORK-ANCHOR: edit-preserve-unselected-endpoints (二开：取消勾选后保留该协议已存的地址)
+          // 端点输入框只渲染已勾选协议，原先保存时整张 api_base_urls 重写，未勾选协议的地址会被删掉；
+          // 重新勾选时又会自动复制上一个协议的地址，三地址不同时会静默用错站点。
+          // 只补未勾选的协议：已勾选协议清空地址仍是「跟随第一个地址」的明确操作，不能被还原。
+          const storedBaseUrls = (props.account?.credentials?.api_base_urls as Record<string, unknown> | undefined) || {}
+          for (const protocol of CN_API_PROTOCOLS) {
+            if (selectedProtocols.includes(protocol) || protocolBaseUrls[protocol]) continue
+            const kept = typeof storedBaseUrls[protocol] === 'string' ? storedBaseUrls[protocol].trim() : ''
+            if (kept) protocolBaseUrls[protocol] = kept
+          }
           newCredentials.api_protocols = selectedProtocols
           newCredentials.fallback_protocol = selectedFallback
           newCredentials.api_base_urls = protocolBaseUrls

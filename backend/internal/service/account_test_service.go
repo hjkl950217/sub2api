@@ -195,6 +195,9 @@ type TestEvent struct {
 	// FirstByteMS 是首字响应耗时，TotalMS 是完整响应耗时，单位毫秒；0 表示没测到。
 	FirstByteMS int64 `json:"first_byte_ms,omitempty"`
 	TotalMS     int64 `json:"total_ms,omitempty"`
+	// FORK-ANCHOR: protocol-result-endpoint-field (二开：探测实际用的上游基址，结果行显示 host)
+	// 三个协议的地址可能不同，不显示端点就无法判断这条结论对应哪个地址。
+	Endpoint string `json:"endpoint,omitempty"`
 }
 
 // AccountTestOptions carries optional media for admin connectivity tests.
@@ -638,9 +641,11 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 		if testOpts.SyncProtocols {
 			return s.probeCNProviderProtocolsConnection(c, account, modelID, prompt, true)
 		}
-		// FORK-ANCHOR: fork-api-protocols-test-routing (二开：协议复选账号逐个验证已勾选的原生端点)
+		// FORK-ANCHOR: fork-api-protocols-test-all (二开：协议复选账号的普通测试也三协议全测)
+		// 只探测、不回写；勾选集合仍只影响「更新支持协议」。这样弹窗里三行都会有结论，
+		// 也能发现后来才通的协议（原先只测已勾选的，未勾选的一直是「未测试」）。
 		if account.HasExplicitAPIProtocols() {
-			return s.testCNProviderSelectedProtocolsConnection(c, account, modelID, prompt)
+			return s.probeCNProviderProtocolsConnection(c, account, modelID, prompt, false)
 		}
 		switch account.GetAPIProtocol() {
 		case APIProtocolAdaptive:
@@ -758,7 +763,12 @@ func (s *AccountTestService) testCNProviderChatCompletionsConnection(c *gin.Cont
 		return s.sendErrorAndEnd(c, "No API key available")
 	}
 
-	baseURL := account.GetOpenAIBaseURL()
+	// FORK-ANCHOR: cn-chat-probe-base-url (二开：探测用 chat 自己的地址；
+	// GetOpenAIBaseURL 在 chat 未勾选时会取兜底协议的地址，只作非多协议账号的回退)
+	baseURL := account.GetCNProtocolBaseURLForProbe(APIProtocolChatCompletions)
+	if baseURL == "" {
+		baseURL = account.GetOpenAIBaseURL()
+	}
 	normalizedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid base URL: %s", err.Error()))

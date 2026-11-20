@@ -313,6 +313,36 @@ func TestAccountTestService_FixedCNChatProtocolStillTestsOnlyChatEndpoint(t *tes
 	require.Equal(t, 1, strings.Count(recorder.Body.String(), `"type":"test_complete"`))
 }
 
+// 协议复选账号的普通测试也三协议全测：三个地址各打各的，不因未勾选改道，也不回写勾选集合。
+func TestAccountTestService_ExplicitProtocolsProbeAllEndpoints(t *testing.T) {
+	account := adaptiveCNAccountTestAccount(306, PlatformDeepseek)
+	account.Credentials["api_protocols"] = []any{APIProtocolChatCompletions}
+	account.Credentials["fallback_protocol"] = APIProtocolChatCompletions
+	svc, upstream := adaptiveCNProtocolTestService(
+		account,
+		adaptiveCNResponses(
+			adaptiveCNChatTestResponse(),
+			adaptiveCNAnthropicTestResponse(),
+			adaptiveCNResponsesTestResponse(),
+		),
+	)
+	c, recorder := newTestContext()
+
+	err := svc.TestAccountConnection(c, account.ID, "deepseek-chat", "", AccountTestModeDefault)
+
+	require.NoError(t, err)
+	require.Len(t, upstream.requests, 3)
+	require.Equal(t, "http://chat.example/v1/chat/completions", upstream.requestByProtocol(t, APIProtocolChatCompletions).URL.String())
+	require.Equal(t, "http://anthropic.example/v1/messages", upstream.requestByProtocol(t, APIProtocolAnthropic).URL.String())
+	require.Equal(t, "http://responses.example/responses", upstream.requestByProtocol(t, APIProtocolResponses).URL.String())
+	require.Equal(t, []any{APIProtocolChatCompletions}, account.Credentials["api_protocols"], "普通测试不回写勾选集合")
+	require.NotContains(t, recorder.Body.String(), `"protocol_applied":true`)
+	// 每条结果都带实际探测的地址，前端据此显示 host
+	require.Contains(t, recorder.Body.String(), `"protocol":"anthropic"`)
+	require.Contains(t, recorder.Body.String(), `"endpoint":"http://anthropic.example"`)
+	require.Contains(t, recorder.Body.String(), `"endpoint":"http://responses.example"`)
+}
+
 func anthropicProtocolCNAccount(id int64, platform string, credentials map[string]any) *Account {
 	base := map[string]any{
 		"api_key":      "sk-anthropic-test",

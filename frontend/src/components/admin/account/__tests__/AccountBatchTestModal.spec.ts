@@ -275,6 +275,31 @@ describe('AccountBatchTestModal', () => {
     expect(updateProbedProtocols).toHaveBeenCalledWith(1, ['chat_completions', 'responses'])
   })
 
+  // FORK-ANCHOR: batch-test-protocol-endpoint-spec (二开：结果行显示实际探测的 host)
+  it('在协议行显示实际探测的 host', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"protocol_result","account_id":1,"protocol":"chat_completions","protocol_ok":true,"endpoint":"https://chat.example.com/v1"}\n',
+        'data: {"type":"protocol_result","account_id":1,"protocol":"responses","protocol_ok":false,"error":"404","endpoint":"https://responses.example.com"}\n',
+        'data: {"type":"protocol_result","account_id":1,"protocol":"ping","protocol_ok":true,"total_ms":88,"endpoint":"https://chat.example.com/v1"}\n',
+        'data: {"type":"batch_test_complete","account_id":1,"success":true}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal({ show: false, accountIds: [1] })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="batch-test-start-button"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="batch-protocol-endpoint-1-chat_completions"]').text()).toBe('chat.example.com')
+    expect(wrapper.get('[data-testid="batch-protocol-endpoint-1-responses"]').text()).toBe('responses.example.com')
+    expect(wrapper.get('[data-testid="batch-protocol-endpoint-1-ping"]').text()).toBe('chat.example.com')
+    expect(wrapper.get('[data-testid="batch-protocol-endpoint-1-chat_completions"]').attributes('title')).toBe('https://chat.example.com/v1')
+  })
+
   it('测试进行中也能更新支持协议：只写已经跑完的行', async () => {
     global.fetch = vi.fn().mockResolvedValue(
       createStreamResponse(

@@ -141,3 +141,46 @@ func TestForkProtocolsAnthropicOnly(t *testing.T) {
 	require.Equal(t, DefaultKimiPayGBaseURL, acc.GetOpenAIFormatBaseURL(), "未勾选 CC → OpenAI 格式端点用平台默认 CC 地址")
 	require.Equal(t, "https://anthropic.example.com", acc.GetOpenAIBaseURL(), "兜底为 anthropic 时 base_url 取 anthropic 端点")
 }
+
+// 探测地址不跟着勾选集合改道：每个协议都用自己的地址，转发仍按兜底协议回落。
+func TestForkProtocolsProbeBaseURL(t *testing.T) {
+	t.Parallel()
+
+	acc := forkProtocolAccount(PlatformDeepseek, map[string]any{
+		"api_protocols":     []any{APIProtocolChatCompletions, APIProtocolAnthropic},
+		"fallback_protocol": APIProtocolChatCompletions,
+		"api_base_urls": map[string]any{
+			APIProtocolChatCompletions: "https://chat.example.com",
+			APIProtocolAnthropic:       "https://anthropic.example.com",
+			APIProtocolResponses:       "https://responses.example.com",
+		},
+	})
+	require.Equal(t, "https://chat.example.com", acc.GetCNProtocolBaseURLForProbe(APIProtocolChatCompletions))
+	require.Equal(t, "https://anthropic.example.com", acc.GetCNProtocolBaseURLForProbe(APIProtocolAnthropic))
+	require.Equal(t, "https://responses.example.com", acc.GetCNProtocolBaseURLForProbe(APIProtocolResponses), "未勾选的协议也探自己的地址")
+	require.Equal(t, "https://chat.example.com", acc.GetCNProtocolBaseURL(APIProtocolResponses), "转发路径仍回落兜底协议地址")
+}
+
+// 同步回写只在 chat 通过时更新旧字段 base_url，避免把别的协议地址写进去。
+func TestSetProbedCNProtocolsKeepsBaseURLWhenChatFails(t *testing.T) {
+	t.Parallel()
+
+	acc := forkProtocolAccount(PlatformAggregateHub, map[string]any{
+		"base_url": "https://chat.example.com",
+		"api_base_urls": map[string]any{
+			APIProtocolChatCompletions: "https://chat.example.com",
+			APIProtocolAnthropic:       "https://anthropic.example.com",
+		},
+	})
+	require.True(t, setProbedCNProtocols(acc, []string{APIProtocolAnthropic}))
+	require.Equal(t, "https://chat.example.com", acc.GetCredential("base_url"), "chat 未通过时不改写 base_url")
+
+	acc2 := forkProtocolAccount(PlatformAggregateHub, map[string]any{
+		"base_url": "https://old.example.com",
+		"api_base_urls": map[string]any{
+			APIProtocolChatCompletions: "https://chat.example.com",
+		},
+	})
+	require.True(t, setProbedCNProtocols(acc2, []string{APIProtocolChatCompletions}))
+	require.Equal(t, "https://chat.example.com", acc2.GetCredential("base_url"), "chat 通过时跟随 chat 的独立地址")
+}

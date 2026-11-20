@@ -248,6 +248,13 @@
                 :class="protocolCardProbing(item) ? 'animate-spin' : ''"
               />
               <span class="font-medium">{{ t(`admin.accounts.cnProviders.apiProtocol.${protocolLabelKey(item.protocol)}`) }}</span>
+              <!-- FORK-ANCHOR: test-modal-protocol-endpoint (二开：显示这条结果实际探测的 host，三地址不同时能对上号) -->
+              <span
+                v-if="endpointHost(item.endpoint)"
+                class="min-w-0 max-w-[9rem] truncate text-[11px] font-normal text-gray-400 dark:text-gray-500"
+                :title="item.endpoint"
+                :data-testid="`protocol-endpoint-${item.protocol}`"
+              >{{ endpointHost(item.endpoint) }}</span>
               <!-- FORK-ANCHOR: test-modal-protocol-probing-label (二开：探测中的卡片状态值显示「测试中」) -->
               <span class="ml-auto" :class="protocolCardProbing(item) ? 'text-amber-600 dark:text-amber-400' : ''">{{ protocolStatusLabel(item) }}</span>
               <!-- FORK-ANCHOR: test-modal-protocol-timing-display (二开：状态右侧显示「首字/完整」耗时，与批量测试一致) -->
@@ -733,6 +740,8 @@ interface ProtocolProbeResult {
   totalMs: number | null
   // FORK-ANCHOR: test-modal-protocol-expanded-field (二开：报错超过 3 行时的展开状态)
   expanded: boolean
+  // FORK-ANCHOR: test-modal-protocol-endpoint-field (二开：该协议实际探测的上游基址)
+  endpoint: string
 }
 const protocolResults = ref<ProtocolProbeResult[]>([])
 // FORK-ANCHOR: test-modal-expected-protocol-count (二开：同步按钮的完成条件按平台协议数，openai 只有 chat 与 responses 两个)
@@ -768,11 +777,23 @@ const timingInline = (result: ProtocolProbeResult | undefined) => {
   const label = timingLabel(result)
   return label ? `${label} ` : ''
 }
+// FORK-ANCHOR: test-modal-protocol-endpoint-host (二开：结果行显示探测地址的 host)
+// 三个协议可能配不同地址，显示 host 才能对上「这条结论测的是哪个站点」；
+// 解析失败时原样显示，不让展示层把结果拦下来。
+const endpointHost = (endpoint: string) => {
+  if (!endpoint) return ''
+  try {
+    return new URL(endpoint).host
+  } catch {
+    return endpoint
+  }
+}
 // FORK-ANCHOR: test-modal-protocol-error-truncated (二开：报错较长才给展开/收起；
 // 展开后按钮仍要出现，否则收不回去。阈值与批量测试一致（>120 字符约 3 行）)
 const protocolErrorTruncated = (item: ProtocolProbeResult) => (item.error || '').length > 120
+// FORK-ANCHOR: test-modal-protocol-endpoint-placeholder (二开：占位卡片也带端点字段)
 const buildProtocolPlaceholders = (): ProtocolProbeResult[] =>
-  protocolPlaceholderOrder.value.map((protocol) => ({ protocol, success: null, probing: false, error: '', firstByteMs: null, totalMs: null, expanded: false }))
+  protocolPlaceholderOrder.value.map((protocol) => ({ protocol, success: null, probing: false, error: '', firstByteMs: null, totalMs: null, expanded: false, endpoint: '' }))
 const hasProtocolPanel = computed(() => protocolPlaceholderOrder.value.length > 0)
 // FORK-ANCHOR: test-modal-tested-protocol-count (二开：已出结论的协议数)
 // 占位卡片开着弹窗就在了，所以「能不能同步」不能看 protocolResults.length（永远等于协议数），
@@ -1657,6 +1678,8 @@ const handleEvent = (event: {
   // FORK-ANCHOR: test-modal-protocol-timing-event-field (二开：逐协议首字/完整耗时，毫秒)
   first_byte_ms?: number
   total_ms?: number
+  // FORK-ANCHOR: test-modal-protocol-endpoint-event-field (二开：该协议实际探测的地址)
+  endpoint?: string
 }) => {
   // event.error 已在签名里（error?: string）
   switch (event.type) {
@@ -1691,6 +1714,8 @@ const handleEvent = (event: {
           // FORK-ANCHOR: test-modal-protocol-timing-capture (二开：记下首字与完整耗时)
           probed.firstByteMs = typeof event.first_byte_ms === 'number' ? event.first_byte_ms : null
           probed.totalMs = typeof event.total_ms === 'number' ? event.total_ms : null
+          // FORK-ANCHOR: test-modal-protocol-endpoint-capture (二开：记下实际探测的上游基址)
+          probed.endpoint = event.endpoint || ''
         } else {
           protocolResults.value.push({
             protocol: event.protocol,
@@ -1701,7 +1726,9 @@ const handleEvent = (event: {
             firstByteMs: typeof event.first_byte_ms === 'number' ? event.first_byte_ms : null,
             totalMs: typeof event.total_ms === 'number' ? event.total_ms : null,
             // FORK-ANCHOR: test-modal-protocol-expanded-fallback (二开：兜底追加的协议默认收起)
-            expanded: false
+            expanded: false,
+            // FORK-ANCHOR: test-modal-protocol-endpoint-capture-fallback (同上：兜底追加的协议也带端点)
+            endpoint: event.endpoint || ''
           })
         }
         // FORK-ANCHOR: test-modal-protocol-content (二开：按协议分行显示各协议返回的正文)
