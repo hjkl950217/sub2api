@@ -1007,7 +1007,7 @@ func buildBedrockTestPayload(modelID string) map[string]any {
 }
 
 // buildForkBedrockTestPayload 在 buildBedrockTestPayload 基础上换成弹窗提示词。
-// FORK-ANCHOR: account-test-bedrock-prompt（Bedrock 测试使用弹窗提示词）
+// FORK-ANCHOR: account-test-bedrock-prompt-payload（Bedrock 测试使用弹窗提示词）
 func buildForkBedrockTestPayload(modelID, prompt string) map[string]any {
 	payload := buildBedrockTestPayload(modelID)
 	payload["messages"] = []map[string]any{

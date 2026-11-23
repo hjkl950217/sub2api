@@ -46,8 +46,8 @@ git add AGENTS.md
   `-c core.quotepath=false` 不能省：中文文件名的路径会被 git 转义成八进制，`grep -v '\.md:'` 就匹配不上，会多算。
 
 - **新增的整文件**（`fork/` 下的东西、新增的视图/测试文件）不算「改上游」，不强制带标记，但文件头要有一行 `FORK:` 说明；
-- 合并上游后先跑上面那条命令对数量（当前 **789 个** = 源码 769 + `.github/` 20），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
-  其中 `.github/` 占 15 个，单独看：`git -c core.quotepath=false grep -o "FORK-ANCHOR:" -- .github | wc -l`。
+- 合并上游后先跑上面那条命令对数量（当前 **869 个** = 源码 849 + `.github/` 20），数量变少就是有改动被上游覆盖或冲突时被丢掉了。
+  其中 `.github/` 占 20 个，单独看：`git -c core.quotepath=false grep -o "FORK-ANCHOR:" -- .github | wc -l`。
 
 全量清单见 **`锚点清单.md`**：按文件分组列出每个锚点的名字，合并上游后照它逐条核对。
 
@@ -1147,6 +1147,34 @@ fork 会给手动刷新并发跑用量查询并用 `getById` 回写整行，测�
 | `backend/internal/service/account_test_service.go` | 经用户确认修复已有 lint：普通连接测试调用默认载荷包装函数，工具测试保持原路径，不改变测试请求内容 | `account-test-chat-default-call` |
 
 后端测试按管理中心约定由 GitHub CI 执行，本机只格式化。
+
+### 2.33 合并上游 0.2.24（2026-11-23）
+
+上游 0.2.24 含 328 个提交（0.2.22/0.2.23/0.2.24 连续发版），大改 gateway 去重字段审计、cache creation 计费、OpenAI Responses/Codex 路径与前端账号组件。合并时 60 个文件冲突，按「保留 fork 锚点 + 吸收上游语义」逐块处理。
+
+#### 上游行为变化（已采纳）
+
+| 变化 | 影响 |
+|---|---|
+| `normalizeCacheCreationBreakdown` 只在明细超过聚合时按比例裁剪；聚合与明细的差额由新的 `allocateCacheCreationBillingTokens` 计入 5m | 修复「1h 明细被当成整段 1h 计费」；`billing_service_test.go` 对应用例已更新 |
+| `ClaudeUsage` 新增 `cacheCreationInputTokensPresent/FromDetails`、`promptTotal*` 私有字段 | 相关 fork 测试的期望值需按上游语义补齐 |
+| message_delta 的显式 0 不再覆盖 message_start 的 input_tokens（`v > 0`） | 透传解析同步改为 `v > 0`；`TestGatewayService_ParseSSEUsagePassthrough_MessageDeltaSelectiveOverwrite` 断言改为「保留 10」 |
+| SSE 快路径（`sseEventNeedsJSONParse`）跳过 map 解码 | **必须同时喂 `anthropicVisibleOutputTracker`**：`observeRawDelta` + 快路径里的 content_block_start/stop 解析，否则真实正文流被误判空流换号 |
+| spark 影子账号的强制刷新失败改为降级（保留上次快照 + `quota_refresh_failed`），普通账号仍显式报错 | `getOpenAIUsage` 的 force 分支按 `account.IsShadow()` 分流；没有 quota service 时也降级 |
+| `mergeRawAnthropicCacheCreationUsage` 只接受 JSON number | 避免 `true` 被 gjson 当成 1 写进计费 |
+
+#### fork 行为保留（上游新测试按 fork 语义调整）
+
+- 非 401 的上游错误继续回传上游原文（`UpstreamClientMessageText`）。
+- `anthropic-version` 默认 2026-10-21（`resolveAnthropicAPIVersion`）。
+- Anthropic API Key 请求在缺少可解析会话时补合成 `metadata.user_id`。
+- 正式正文出现前的空流/无可见输出仍触发可换号失败；buffered 路径仍要求 `message_stop`。
+- `response.cancelled` 视为上游取消，不产出成功响应。
+- `is_error` 的工具结果仍带 `Error: ` 前缀（Claude Code harness 语义）。
+
+#### 新增锚点（4 个）
+
+`account-test-bedrock-prompt-payload`、`version-view-official-changelog-zh`、`version-view-official-changelog-en`、`platform-option-i18n-label`。锚点总数 865 → 869。
 
 ## 3. 发版方式
 
