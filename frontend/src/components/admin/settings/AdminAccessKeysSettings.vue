@@ -54,7 +54,8 @@
         <label class="block">{{ t('adminAccessKeys.groups') }}<select v-model="rule.group_ids" :data-test="`groups-${index}`" multiple class="input mt-1" :disabled="rule.all_groups"><option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option></select></label>
         <label class="flex gap-2"><input v-model="rule.include_ungrouped" type="checkbox" />{{ t('adminAccessKeys.includeUngrouped') }}</label>
         <div>{{ t('adminAccessKeys.accountTypes') }}<div class="flex flex-wrap gap-4"><label v-for="type in accountTypes" :key="type" class="flex gap-2"><input v-model="rule.account_types" type="checkbox" :value="type" />{{ type }}</label></div></div>
-        <label class="block">{{ t('adminAccessKeys.platforms') }}<select v-model="rule.platforms" multiple class="input mt-1"><option v-for="platform in CONCRETE_PLATFORM_OPTIONS" :key="platform.value" :value="platform.value">{{ platform.label }}</option></select></label>
+        <!-- FORK-ANCHOR: platform-option-i18n-label（平台显示名按当前语言取，避免英文界面回退中文） -->
+        <label class="block">{{ t('adminAccessKeys.platforms') }}<select v-model="rule.platforms" multiple class="input mt-1"><option v-for="platform in CONCRETE_PLATFORM_OPTIONS" :key="platform.value" :value="platform.value">{{ t('admin.accounts.platforms.' + platform.value, platform.label) }}</option></select></label>
         <div>{{ t('adminAccessKeys.accountOperations') }}<div class="grid gap-2 sm:grid-cols-2"><label v-for="permission in accountPermissions" :key="permission.id" class="flex gap-2"><input v-model="rule.permissions" type="checkbox" :value="permission.id" />{{ permissionLabel(permission) }} <span class="text-xs text-gray-500">{{ permission.id }}</span></label></div></div>
         <div v-if="groupPermissions.length" class="space-y-2 rounded border border-amber-300 p-3">
           <p>{{ t('adminAccessKeys.groupOperations') }}</p>

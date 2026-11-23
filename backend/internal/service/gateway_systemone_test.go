@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -103,33 +102,37 @@ func TestForwardSystemOneForwardsNativeProtocolAndUsage(t *testing.T) {
 }
 
 func TestForwardSystemOneAppliesAccountModelMapping(t *testing.T) {
-	responseBody := []byte(`{"model":"decision-model-preview","answers":{},"usage":{"input_tokens":5}}`)
-	var got map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
-		w.Header().Set("Content-Type", "application/json")
-		_, err := w.Write(responseBody)
+	const requestBody = `{"model":"jev-latest","state":{"model":"sample"},"questions":{"q":{"type":"noul","instructions":"Evaluate the sample"}},"stream":false}`
+	const mappedBody = `{"model":"decision-model-preview","state":{"model":"sample"},"questions":{"q":{"type":"noul","instructions":"Evaluate the sample"}},"stream":false}`
+	const responseBody = `{"model":"decision-model-2026-10","answers":{"q":{"type":"noul"}},"usage":{"input_tokens":12,"output_tokens":2}}`
+	var sentBody []byte
+	upstream := &systemOneHTTPUpstream{do: func(req *http.Request) (*http.Response, error) {
+		var err error
+		sentBody, err = io.ReadAll(req.Body)
 		require.NoError(t, err)
-	}))
-	defer server.Close()
-
-	svc := newSystemOneTestService(&systemOneHTTPUpstream{do: server.Client().Do})
-	account := &Account{
-		ID:       31,
-		Platform: PlatformTypeSafe,
-		Type:     AccountTypeAPIKey,
-		Credentials: map[string]any{
-			"base_url":      server.URL,
-			"api_key":       "ts-secret",
-			"model_mapping": map[string]any{"jev-latest": "decision-model-preview"},
-		},
-	}
-	requestBody := []byte(`{"model":"jev-latest","state":"sample","questions":{"q":{"type":"noul"}}}`)
-	result, err := svc.ForwardSystemOne(context.Background(), newSystemOneTestContext(), account, requestBody)
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(responseBody))}, nil
+	}}
+	svc := newSystemOneTestService(upstream)
+	svc.billingService = NewBillingService(&config.Config{}, nil)
+	account := &Account{ID: 7, Platform: PlatformTypeSafe, Type: AccountTypeAPIKey, Credentials: map[string]any{
+		"base_url":      "http://typesafe.test",
+		"api_key":       "ts-fixture",
+		"model_mapping": map[string]any{"jev-latest": "decision-model-preview"},
+	}}
+	c := newSystemOneTestContext()
+	body := []byte(requestBody)
+	result, err := svc.ForwardSystemOne(context.Background(), c, account, body)
 	require.NoError(t, err)
-	require.Equal(t, "decision-model-preview", got["model"])
-	require.Equal(t, "jev-latest", result.Model, "billing model stays the public protocol model")
+	require.JSONEq(t, mappedBody, string(sentBody))
+	require.Equal(t, requestBody, string(body))
+	require.Equal(t, typesafe.JevLatestModel, result.Model)
 	require.Equal(t, "decision-model-preview", result.UpstreamModel)
+	require.Equal(t, "decision-model-preview", c.GetString(OpsUpstreamModelKey))
+	require.Equal(t, "decision-model-2026-10", result.UpstreamResponseModel)
+	require.Equal(t, []byte(responseBody), result.Body)
+	apiKey := &APIKey{Group: &Group{Platform: PlatformTypeSafe}}
+	usageFields := ChannelUsageFields{OriginalModel: result.Model, BillingModelSource: BillingModelSourceUpstream}
+	require.Equal(t, typesafe.JevLatestModel, svc.recordUsageBillingModel(context.Background(), apiKey, &result.ForwardResult, usageFields))
 }
 
 func TestForwardSystemOneWithoutMappingPassesModelThrough(t *testing.T) {

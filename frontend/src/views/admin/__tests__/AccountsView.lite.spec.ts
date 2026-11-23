@@ -7,7 +7,7 @@ import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
 import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
 import AccountTableFilters from '@/components/admin/account/AccountTableFilters.vue'
 import Pagination from '@/components/common/Pagination.vue'
-import { accountQuotaRefreshContext } from '@/utils/accountQuotaRefresh'
+import { accountQuotaRefreshContext, accountQuotaRefreshKind } from '@/utils/accountQuotaRefresh'
 import type { Account } from '@/types'
 
 const {
@@ -78,6 +78,7 @@ const DataTableStub = defineComponent({
     <div>
       <template v-if="!loading"><div v-for="row in data" :key="row.id" :data-account-name="row.name">
         <slot name="cell-groups" :row="row" />
+        <slot name="cell-usage" :row="row" />
         <slot name="cell-actions" :row="row" />
       </div></template>
     </div>
@@ -104,7 +105,7 @@ const AccountStatsModalStub = defineComponent({
   template: '<div data-test="stats-account">{{ show ? account?.name : "" }}</div>'
 })
 
-function mountView(stubActionMenu = true, groupsCell = AccountGroupsCellStub) {
+function mountView(stubActionMenu = true, groupsCell = AccountGroupsCellStub, realUsageCell = false) {
   return mount(AccountsView, {
     attachTo: document.body,
     global: {
@@ -135,7 +136,7 @@ function mountView(stubActionMenu = true, groupsCell = AccountGroupsCellStub) {
         AccountStatusIndicator: true,
         AccountTodayStatsCell: true,
         AccountGroupsCell: groupsCell,
-        AccountUsageCell: true,
+        AccountUsageCell: !realUsageCell,
         UpstreamBillingRateCell: true,
         HelpTooltip: true,
         Icon: true,
@@ -170,12 +171,12 @@ const fullAccount = {
 describe('admin AccountsView lite account list', () => {
   beforeEach(() => {
     localStorage.clear()
-    getBatchUsage.mockReset().mockResolvedValue({ usage: {}, errors: {} })
     getUsage.mockReset().mockResolvedValue({ source: 'active', updated_at: 'fresh' })
     listAccounts.mockReset().mockResolvedValue({ items: [listRow], total: 1, page: 1, page_size: 20, pages: 1 })
     listWithEtag.mockReset().mockResolvedValue({ notModified: true, etag: 'compact-etag', data: null })
     getById.mockReset().mockResolvedValue(fullAccount)
     getBatchTodayStats.mockReset().mockResolvedValue({ stats: {} })
+    getBatchUsage.mockReset().mockResolvedValue({ usage: { '42': { five_hour: { utilization: 21 }, seven_day: { utilization: 31 } } }, errors: {} })
     getUpstreamBillingProbeSettings.mockReset().mockResolvedValue({ enabled: true })
     getAllProxies.mockReset().mockResolvedValue([])
     getAllGroups.mockReset().mockResolvedValue([{ id: 7, name: 'codex', platform: 'openai' }])
@@ -187,6 +188,57 @@ describe('admin AccountsView lite account list', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+  })
+
+  it.each([
+    ['anthropic', 'oauth'], ['anthropic', 'setup-token'], ['gemini', 'oauth']
+  ])('updates %s %s usage on auto-refresh without force or unrelated probes', async (platform, type) => {
+    vi.useFakeTimers()
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    vi.spyOn(window, 'matchMedia').mockImplementation(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn()
+    }) as unknown as MediaQueryList)
+    localStorage.setItem('account-auto-refresh', JSON.stringify({ enabled: true, interval_seconds: 5 }))
+    const account = { ...listRow, platform, type }
+    // 二开：oauth 账号的额度刷新走 accountQuotaRefresh（getUsage），不走批量用量接口。
+    const quotaManaged = accountQuotaRefreshKind(account as Account) !== null
+    listAccounts.mockResolvedValue({ items: [account], total: 1, page: 1, page_size: 20, pages: 1 })
+    const wrapper = mountView(true, AccountGroupsCellStub, true)
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(1)
+    await flushPromises()
+    expect(getBatchUsage).toHaveBeenCalledTimes(1)
+    expect(getBatchUsage).toHaveBeenCalledWith([42], false)
+
+    const next = { ...account, extra: { session_window_utilization: 0.44, passive_usage_7d_utilization: 0.54 }, last_used_at: platform === 'gemini' ? '2026-11-16T10:00:00Z' : null }
+    if (quotaManaged) {
+      // 额度刷新提交后会用 getById 回读整行，并写入本次 getUsage 的用量。
+      getUsage.mockResolvedValue({ five_hour: { utilization: 44 }, seven_day: { utilization: 54 } })
+      getById.mockResolvedValue(next)
+    }
+    getBatchUsage.mockResolvedValue({ usage: { '42': { five_hour: { utilization: 44 }, seven_day: { utilization: 54 } } }, errors: {} })
+    listWithEtag.mockResolvedValue({ notModified: false, etag: 'new', data: { items: [next], total: 1, pages: 1 } })
+    await vi.advanceTimersByTimeAsync(6000)
+    await flushPromises()
+    if (quotaManaged) {
+      expect(getBatchUsage).toHaveBeenCalledTimes(1)
+      expect(getUsage).toHaveBeenCalled()
+    } else {
+      expect(getBatchUsage).toHaveBeenCalledTimes(2)
+      expect(getBatchUsage).toHaveBeenLastCalledWith([42], false)
+    }
+    const cell = wrapper.findComponent({ name: 'AccountUsageCell' })
+    expect(cell.props('account').last_used_at).toBe(next.last_used_at)
+    expect(cell.props('batchedUsage').seven_day.utilization).toBe(54)
+    cell.props('requestBatchedUsage')(cell.props('account'))
+    await vi.advanceTimersByTimeAsync(1)
+    expect(getBatchUsage).toHaveBeenCalledTimes(quotaManaged ? 1 : 2)
+
+    listWithEtag.mockResolvedValue({ notModified: false, etag: 'unrelated', data: { items: [{ ...next, updated_at: 'new', current_concurrency: 2, extra: { ...next.extra, unrelated: true } }], total: 1, pages: 1 } })
+    await vi.advanceTimersByTimeAsync(6000)
+    await flushPromises()
+    expect(getBatchUsage).toHaveBeenCalledTimes(quotaManaged ? 1 : 2)
+    wrapper.unmount()
   })
 
   it('keeps lite=1 on the initial list request', async () => {

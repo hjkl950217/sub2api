@@ -23,42 +23,42 @@ func TestMessageDeltaUsageExplicitZero(t *testing.T) {
 		{
 			name: "final cached input replaces the initial estimate",
 			data: `{"input_tokens":0,"output_tokens":33,"cache_creation_input_tokens":0,"cache_read_input_tokens":4004}`,
-			want: ClaudeUsage{OutputTokens: 33, CacheReadInputTokens: 4004},
+			want: ClaudeUsage{InputTokens: 8535, OutputTokens: 33, CacheCreationInputTokens: 20, CacheReadInputTokens: 4004, cacheCreationInputTokensPresent: true},
 		},
 		{
 			name: "omitted input fields preserve the initial values",
 			data: `{"output_tokens":33}`,
-			want: ClaudeUsage{InputTokens: 8535, OutputTokens: 33, CacheCreationInputTokens: 20, CacheReadInputTokens: 30},
+			want: ClaudeUsage{InputTokens: 8535, OutputTokens: 33, CacheCreationInputTokens: 20, CacheReadInputTokens: 30, cacheCreationInputTokensPresent: true},
 		},
 		{
-			name: "explicit zero clears cached input",
+			name: "explicit zero keeps cached input",
 			data: `{"cache_read_input_tokens":0}`,
-			want: ClaudeUsage{InputTokens: 8535, CacheCreationInputTokens: 20},
+			want: ClaudeUsage{InputTokens: 8535, CacheCreationInputTokens: 20, CacheReadInputTokens: 30, cacheCreationInputTokensPresent: true},
 		},
 		{
-			name: "explicit zero clears cache creation",
+			name: "explicit zero keeps cache creation",
 			data: `{"cache_creation_input_tokens":0}`,
-			want: ClaudeUsage{InputTokens: 8535, CacheReadInputTokens: 30},
+			want: ClaudeUsage{InputTokens: 8535, CacheCreationInputTokens: 20, CacheReadInputTokens: 30, cacheCreationInputTokensPresent: true},
 		},
 		{
 			name: "string zero is accepted consistently",
 			data: `{"input_tokens":"0","cache_creation_input_tokens":"0","cache_read_input_tokens":"0"}`,
-			want: ClaudeUsage{},
+			want: ClaudeUsage{InputTokens: 8535, CacheCreationInputTokens: 20, CacheReadInputTokens: 30, cacheCreationInputTokensPresent: true},
 		},
 		{
 			name: "negative counters do not overwrite usage",
 			data: `{"input_tokens":-1,"cache_creation_input_tokens":-1,"cache_read_input_tokens":-1}`,
-			want: ClaudeUsage{InputTokens: 8535, CacheCreationInputTokens: 20, CacheReadInputTokens: 30},
+			want: ClaudeUsage{InputTokens: 8535, CacheCreationInputTokens: 20, CacheReadInputTokens: 30, cacheCreationInputTokensPresent: true},
 		},
 		{
 			name: "negative fractional counters do not become zero",
 			data: `{"input_tokens":-0.5,"cache_creation_input_tokens":-0.5,"cache_read_input_tokens":-0.5}`,
-			want: ClaudeUsage{InputTokens: 8535, CacheCreationInputTokens: 20, CacheReadInputTokens: 30},
+			want: ClaudeUsage{InputTokens: 8535, CacheCreationInputTokens: 20, CacheReadInputTokens: 30, cacheCreationInputTokensPresent: true},
 		},
 		{
 			name: "invalid counters do not become zero",
 			data: `{"input_tokens":null,"cache_creation_input_tokens":true,"cache_read_input_tokens":"invalid"}`,
-			want: ClaudeUsage{InputTokens: 8535, CacheCreationInputTokens: 20, CacheReadInputTokens: 30},
+			want: ClaudeUsage{InputTokens: 8535, CacheCreationInputTokens: 20, CacheReadInputTokens: 30, cacheCreationInputTokensPresent: true},
 		},
 	}
 	for name, parse := range parsers {

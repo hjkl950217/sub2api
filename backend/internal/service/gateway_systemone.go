@@ -47,13 +47,15 @@ func (s *GatewayService) ForwardSystemOne(ctx context.Context, c *gin.Context, a
 	// 入站协议固定 jev-latest；上游真实模型由账号 model_mapping 决定
 	// FORK-ANCHOR: typesafe-model-mapping
 	// （如百炼 decision-model-preview）。未配置映射时保持原样透传（issue #7985）。
-	upstreamModel := account.GetMappedModel(typesafe.JevLatestModel)
-	if upstreamModel != "" && upstreamModel != typesafe.JevLatestModel {
-		patchedBody, err := sjson.SetBytes(body, "model", upstreamModel)
+	mappedModel := firstNonEmpty(account.GetMappedModel(typesafe.JevLatestModel), typesafe.JevLatestModel)
+	var upstreamModel string
+	if mappedModel != typesafe.JevLatestModel {
+		patchedBody, err := sjson.SetBytes(body, "model", mappedModel)
 		if err != nil {
 			return nil, fmt.Errorf("apply typesafe model mapping: %w", err)
 		}
 		body = patchedBody
+		upstreamModel = mappedModel
 	}
 	req, err := typesafe.NewSystemOneRequest(ctx, baseURL, key, body)
 	if err != nil {
@@ -64,6 +66,7 @@ func (s *GatewayService) ForwardSystemOne(ctx context.Context, c *gin.Context, a
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
+	SetOpsUpstreamModel(c, upstreamModel)
 	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
 	if err != nil {
 		return nil, s.handleUpstreamTransportError(ctx, c, account, err, OpsUpstreamErrorEvent{

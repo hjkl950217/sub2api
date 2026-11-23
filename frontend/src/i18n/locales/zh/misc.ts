@@ -27,7 +27,8 @@ export default {
     noReleaseNotes: '暂无更新日志',
     viewUpdate: '查看更新',
     viewRelease: '查看发布',
-    viewChangelog: '查看更新日志',
+    // FORK-ANCHOR: version-view-official-changelog-zh（更新日志入口文案改为官方）
+    viewChangelog: '查看官方更新日志',
     refresh: '刷新',
     sourceMode: '源码构建',
     sourceModeHint: '源码构建请使用 git pull 更新',

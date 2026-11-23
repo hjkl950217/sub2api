@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sync/atomic"
 	"time"
+
+	"github.com/tidwall/gjson"
 )
 
 const (
@@ -89,6 +91,24 @@ func (t *anthropicVisibleOutputTracker) observe(event map[string]any) {
 				t.visible = true
 			}
 			delete(t.blocks, index)
+		}
+	}
+}
+
+// observeRawDelta 用于 SSE 快路径：content_block_delta 被逐字节转发、不做 map 解码，
+// 但仍要参与可见输出判定，否则真实正文流会被误判为空流而触发换号。
+func (t *anthropicVisibleOutputTracker) observeRawDelta(data []byte) {
+	deltaType := gjson.GetBytes(data, "delta.type").String()
+	index := int(gjson.GetBytes(data, "index").Int())
+	block := t.blocks[index]
+	switch deltaType {
+	case "text_delta":
+		if gjson.GetBytes(data, "delta.text").String() != "" && (block.kind == "" || block.kind == "text") {
+			t.visible = true
+		}
+	case "input_json_delta":
+		if gjson.GetBytes(data, "delta.partial_json").String() != "" && block.clientTool {
+			t.visible = true
 		}
 	}
 }

@@ -27,7 +27,8 @@ export default {
     noReleaseNotes: 'No release notes',
     viewUpdate: 'View Update',
     viewRelease: 'View Release',
-    viewChangelog: 'View Changelog',
+    // FORK-ANCHOR: version-view-official-changelog-en（更新日志入口文案改为官方）
+    viewChangelog: 'View Official Changelog',
     refresh: 'Refresh',
     sourceMode: 'Source Build',
     sourceModeHint: 'Source build, use git pull to update',

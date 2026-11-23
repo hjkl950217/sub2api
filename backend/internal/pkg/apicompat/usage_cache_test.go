@@ -105,11 +105,11 @@ func TestChatUsageCacheWriteKeepsWinningSpelling(t *testing.T) {
 
 	var nested ChatUsage
 	require.NoError(t, json.Unmarshal([]byte(`{"prompt_tokens":1000,"input_tokens_details":{"cache_creation_tokens":19},"prompt_tokens_details":{"cache_write_tokens":9}}`), &nested))
-	require.Equal(t, &ChatTokenDetails{CacheWriteTokens: 9}, nested.PromptTokensDetails)
+	require.Equal(t, &ChatTokenDetails{CacheWriteTokens: 9, cacheWriteTokensPresent: true}, nested.PromptTokensDetails)
 
 	var zero ChatUsage
 	require.NoError(t, json.Unmarshal([]byte(`{"prompt_tokens":1000,"prompt_tokens_details":{"cache_write_tokens":0,"cache_creation_tokens":19}}`), &zero))
-	require.Equal(t, &ChatTokenDetails{}, zero.PromptTokensDetails)
+	require.Equal(t, &ChatTokenDetails{cacheWriteTokensPresent: true}, zero.PromptTokensDetails)
 
 	var absent ChatUsage
 	require.NoError(t, json.Unmarshal([]byte(`{"prompt_tokens":1000,"cache_write_tokens":0,"cache_read_tokens":0}`), &absent))

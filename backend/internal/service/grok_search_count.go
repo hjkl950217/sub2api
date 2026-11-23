@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/tidwall/gjson"
 )
 
@@ -11,9 +12,19 @@ import (
 // calls in a Responses-style JSON body (output array or nested response.output).
 // Counts web_search_call and x_search_call. Client function/custom calls and
 // tool_search discovery do not incur a server-side search surcharge.
+// custom_tool_call items the xAI server runs itself (apicompat.IsServerSideSearchCall:
+// call_id xs_ / as_) still count.
+//
+// When usage.server_side_tool_usage_details is present, xAI's reported success
+// counts replace the item count (see grokSearchCountFromUsage).
 func countGrokNativeSearchCallsFromJSONBytes(body []byte) int {
 	if len(body) == 0 || !gjson.ValidBytes(body) {
 		return 0
+	}
+	for _, path := range []string{"response.usage", "usage"} {
+		if n, ok := grokSearchCountFromUsage(gjson.GetBytes(body, path)); ok {
+			return n
+		}
 	}
 	// Responses envelopes normally expose either top-level output (JSON mode)
 	// or response.output (terminal SSE payload). Compatibility layers can retain
@@ -33,7 +44,44 @@ func countGrokNativeSearchCallsFromSSEBody(body string) int {
 	total := 0
 	forEachOpenAISSEDataPayload(body, func(data []byte) {
 		total += countGrokNativeSearchCallsInSSEDataDedup(data, seen)
+		total = grokSearchCountWithTerminalUsage(total, data)
 	})
+	return total
+}
+
+// grokSearchCountFromUsage reads xAI's per-class success counts from a usage
+// object. xAI documents these counts as what determines billing for per-call
+// tools (https://docs.x.ai/developers/tools/tool-usage-details#server-side-tool-calls-vs-tool-usage).
+// Only the classes the item counter also counts are read: web_search_calls
+// (web_search_call items), x_search_calls (xs_ custom_tool_call items) and
+// document_search_calls (as_ custom_tool_call items). Other classes and the
+// X Search item counts (x_posts_fetched, x_users_fetched) are not read. ok is
+// false when server_side_tool_usage_details is absent, so callers keep the
+// item count.
+func grokSearchCountFromUsage(usage gjson.Result) (int, bool) {
+	details := usage.Get("server_side_tool_usage_details")
+	if !details.IsObject() {
+		return 0, false
+	}
+	total := details.Get("web_search_calls").Int() +
+		details.Get("x_search_calls").Int() +
+		details.Get("document_search_calls").Int()
+	if total < 0 {
+		total = 0
+	}
+	return int(total), true
+}
+
+// grokSearchCountWithTerminalUsage returns xAI's usage-reported count when data
+// is a terminal stream event carrying server_side_tool_usage_details (the
+// request total per the xAI X Search docs), else keeps the running total.
+func grokSearchCountWithTerminalUsage(total int, data []byte) int {
+	switch strings.TrimSpace(gjson.GetBytes(data, "type").String()) {
+	case "response.completed", "response.incomplete", "response.done":
+		if n, ok := grokSearchCountFromUsage(gjson.GetBytes(data, "response.usage")); ok {
+			return n
+		}
+	}
 	return total
 }
 
@@ -223,8 +271,9 @@ func isGrokNativeSearchOutputItem(item gjson.Result) bool {
 	itemType := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
 	// FORK-ANCHOR: grok-server-tool-count
 	switch itemType {
-	// xAI 服务端工具调用（按次计费）。function_call / custom_tool_call 是客户端
-	// 执行，不计服务端工具费，因此不在白名单内。当前所有工具共用一个
+	// xAI 服务端工具调用（按次计费）。function_call 是客户端执行，不计服务端
+	// 工具费，因此不在白名单内；custom_tool_call 默认也是客户端工具，只有 xAI
+	// 自己执行的搜索（xs_/as_ call_id）单独计费。当前所有工具共用一个
 	// search_price_per_1k 价格桶（code_interpreter/file_search 与 web_search
 	// 同价档），分工具定价需要额外的价格列。
 	case "web_search_call", "x_search_call",
@@ -232,6 +281,10 @@ func isGrokNativeSearchOutputItem(item gjson.Result) bool {
 		"file_search_call", "collections_search_call",
 		"attachment_search":
 		return true
+	case "custom_tool_call":
+		// 上游 0.2.24：xAI 自己执行的搜索以 xs_/as_ call_id 出现在 custom_tool_call
+		// 里，仍需按次计费；客户端声明的 call_ id 不计。function_call 始终是客户端执行。
+		return apicompat.IsServerSideSearchCall(itemType, item.Get("call_id").String())
 	default:
 		return false
 	}

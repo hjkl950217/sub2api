@@ -40,10 +40,9 @@ func applyErrorPassthroughRule(
 	defaultErrType string,
 	defaultErrMsg string,
 ) (status int, errType string, errMsg string, matched bool) {
-	status, errType, errMsg, rule := applyErrorPassthroughRuleWithRule(
-		c, platform, upstreamStatus, responseBody, defaultStatus, defaultErrType, defaultErrMsg,
+	return applyErrorPassthroughRuleWithMessage(
+		c, platform, upstreamStatus, responseBody, defaultStatus, defaultErrType, defaultErrMsg, ExtractUpstreamErrorMessage,
 	)
-	return status, errType, errMsg, rule != nil
 }
 
 // applyErrorPassthroughRuleWithRule 与 applyErrorPassthroughRule 相同，额外返回命中的规则（未命中为 nil），
@@ -56,6 +55,39 @@ func applyErrorPassthroughRuleWithRule(
 	defaultStatus int,
 	defaultErrType string,
 	defaultErrMsg string,
+) (status int, errType string, errMsg string, rule *model.ErrorPassthroughRule) {
+	return applyErrorPassthroughRuleCore(
+		c, platform, upstreamStatus, responseBody, defaultStatus, defaultErrType, defaultErrMsg, ExtractUpstreamErrorMessage,
+	)
+}
+
+// applyErrorPassthroughRuleWithMessage 同 applyErrorPassthroughRule，但由调用方提供
+// 上游消息提取器（如 Grok 媒体路径需识别 xAI 扁平错误体）。
+func applyErrorPassthroughRuleWithMessage(
+	c *gin.Context,
+	platform string,
+	upstreamStatus int,
+	responseBody []byte,
+	defaultStatus int,
+	defaultErrType string,
+	defaultErrMsg string,
+	extractMessage func([]byte) string,
+) (status int, errType string, errMsg string, matched bool) {
+	status, errType, errMsg, rule := applyErrorPassthroughRuleCore(
+		c, platform, upstreamStatus, responseBody, defaultStatus, defaultErrType, defaultErrMsg, extractMessage,
+	)
+	return status, errType, errMsg, rule != nil
+}
+
+func applyErrorPassthroughRuleCore(
+	c *gin.Context,
+	platform string,
+	upstreamStatus int,
+	responseBody []byte,
+	defaultStatus int,
+	defaultErrType string,
+	defaultErrMsg string,
+	extractMessage func([]byte) string,
 ) (status int, errType string, errMsg string, rule *model.ErrorPassthroughRule) {
 	status = defaultStatus
 	errType = defaultErrType
@@ -76,7 +108,7 @@ func applyErrorPassthroughRuleWithRule(
 		status = *rule.ResponseCode
 	}
 
-	errMsg = ExtractUpstreamErrorMessage(responseBody)
+	errMsg = extractMessage(responseBody)
 	if !rule.PassthroughBody && rule.CustomMessage != nil {
 		errMsg = *rule.CustomMessage
 	}
