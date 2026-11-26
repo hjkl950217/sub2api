@@ -16,13 +16,13 @@ import (
 func oauthInputMetadataRequestBody(imageBytes, metadataItems int) []byte {
 	var body bytes.Buffer
 	body.Grow(imageBytes + metadataItems*200 + 512)
-	body.WriteString(`{"model":"gpt-6.1-sol","stream":true,"store":false,"instructions":"Review this image.","input":[`)
+	_, _ = body.WriteString(`{"model":"gpt-6.1-sol","stream":true,"store":false,"instructions":"Review this image.","input":[`)
 	for index := 0; index < metadataItems; index++ {
 		fmt.Fprintf(&body, `{"role":"user","content":"history %d","internal_chat_message_metadata_passthrough":{"content_item_kinds":["text"]}},`, index)
 	}
-	body.WriteString(`{"role":"user","content":[{"type":"input_image","image_url":"data:image/png;base64,`)
-	body.Write(bytes.Repeat([]byte{'A'}, imageBytes))
-	body.WriteString(`"}]}],"opaque":9007199254740993}`)
+	_, _ = body.WriteString(`{"role":"user","content":[{"type":"input_image","image_url":"data:image/png;base64,`)
+	_, _ = body.Write(bytes.Repeat([]byte{'A'}, imageBytes))
+	_, _ = body.WriteString(`"}]}],"opaque":9007199254740993}`)
 	return body.Bytes()
 }
 
