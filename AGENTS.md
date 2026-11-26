@@ -1265,6 +1265,25 @@ gh workflow run release.yml -R hjkl950217/sub2api \
 python -c "import yaml; yaml.safe_load(open('.github/workflows/release.yml', encoding='utf-8'))"
 ```
 
+### 6.1 改代码与合并后的测试顺序（强制，长空 2026-11-23 定）
+
+合并上游 0.2.24 时本机耗时 5.4 小时，其中 107 分钟耗在 26 轮 Go 全量单测上：改一处 → 跑全量 → 发现一处失败 → 再改 → 再跑全量。固定成下面三步：
+
+1. **改完一处代码，当场评审对应测试**，不等全量报错。
+   - 后端：`<file>.go` 找同目录 `<file>_test.go`；看上游本次是否新增或改动了针对该函数的断言，判断是代码错了还是测试期望错了，当场改。
+   - 前端：`<file>.vue` / `<file>.ts` 找同目录 `__tests__/<file>.spec.ts` 或 `<file>.test.ts`。
+   - 冲突文件里上游新增的测试优先看：`git show upstream/main:<test文件>` 比 HEAD 多出来的用例，本次测试失败绝大多数出在这里。
+2. **只跑受影响的包/文件，本地不跑全量。**
+   ```powershell
+   # 后端：只跑改动涉及的包，再按函数名收窄
+   $env:GOMAXPROCS = '4'
+   go test -tags=unit -p 2 ./internal/service -run 'TestGateway|TestAnthropic' -count=1
+   # 前端：只跑改动涉及的 spec
+   $env:NODE_ENV = 'test'
+   npx vitest run src/views/admin/__tests__/AccountsView.spec.ts
+   ```
+3. **全量测试不在本机跑，交给 CI**（长空 2026-11-23 定）：定向全绿后推送，`gh workflow run backend-ci.yml -R hjkl950217/sub2api --ref main` 跑 unit + integration + golangci-lint + 前端（含 `vue-tsc --noEmit` 与 `vitest`）。定向测试与上游期望冲突时，按第 2 节对照表判定「保留 fork 行为改测试」还是「吸收上游改代码」，判定结果写进当次合并记录（如 2.33）。
+
 ## 7. 本机环境
 
 开发机**没有 Docker、没有 make、没有 WSL**，无法构建镜像——镜像只能走 GitHub Actions。
@@ -1276,11 +1295,12 @@ Go 工具链装在 `工具/管理_sub2api/子任务/二开sub2api/临时文件/g
   让它自己把 1.27.3 拉到 `临时文件/gomodcache/golang.org/toolchain@...`；设 `local` 直接报
   `go.mod requires go >= 1.27.3`。`proxy.golang.org` 在本机连不上，拉工具链前要先设
   `$env:GOPROXY='https://goproxy.cn,direct'`。
-- **后端测试在 CI 跑，不在本机跑**（长空 2026-10-16 定，理由是本机内存不够）。
+- **本地只允许定向单测，禁止跑全量测试**（长空 2026-11-23 定，本机内存不够跑全量）；全量测试和 golangci-lint 交给 CI。
   本仓库 push/PR 触发的工作流从来不运行（CI / CLA Assistant / Security Scan 的运行数都是 0，
   只有手动触发的 Release 有记录，根因未查到），所以用：
   `gh workflow run backend-ci.yml -R hjkl950217/sub2api --ref main`，
   里面会跑 `make test-unit`（`go test -tags=unit ./...`）+ `make test-integration` + golangci-lint。
+  本地定向测试的写法见 6.1。
 
 改 Go 代码前必须知道的格式坑（2026-10-16 踩过）：
 
@@ -1304,8 +1324,10 @@ python -m unittest discover -s .github/release-tools -p 'test_release_matrix.py'
 
 ## 8. Go 编译与测试的资源限制（强制，长空 2026-11-06 定）
 
+跑测试的规则见 6.1（本地只跑定向，全量交给 CI），本节只讲资源上限。
+
 本机 12 个逻辑核，`go build` / `go test` 默认按核数并行，单条命令就能吃满 CPU 并挤占内存。
-所有 Go 命令一律带上限，不要裸跑 `go test ./...`：
+所有 Go 命令一律带上限，**本地不跑 `go test ./...`**：
 
 ```powershell
 $env:GOMAXPROCS = '4'   # 单个测试进程内的并发上限
@@ -1314,10 +1336,10 @@ go test -tags=unit -p 2 ./internal/service -run TestXxx -count=1
 ```
 
 - `-p` 管「同时编译/测试的包数」，`GOMAXPROCS` 管「单包内的并行」，两个都要设。
-- 全量包测试把 `-p` 控制在 2-4；定向测试用 `-p 2`。
+- 定向测试统一用 `-p 2`；全量（`./...`）不在本机跑。
 - 需要硬隔离时用进程亲和性（compile 等子进程会继承）：
 ```powershell
-$p = Start-Process go -ArgumentList 'test','-tags','unit','-p','2','./...' -PassThru -NoNewWindow
+$p = Start-Process go -ArgumentList 'test','-tags','unit','-p','2','./internal/service' -PassThru -NoNewWindow
 $p.ProcessorAffinity = 0x00FF   # 只用逻辑核 0-7
 $p.PriorityClass = 'BelowNormal'
 $p.WaitForExit()
