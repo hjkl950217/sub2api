@@ -50,7 +50,8 @@ func ccStreamErrorIsDeterministic(payload []byte, message string) bool {
 	return typ == "invalid_request_error" || typ == "invalid_request"
 }
 
-func ccPayloadHasModelOutput(payload string) bool {	for _, choice := range gjson.Get(payload, "choices").Array() {
+func ccPayloadHasModelOutput(payload string) bool {
+	for _, choice := range gjson.Get(payload, "choices").Array() {
 		delta := choice.Get("delta")
 		for _, field := range []string{"content", "reasoning_content", "reasoning", "refusal"} {
 			if delta.Get(field).String() != "" {
