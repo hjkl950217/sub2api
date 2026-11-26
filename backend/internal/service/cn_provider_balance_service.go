@@ -278,7 +278,7 @@ func (s *CNProviderBalanceService) doBalanceGETWithHeaders(ctx context.Context, 
 			req.Header.Add(name, value)
 		}
 	}
-	account.ApplyHeaderOverrides(req.Header)
+	account.ApplyHeaderOverrides(req.Context(), req.Header)
 
 	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, maxInt(account.Concurrency, 1))
 	if err != nil {

@@ -112,7 +112,7 @@ func fingerprintExtraHeaders(account *Account, apiFormat string) map[string]stri
 	case "responses":
 		applyOpenAICodexProbeHeaders(headers)
 	}
-	account.ApplyHeaderOverrides(headers)
+	account.ApplyHeaderOverrides(context.Background(), headers)
 
 	out := make(map[string]string, len(headers))
 	for key, values := range headers {

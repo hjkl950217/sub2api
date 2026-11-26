@@ -45,8 +45,8 @@ func applyErrorPassthroughRule(
 	)
 }
 
-// applyErrorPassthroughRuleWithRule 与 applyErrorPassthroughRule 相同，额外返回命中的规则（未命中为 nil），
-// 供需要按规则选项（如 passthrough_body）细化响应体的调用方使用。
+// applyErrorPassthroughRuleWithRule 同 applyErrorPassthroughRule，但同时返回命中的规则对象，
+// 供调用方区分 passthrough_body=true（保留结构化 error.type/code/param）与自定义文案。
 func applyErrorPassthroughRuleWithRule(
 	c *gin.Context,
 	platform string,
@@ -55,8 +55,8 @@ func applyErrorPassthroughRuleWithRule(
 	defaultStatus int,
 	defaultErrType string,
 	defaultErrMsg string,
-) (status int, errType string, errMsg string, rule *model.ErrorPassthroughRule) {
-	return applyErrorPassthroughRuleCore(
+) (status int, errType string, errMsg string, rule *model.ErrorPassthroughRule, matched bool) {
+	return applyErrorPassthroughRuleDetailed(
 		c, platform, upstreamStatus, responseBody, defaultStatus, defaultErrType, defaultErrMsg, ExtractUpstreamErrorMessage,
 	)
 }
@@ -73,13 +73,13 @@ func applyErrorPassthroughRuleWithMessage(
 	defaultErrMsg string,
 	extractMessage func([]byte) string,
 ) (status int, errType string, errMsg string, matched bool) {
-	status, errType, errMsg, rule := applyErrorPassthroughRuleCore(
+	status, errType, errMsg, _, matched = applyErrorPassthroughRuleDetailed(
 		c, platform, upstreamStatus, responseBody, defaultStatus, defaultErrType, defaultErrMsg, extractMessage,
 	)
-	return status, errType, errMsg, rule != nil
+	return status, errType, errMsg, matched
 }
 
-func applyErrorPassthroughRuleCore(
+func applyErrorPassthroughRuleDetailed(
 	c *gin.Context,
 	platform string,
 	upstreamStatus int,
@@ -88,19 +88,19 @@ func applyErrorPassthroughRuleCore(
 	defaultErrType string,
 	defaultErrMsg string,
 	extractMessage func([]byte) string,
-) (status int, errType string, errMsg string, rule *model.ErrorPassthroughRule) {
+) (status int, errType string, errMsg string, rule *model.ErrorPassthroughRule, matched bool) {
 	status = defaultStatus
 	errType = defaultErrType
 	errMsg = defaultErrMsg
 
 	svc := getBoundErrorPassthroughService(c)
 	if svc == nil {
-		return status, errType, errMsg, nil
+		return status, errType, errMsg, nil, false
 	}
 
 	rule = svc.MatchRule(platform, upstreamStatus, responseBody)
 	if rule == nil {
-		return status, errType, errMsg, nil
+		return status, errType, errMsg, nil, false
 	}
 
 	status = upstreamStatus
@@ -118,8 +118,7 @@ func applyErrorPassthroughRuleCore(
 		c.Set(OpsSkipPassthroughKey, true)
 	}
 
-	// 与现有 failover 场景保持一致：命中规则时默认返回 upstream_error；
-	// OpenAI 路径在 passthrough_body=true 时会改用上游 type/code/param（见 writeOpenAIPassthroughRuleBodyError）。
+	// 与现有 failover 场景保持一致：命中规则时统一返回 upstream_error。
 	errType = "upstream_error"
-	return status, errType, errMsg, rule
+	return status, errType, errMsg, rule, true
 }

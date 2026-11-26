@@ -701,7 +701,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		)
 	}
 
-	if status, errType, errMsg, rule := applyErrorPassthroughRuleWithRule(
+	if status, errType, errMsg, rule, _ := applyErrorPassthroughRuleWithRule(
 		c,
 		PlatformOpenAI,
 		resp.StatusCode,
