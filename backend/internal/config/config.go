@@ -578,11 +578,14 @@ const (
 )
 
 // autoRequestBodyMemoryBudget sizes the unconfigured ingress budget to a
-// quarter of the process memory limit. It never goes below the historical
-// 1 GiB default, so small instances keep their previous behavior.
+// quarter of the process memory limit, including small instances. The static
+// 1 GiB fallback is used only when the memory limit cannot be detected.
 func autoRequestBodyMemoryBudget(memoryLimitBytes uint64) int64 {
+	if memoryLimitBytes == 0 {
+		return defaultRequestBodyMemoryBudgetBytes
+	}
 	// uint64 / 4 always fits in int64.
-	return max(int64(memoryLimitBytes/requestBodyMemoryBudgetDivisor), defaultRequestBodyMemoryBudgetBytes)
+	return max(int64(memoryLimitBytes/requestBodyMemoryBudgetDivisor), 1)
 }
 
 func hasExplicitConfigOrEnv(configKey, envKey string) bool {
@@ -1075,8 +1078,9 @@ type GatewayConfig struct {
 	MaxBodySize int64 `mapstructure:"max_body_size"`
 	// 解压后的请求正文最大字节数，默认 64 MiB；各路由正文上限仍独立生效。
 	MaxDecompressedBodySize int64 `mapstructure:"max_decompressed_body_size"`
-	// RequestBodyMemoryBudgetBytes bounds buffered ingress allocations per instance; 0 disables it.
-	// When unset in config and env it defaults to 1/4 of the memory limit (at least 1 GiB).
+	// RequestBodyMemoryBudgetBytes shares ingress allocations and HTTP Responses
+	// JSON processing headroom per instance; 0 disables this admission control.
+	// Unset: 1/4 of detected memory; 1 GiB only when detection fails.
 	RequestBodyMemoryBudgetBytes int64 `mapstructure:"request_body_memory_budget_bytes"`
 	// RequestBodyReadTimeoutSeconds bounds each socket read during upload; 0 disables it.
 	RequestBodyReadTimeoutSeconds int `mapstructure:"request_body_read_timeout_seconds"`
@@ -1138,6 +1142,8 @@ type GatewayConfig struct {
 	OpenAIScheduler GatewayOpenAISchedulerConfig `mapstructure:"openai_scheduler"`
 	// OpenAIHTTP2: OpenAI HTTP 上游协议策略（默认启用 HTTP/2，可按代理能力回退 HTTP/1.1）
 	OpenAIHTTP2 GatewayOpenAIHTTP2Config `mapstructure:"openai_http2"`
+	// UpstreamZstdRequestHosts lists exact hostnames that accept zstd request bodies.
+	UpstreamZstdRequestHosts []string `mapstructure:"upstream_zstd_request_hosts"`
 	// OpenAIProxyStreamCircuit: Responses SSE 代理断流熔断策略。
 	OpenAIProxyStreamCircuit GatewayOpenAIProxyStreamCircuitConfig `mapstructure:"openai_proxy_stream_circuit"`
 	// ImageConcurrency: 图片生成独立并发限制配置（默认关闭）
@@ -2040,6 +2046,7 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.OIDC.UsePKCEExplicit = hasExplicitConfigOrEnv("oidc_connect.use_pkce", "OIDC_CONNECT_USE_PKCE")
 	cfg.OIDC.ValidateIDTokenExplicit = hasExplicitConfigOrEnv("oidc_connect.validate_id_token", "OIDC_CONNECT_VALIDATE_ID_TOKEN")
 	cfg.Dashboard.KeyPrefix = strings.TrimSpace(cfg.Dashboard.KeyPrefix)
+	cfg.Gateway.UpstreamZstdRequestHosts = normalizeStringSlice(cfg.Gateway.UpstreamZstdRequestHosts)
 	cfg.CORS.AllowedOrigins = normalizeStringSlice(cfg.CORS.AllowedOrigins)
 	cfg.Security.ResponseHeaders.AdditionalAllowed = normalizeStringSlice(cfg.Security.ResponseHeaders.AdditionalAllowed)
 	cfg.Security.ResponseHeaders.ForceRemove = normalizeStringSlice(cfg.Security.ResponseHeaders.ForceRemove)
@@ -2622,6 +2629,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.previous_response", 5.0)
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.session_sticky", 3.0)
 	// OpenAI HTTP upstream protocol strategy
+	viper.SetDefault("gateway.upstream_zstd_request_hosts", []string{})
 	viper.SetDefault("gateway.openai_http2.enabled", true)
 	viper.SetDefault("gateway.openai_http2.allow_proxy_fallback_to_http1", true)
 	viper.SetDefault("gateway.openai_http2.fallback_error_threshold", 2)

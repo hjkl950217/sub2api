@@ -109,10 +109,10 @@ func TestHandleCCBufferedFromAnthropic_TruncatedBeforeUsageFailsOver(t *testing.
 	}
 
 	result, err := (&GatewayService{}).handleCCBufferedFromAnthropic(resp, c, "gpt-5", "claude-sonnet-4.5", nil, time.Now())
-	var failover *UpstreamFailoverError
-	require.ErrorAs(t, err, &failover)
+	// #8690 把「未计量就截断」改成返回哨兵错误，由 ForwardAsChatCompletions 统一换成
+	// UpstreamFailoverError（带一次同号重试）。这里直接调内层函数，断言哨兵与其前置条件。
+	require.ErrorIs(t, err, errCCBufferedIncompleteResponse)
 	require.Nil(t, result)
-	require.Equal(t, http.StatusBadGateway, failover.StatusCode)
 	require.Empty(t, rec.Body.String(), "nothing metered: leave the response unwritten for account failover")
 }
 

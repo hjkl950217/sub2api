@@ -19,13 +19,15 @@ import (
 // - Value: 当前分钟内的请求计数
 // - TTL: 120 秒（覆盖当前分钟 + 一定冗余）
 //
-// 使用 TxPipeline（MULTI/EXEC）执行 INCR + EXPIRE，保证原子性且兼容 Redis Cluster。
-// 通过 rdb.Time() 获取服务端时间，避免多实例时钟不同步。
+// 使用 Lua 脚本在一次往返内完成「取服务端时间 → 算分钟 → INCR + EXPIRE」，
+// 通过 redis.call('TIME') 拿服务端时间，避免多实例时钟不同步。
 //
 // 设计决策：
-//   - TxPipeline vs Pipeline：Pipeline 仅合并发送但不保证原子，TxPipeline 使用 MULTI/EXEC 事务保证原子执行。
-//   - rdb.Time() 单独调用：Pipeline/TxPipeline 中无法引用前一命令的结果，因此 TIME 必须单独调用（2 RTT）。
-//     Lua 脚本可以做到 1 RTT，但在 Redis Cluster 中动态拼接 key 存在 CROSSSLOT 风险，选择安全性优先。
+//   - Lua 而非 TxPipeline：Pipeline/TxPipeline 中无法引用前一命令的结果，TIME 只能单独调用
+//     （2 RTT）；脚本内取时间后每组递增从 2 RTT 降到 1 RTT，key 格式、TTL 与返回值不变。
+//   - 集群限制：脚本按 KEYS[1]（rpm:{accountID}）拼出实际 key（rpm:{accountID}:{minute}），
+//     两者在 Redis Cluster 下可能落在不同槽，会报 CROSSSLOT。当前部署是单机 Redis；
+//     要上集群必须先把分钟并进 KEYS，或给 key 加一致的 hash tag。
 const (
 	// RPM 计数器键前缀
 	// 格式: rpm:{accountID}:{minuteTimestamp}
@@ -67,25 +69,30 @@ func (c *RPMCacheImpl) currentMinuteSuffix(ctx context.Context) (string, error) 
 	return strconv.FormatInt(minuteTS, 10), nil
 }
 
-// IncrementRPM 原子递增并返回当前分钟的计数
-// 使用 TxPipeline (MULTI/EXEC) 执行 INCR + EXPIRE，保证原子性且兼容 Redis Cluster
+// incrementRPMScript computes the current minute from Redis TIME and
+// increments the counter in one round trip. KEYS[1] is the key prefix without
+// the minute suffix; ARGV[1] is the TTL in seconds.
+var incrementRPMScript = redis.NewScript(`
+	-- Redis 3.2-4.x compat: opt into effects replication so redis.call('TIME')
+	-- replicates correctly. No-op on Redis 5.0+.
+	redis.replicate_commands()
+	local t = redis.call('TIME')
+	local minute = math.floor(tonumber(t[1]) / 60)
+	local key = KEYS[1] .. ':' .. string.format('%d', minute)
+	local count = redis.call('INCR', key)
+	redis.call('EXPIRE', key, tonumber(ARGV[1]))
+	return count
+`)
+
+// IncrementRPM 原子递增并返回当前分钟的计数。
+// 使用 Lua 在脚本内取 Redis TIME，避免 TIME + INCR/EXPIRE 的两次往返。
 func (c *RPMCacheImpl) IncrementRPM(ctx context.Context, accountID int64) (int, error) {
-	key, err := c.currentMinuteKey(ctx, accountID)
+	keyPrefix := fmt.Sprintf("%s%d", rpmKeyPrefix, accountID)
+	count, err := incrementRPMScript.Run(ctx, c.rdb, []string{keyPrefix}, int(rpmKeyTTL/time.Second)).Int()
 	if err != nil {
 		return 0, fmt.Errorf("rpm increment: %w", err)
 	}
-
-	// 使用 TxPipeline (MULTI/EXEC) 保证 INCR + EXPIRE 原子执行
-	// EXPIRE 幂等，每次都设置不影响正确性
-	pipe := c.rdb.TxPipeline()
-	incrCmd := pipe.Incr(ctx, key)
-	pipe.Expire(ctx, key, rpmKeyTTL)
-
-	if _, err := pipe.Exec(ctx); err != nil {
-		return 0, fmt.Errorf("rpm increment: %w", err)
-	}
-
-	return int(incrCmd.Val()), nil
+	return count, nil
 }
 
 // GetRPM 获取当前分钟的 RPM 计数

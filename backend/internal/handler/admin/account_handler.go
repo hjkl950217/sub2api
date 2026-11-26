@@ -1340,6 +1340,8 @@ type TestAccountRequest struct {
 	// ImageDataURL / AudioDataURL are data:<mime>;base64,... payloads.
 	ImageDataURL string `json:"image_data_url"`
 	AudioDataURL string `json:"audio_data_url"`
+	// CompressRequestBody 把测试请求体用 zstd 压缩后发给上游。
+	CompressRequestBody *bool `json:"compress_request_body"`
 }
 
 type SyncFromCRSRequest struct {
@@ -1375,7 +1377,8 @@ func (h *AccountHandler) Test(c *gin.Context) {
 		// FORK-ANCHOR: fork-api-protocols-test-sync-option-pass (二开：把「更新支持协议」开关透传给测试服务)
 		SyncProtocols: req.SyncProtocols,
 		// FORK-ANCHOR: account-test-tool-call-option-pass (二开：把「带工具调用」开关透传)
-		WithTools: req.WithTools,
+		WithTools:           req.WithTools,
+		CompressRequestBody: req.CompressRequestBody,
 	}
 
 	// Use AccountTestService to test the account with SSE streaming

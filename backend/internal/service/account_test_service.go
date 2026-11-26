@@ -197,7 +197,8 @@ type TestEvent struct {
 	TotalMS     int64 `json:"total_ms,omitempty"`
 	// FORK-ANCHOR: protocol-result-endpoint-field (二开：探测实际用的上游基址，结果行显示 host)
 	// 三个协议的地址可能不同，不显示端点就无法判断这条结论对应哪个地址。
-	Endpoint string `json:"endpoint,omitempty"`
+	Endpoint           string                     `json:"endpoint,omitempty"`
+	RequestCompression *upstreamRequestZstdReport `json:"request_compression,omitempty"`
 }
 
 // AccountTestOptions carries optional media for admin connectivity tests.
@@ -212,6 +213,8 @@ type AccountTestOptions struct {
 	// WithTools 为 true 时测试请求带上 echo 工具并强制调用，响应里没有工具调用即判失败。
 	// FORK-ANCHOR: account-test-tool-call-option-field (二开：工具调用测试选项)
 	WithTools bool
+	// nil follows the saved settings. An explicit value tests that encoding for this request only.
+	CompressRequestBody *bool
 }
 
 func firstAccountTestOptions(opts []AccountTestOptions) AccountTestOptions {
@@ -610,6 +613,12 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 		return s.sendErrorAndEnd(c, "Account not found")
 	}
 	bindAccountTestPlatform(c, account)
+	if account.Type == AccountTypeAPIKey && testOpts.CompressRequestBody != nil {
+		original := c.Request
+		probe := &UpstreamRequestZstdProbe{Compress: *testOpts.CompressRequestBody, accountEnabled: account.IsUpstreamRequestZstdEnabled()}
+		c.Request = original.WithContext(WithUpstreamRequestZstdProbe(original.Context(), probe))
+		defer func() { c.Request = original }()
+	}
 
 	// Synthetic UI load-test accounts exercise the real SSE parsing and modal
 	// interactions, but intentionally do not send their placeholder credentials
@@ -3703,6 +3712,11 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 			if suppressError, _ := suppress.(bool); suppressError {
 				return
 			}
+		}
+	}
+	if c.Request != nil && (event.Type == "test_complete" || event.Type == "error") {
+		if probe := UpstreamRequestZstdProbeFromContext(c.Request.Context()); probe != nil && probe.Compress {
+			event.RequestCompression = probe.report()
 		}
 	}
 	eventJSON, _ := json.Marshal(event)

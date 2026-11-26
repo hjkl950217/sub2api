@@ -145,7 +145,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	defer h.maybeLogCompatibilityFallbackMetrics(reqLog)
 
 	// 读取请求体
-	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
+	body, _, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	if err != nil {
 		if handleRequestBodyReadError(c, reqLog, err) {
 			return
@@ -670,6 +670,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	// 受限的账号被失败请求的 session hash 卡满整个空闲窗口，后续新会话全部被拒。
 	// 成功请求保持既有空闲超时语义（会话按最后活动时间过期）。
 	sessionSlotAccounts := make(map[int64]*service.Account)
+	// 本请求在利润门下实际尝试转发的账号。终值写回只覆盖其中除最终服务账号以外的 ID；
+	// fs.FailedAccountIDs 会被退避重试重置，不能用作这个集合。
+	var attemptedAccountIDs []int64
 	upstreamServedSession := false
 	defer func() {
 		if upstreamServedSession {
@@ -938,8 +941,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				// 选号按客户端模型，转发按渠道映射后的模型：模型级账号状态按选号模型记录。
 				requestCtx = service.WithGatewaySchedulingModel(requestCtx, reqModel)
 			}
-			// 记录 Forward 前已写入字节数，Forward 后若增加则说明 SSE 内容已发，禁止 failover
-			writerSizeBeforeForward := c.Writer.Size()
+			// 只记利润门准入的账号：准入时本请求自己写过绑定，failover 后可能留在键里；
+			// 不开门时每次转发前选号都已把键写成当前账号，键里的失败账号只能是别的请求写的
+			if selection.ProfitGateActive() {
+				attemptedAccountIDs = append(attemptedAccountIDs, account.ID)
+			}
+			// 记录 Forward 前已写入字节数（不含等待上游响应头期间的心跳），
+			// Forward 后若增加则说明 SSE 内容已发，禁止 failover
+			writerSizeBeforeForward := service.OpenAICompactKeepaliveAdjustedWrittenSize(c)
 			if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
 				result, err = h.antigravityGatewayService.Forward(requestCtx, c, account, attemptBody, hasBoundSession)
 			} else {
@@ -1081,9 +1090,16 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
 					// 真实 SSE 内容无法撤销；仅明确标记的 comment 保活允许安全切换账号。
-					if c.Writer.Size() != writerSizeBeforeForward && !failoverErr.SafeToFailoverAfterWrite {
+					if service.OpenAICompactKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward && !failoverErr.SafeToFailoverAfterWrite {
+						h.recordExhaustedFailoverPartialUsage(failoverErr, func(r *service.ForwardResult) {
+							submitForwardUsage(r)
+						}, reqLog)
 						h.handleFailoverExhausted(c, failoverErr, account.Platform, true)
 						return
+					}
+					// 等待上游响应头期间的心跳已把响应提交为 200 SSE，之后的错误只能以 SSE 事件写出。
+					if c.Writer.Written() {
+						streamStarted = true
 					}
 					action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 					switch action {
@@ -1093,6 +1109,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						delete(sessionSlotAccounts, account.ID)
 						continue
 					case FailoverExhausted:
+						// 重试全部耗尽：若各次尝试中上游已计量 usage，按账号开关补记，
+						// 否则该账号的上游成本在账单上完全不可见。
+						h.recordExhaustedFailoverPartialUsage(fs.LastFailoverErr, func(r *service.ForwardResult) {
+							submitForwardUsage(r)
+						}, reqLog)
 						h.handleFailoverExhausted(c, fs.LastFailoverErr, account.Platform, streamStarted)
 						return
 					case FailoverCanceled:
@@ -1149,13 +1170,21 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// - 选中账号与粘性账号一致：刷新 TTL
 			// - 粘性账号因负载/RPM 被跳过、选中了其他账号：不覆盖原绑定，
 			//   下次请求粘性账号恢复后仍可命中
+			// 写入只覆盖缺失的键与本请求在利润门下 failover 掉的账号（准入时本请求自己写过它），
+			// 转发期间别的请求改绑的值不动。
+			failedOverAccountIDs := make([]int64, 0, len(attemptedAccountIDs))
+			for _, attemptedAccountID := range attemptedAccountIDs {
+				if attemptedAccountID != account.ID {
+					failedOverAccountIDs = append(failedOverAccountIDs, attemptedAccountID)
+				}
+			}
 			if sessionKey != "" && (sessionBoundAccountID == 0 || sessionBoundAccountID == account.ID) {
 				// Forward has completed; finish the bounded write even if the client disconnects.
 				bindCtx, cancelBind := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 5*time.Second)
-				bindErr := h.gatewayService.BindStickySession(bindCtx, currentAPIKey.GroupID, sessionKey, account.ID)
+				bindErr := h.gatewayService.BindStickySessionUnlessRebound(bindCtx, currentAPIKey.GroupID, sessionKey, account.ID, failedOverAccountIDs)
 				cancelBind()
 				if bindErr != nil {
-					reqLog.Warn("gateway.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(bindErr))
+					reqLog.Warn("gateway.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Int("failed_over_account_count", len(failedOverAccountIDs)), zap.Error(bindErr))
 				}
 			}
 
@@ -1968,6 +1997,31 @@ func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotT
 	h.handleStreamingAwareErrorWithCode(c, status, errType, code, message, streamStarted)
 }
 
+// recordExhaustedFailoverPartialUsage 在 failover 重试全部耗尽时，补记本次请求中
+// 上游已计量的 usage（记录在 UpstreamFailoverError.PartialResult 上）。
+//
+// 为什么不总是记：PartialResult 只在账号开启 accounts.extra.record_failed_stream_usage
+// 时才被填充。重试成功的请求仍需按成功结果计费一次，故 partial 数据不会参与成功路径；
+// 只有"所有尝试都失败"这一情形才会走到这里，此时上游已按 token 计费但没有成功结果可记。
+func (h *GatewayHandler) recordExhaustedFailoverPartialUsage(
+	failoverErr *service.UpstreamFailoverError,
+	submit func(*service.ForwardResult),
+	reqLog *zap.Logger,
+) {
+	if failoverErr == nil || failoverErr.PartialResult == nil {
+		return
+	}
+	submit(failoverErr.PartialResult)
+	if reqLog != nil {
+		reqLog.Warn("gateway.failed_stream_usage_recorded",
+			zap.Int("input_tokens", failoverErr.PartialResult.Usage.InputTokens),
+			zap.Int("output_tokens", failoverErr.PartialResult.Usage.OutputTokens),
+			zap.Int("cache_read_tokens", failoverErr.PartialResult.Usage.CacheReadInputTokens),
+			zap.Int("cache_creation_tokens", failoverErr.PartialResult.Usage.CacheCreationInputTokens),
+		)
+	}
+}
+
 func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, platform string, streamStarted bool) {
 	statusCode := failoverErr.StatusCode
 	responseBody := failoverErr.ResponseBody
@@ -2121,7 +2175,7 @@ func gatewayForwardErrorAlreadyCommunicated(c *gin.Context, writerSizeBeforeForw
 	if err == nil || c == nil || c.Writer == nil {
 		return false
 	}
-	if c.Writer.Size() == writerSizeBeforeForward {
+	if service.OpenAICompactKeepaliveAdjustedWrittenSize(c) == writerSizeBeforeForward {
 		return false
 	}
 
@@ -2217,7 +2271,7 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	defer h.maybeLogCompatibilityFallbackMetrics(reqLog)
 
 	// 读取请求体
-	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
+	body, _, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	if err != nil {
 		if handleRequestBodyReadError(c, reqLog, err) {
 			return

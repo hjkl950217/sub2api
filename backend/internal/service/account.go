@@ -141,7 +141,7 @@ const (
 type TempUnschedulableRule struct {
 	ErrorCode       int      `json:"error_code"`
 	Keywords        []string `json:"keywords"`
-	DurationMinutes int      `json:"duration_minutes"`
+	DurationMinutes int      `json:"duration_minutes"` // 0 ignores matching errors without changing scheduling state.
 	Description     string   `json:"description"`
 	// Scope 决定命中后的隔离粒度：account 暂停整个账号，model 只冷却本次请求的模型。
 	// 为空时模型已知且非 401 走模型级，否则账号级。
@@ -474,15 +474,20 @@ func (a *Account) GetTempUnschedulableRules() []TempUnschedulableRule {
 			continue
 		}
 
+		errorCode, validCode := parseTempUnschedInt(entry["error_code"])
+		duration, validDuration := parseTempUnschedInt(entry["duration_minutes"])
+		if !validCode || !validDuration {
+			continue
+		}
 		rule := TempUnschedulableRule{
-			ErrorCode:       parseTempUnschedInt(entry["error_code"]),
+			ErrorCode:       errorCode,
 			Keywords:        parseTempUnschedStrings(entry["keywords"]),
-			DurationMinutes: parseTempUnschedInt(entry["duration_minutes"]),
+			DurationMinutes: duration,
 			Description:     parseTempUnschedString(entry["description"]),
 			Scope:           normalizeTempUnschedScope(entry["scope"]),
 		}
 
-		if rule.ErrorCode <= 0 || rule.DurationMinutes <= 0 || len(rule.Keywords) == 0 {
+		if rule.ErrorCode <= 0 || rule.DurationMinutes < 0 || len(rule.Keywords) == 0 {
 			continue
 		}
 
@@ -553,24 +558,25 @@ func normalizeAccountNotes(value *string) *string {
 	return &trimmed
 }
 
-func parseTempUnschedInt(value any) int {
+func parseTempUnschedInt(value any) (int, bool) {
 	switch v := value.(type) {
 	case int:
-		return v
+		return v, true
 	case int64:
-		return int(v)
+		return int(v), true
 	case float64:
-		return int(v)
+		i := int(v)
+		return i, float64(i) == v
 	case json.Number:
 		if i, err := v.Int64(); err == nil {
-			return int(i)
+			return int(i), true
 		}
 	case string:
 		if i, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-			return i
+			return i, true
 		}
 	}
-	return 0
+	return 0, false
 }
 
 const (
@@ -2721,6 +2727,22 @@ func (a *Account) IsAnthropicAPIKeyPassthroughEnabled() bool {
 		return false
 	}
 	enabled, ok := a.Extra["anthropic_passthrough"].(bool)
+	return ok && enabled
+}
+
+// ShouldRecordFailedStreamUsage 返回该账号在流式中断重试全部失败后是否仍要记录上游已计量的 usage。
+// 字段：accounts.extra.record_failed_stream_usage。
+// 字段缺失或类型不正确时按 false（关闭）处理，因此默认行为与未引入该开关前完全一致。
+//
+// 背景：partialStreamUsageResult 对 UpstreamFailoverError 故意返回 nil，避免"重试成功后
+// 与成功结果重复计费"。但重试最终耗尽（pool_mode 重试多次仍失败）时，上游对这些尝试
+// 已按 token 计费，不落库会让该账号的成本完全不可见。该开关只对开启了它的账号生效，
+// 用于按账号粒度控制影响面。
+func (a *Account) ShouldRecordFailedStreamUsage() bool {
+	if a == nil || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra["record_failed_stream_usage"].(bool)
 	return ok && enabled
 }
 

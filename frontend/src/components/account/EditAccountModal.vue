@@ -1937,6 +1937,7 @@
           </div>
           <button
             type="button"
+            data-testid="temp-unsched-toggle"
             @click="tempUnschedEnabled = !tempUnschedEnabled"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
@@ -2028,7 +2029,8 @@
                   <input
                     v-model.number="rule.duration_minutes"
                     type="number"
-                    min="1"
+                    min="0"
+                    data-testid="temp-unsched-duration"
                     class="input"
                     :placeholder="t('admin.accounts.tempUnschedulable.durationPlaceholder')"
                   />
@@ -2186,6 +2188,18 @@
           <ProxyAdBanner />
         </div>
         <ProxySelector v-model="form.proxy_id" :proxies="proxies" />
+      </div>
+
+      <div v-if="account.type === 'apikey'" class="flex items-center justify-between gap-4">
+        <div>
+          <label class="input-label mb-0">{{ t('admin.accounts.requestZstd.label') }}</label>
+          <p class="input-hint">{{ t('admin.accounts.requestZstd.hint') }}</p>
+        </div>
+        <Toggle
+          v-model="upstreamRequestZstd"
+          data-testid="upstream-request-zstd"
+          :aria-label="t('admin.accounts.requestZstd.label')"
+        />
       </div>
 
       <UpstreamRequestIdHeaderField
@@ -4739,6 +4753,7 @@ const mixedScheduling = ref(false) // For antigravity accounts: enable mixed sch
 // 上游ID：直接上游声明请求标识的响应头名，留空不记录。
 const transportErrorCooldownEnabled = ref(true)
 const transportErrorCooldownMinutes = ref<number | string>(DEFAULT_TRANSPORT_ERROR_COOLDOWN_MINUTES)
+const upstreamRequestZstd = ref(false)
 const upstreamRequestIdHeader = ref('')
 const readUpstreamRequestIdHeader = (extra: unknown): string => {
   const value = (extra as Record<string, unknown> | undefined)?.upstream_request_id_header
@@ -5313,6 +5328,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 	const extra = newAccount.extra as Record<string, unknown> | undefined
 	mixedScheduling.value = extra?.mixed_scheduling === true
 	allowOverages.value = extra?.allow_overages === true
+	upstreamRequestZstd.value = extra?.upstream_request_zstd === true
 	upstreamRequestIdHeader.value = readUpstreamRequestIdHeader(extra)
   const transportCooldown = readTransportErrorCooldown(extra)
   transportErrorCooldownEnabled.value = transportCooldown.enabled
@@ -5982,7 +5998,7 @@ const buildTempUnschedRules = (rules: TempUnschedRuleForm[]) => {
     if (!Number.isFinite(errorCode) || errorCode < 100 || errorCode > 599) {
       continue
     }
-    if (!Number.isFinite(duration) || duration <= 0) {
+    if (typeof rule.duration_minutes !== 'number' || !Number.isInteger(duration) || duration < 0) {
       continue
     }
     if (keywords.length === 0) {
@@ -6095,7 +6111,7 @@ function loadTempUnschedRules(credentials?: Record<string, unknown>) {
     return {
       error_code: errorCode,
       keywords: formatTempUnschedKeywords(entry.keywords),
-      duration_minutes: toPositiveNumber(entry.duration_minutes),
+      duration_minutes: toTempUnschedDuration(entry.duration_minutes),
       description: typeof entry.description === 'string' ? entry.description : '',
       scope: resolveTempUnschedScope(entry.scope, errorCode)
     }
@@ -6211,6 +6227,13 @@ const splitTempUnschedKeywords = (value: string) => {
     .split(/[,;]/)
     .map((item) => item.trim())
     .filter((item) => item.length > 0)
+}
+
+function toTempUnschedDuration(value: unknown) {
+  if (typeof value !== 'number' && typeof value !== 'string') return null
+  if (typeof value === 'string' && value.trim() === '') return null
+  const num = Number(value)
+  return Number.isInteger(num) && num >= 0 ? num : null
 }
 
 function toPositiveNumber(value: unknown) {
@@ -7244,6 +7267,15 @@ const handleSubmit = async () => {
           ? transportErrorCooldownMinutes.value
           : DEFAULT_TRANSPORT_ERROR_COOLDOWN_MINUTES
       }
+    }
+    if (props.account.type === 'apikey' && upstreamRequestZstd.value !== (props.account.extra?.upstream_request_zstd === true)) {
+      const newExtra: Record<string, unknown> = { ...(updatePayload.extra || props.account.extra || {}) }
+      if (upstreamRequestZstd.value) {
+        newExtra.upstream_request_zstd = true
+      } else {
+        delete newExtra.upstream_request_zstd
+      }
+      updatePayload.extra = newExtra
     }
 
     // 上游ID头名只在改动时写回 extra，避免用弹窗打开时的快照覆盖运行态键。

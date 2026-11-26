@@ -440,7 +440,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 
 	// Read request body
-	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
+	body, jsonValid, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	if err != nil {
 		if handleRequestBodyReadError(c, reqLog, err) {
 			return
@@ -452,6 +452,14 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 	if len(body) == 0 {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+		return
+	}
+	// Reading is already budgeted. Admit JSON expansion and all later work
+	// before normalization, audit, content-derived affinity or account routing.
+	if err := pkghttputil.ReserveJSONProcessingMemory(c.Request.Context(), body); err != nil {
+		if !handleRequestBodyReadError(c, reqLog, err) {
+			c.Abort()
+		}
 		return
 	}
 
@@ -482,7 +490,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	defer stopCompactKeepalive()
 
 	// 校验请求体 JSON 合法性
-	if !gjson.ValidBytes(body) {
+	if !jsonValid && !gjson.ValidBytes(body) {
 		logRequestBodyParseFailure(reqLog, body, nil)
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
@@ -1269,7 +1277,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 
-	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
+	body, jsonValid, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	if err != nil {
 		if handleRequestBodyReadError(c, reqLog, err) {
 			return
@@ -1282,8 +1290,16 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
 		return
 	}
+	// Anthropic Messages is converted to a Responses request: admit that
+	// transform peak before decoding, like Responses itself.
+	if err := pkghttputil.ReserveJSONProcessingMemory(c.Request.Context(), body); err != nil {
+		if !handleRequestBodyReadError(c, reqLog, err) {
+			c.Abort()
+		}
+		return
+	}
 
-	if !gjson.ValidBytes(body) {
+	if !jsonValid && !gjson.ValidBytes(body) {
 		logRequestBodyParseFailure(reqLog, body, nil)
 		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
@@ -3838,7 +3854,8 @@ func (h *OpenAIGatewayHandler) mapUpstreamError(statusCode int) (int, string, st
 // handleForwardRequestBodyMemoryOverload ends a request when rewriting exhausts
 // local buffering capacity, without retrying or penalizing the upstream account.
 func (h *OpenAIGatewayHandler) handleForwardRequestBodyMemoryOverload(c *gin.Context, err error, streamStarted bool) bool {
-	if !errors.Is(err, pkghttputil.ErrRequestBodyMemoryBudget) {
+	tooLarge := errors.Is(err, pkghttputil.ErrRequestBodyMemoryTooLarge)
+	if !tooLarge && !errors.Is(err, pkghttputil.ErrRequestBodyMemoryBudget) {
 		return false
 	}
 	// Stop compact heartbeats before inspecting or writing the response headers.
@@ -3846,6 +3863,12 @@ func (h *OpenAIGatewayHandler) handleForwardRequestBodyMemoryOverload(c *gin.Con
 		streamStarted = true
 	}
 	streamStarted = streamStarted || c.Writer.Written()
+	if tooLarge {
+		h.handleStreamingAwareError(c, http.StatusRequestEntityTooLarge, "invalid_request_error",
+			"Request body is too large for this instance to process", streamStarted)
+		c.Abort()
+		return true
+	}
 	if !c.Writer.Written() {
 		c.Header("Retry-After", "1")
 	}

@@ -62,7 +62,14 @@ func requireSameCompactionNormalization(t *testing.T, body []byte) {
 	want, wantChanged, wantErr := referenceNormalizeCompactionTriggerInputOrder(body)
 	require.Equal(t, wantErr != nil, err != nil, "error mismatch for %s", body)
 	require.Equal(t, wantChanged, changed, "changed mismatch for %s", body)
-	require.Equal(t, string(want), string(got), "body mismatch for %s", body)
+	if !changed {
+		// 不改动时必须原样返回同一份字节（零拷贝路径的前提）。
+		require.Equal(t, string(want), string(got), "unchanged body must be returned verbatim for %s", body)
+		return
+	}
+	// 改动后比语义而不是字节：解码参考实现会把对象键重排成字典序，快速路径保留原始键序，
+	// 两者 JSON 等价但字节不同。#8705 之后快速路径覆盖普通会话，字节比较不再成立。
+	require.JSONEq(t, string(want), string(got), "normalized body must be semantically equal for %s", body)
 }
 
 func TestCompactionTriggerOrderFastPathMatchesDecode(t *testing.T) {

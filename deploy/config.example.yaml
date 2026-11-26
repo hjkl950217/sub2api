@@ -243,7 +243,7 @@ gateway:
   # OpenAI/Codex upstream response header timeout (seconds, 0=disabled)
   # OpenAI/Codex 等待上游响应头超时时间（秒，0=禁用本地响应头超时）
   openai_response_header_timeout: 0
-  # Opt out of the fixed 10-minute account cooldown for persistent OpenAI transport failures (DNS/proxy/network).
+  # Opt out of OpenAI gateway transport cooldowns (30 seconds for network reachability, 10 minutes for rejected proxy credentials).
   # Env: GATEWAY_DISABLE_OPENAI_TRANSPORT_ERROR_COOLDOWN=true; default false retains protection.
   # Errors/Ops and bounded request failover remain; HTTP 401/403/429, quota/model limits,
   # stream timeouts and token-refresh cooldowns are unchanged. Existing cooldowns and admin pauses are not cleared.
@@ -267,12 +267,18 @@ gateway:
   # gzip/zstd/deflate 解压后正文上限（字节），默认 64 MiB；必须大于 0。
   # 环境变量：GATEWAY_MAX_DECOMPRESSED_BODY_SIZE；超限返回 413，不返回截断正文。
   max_decompressed_body_size: 67108864
-  # Per-instance ingress allocation budget. Unreferenced intermediates are released after each phase.
+  # Per-instance ingress/processing allocation budget. Unreferenced intermediates are released after each phase.
   # Final bodies (and still-referenced preread buffers) remain charged until the handler returns.
   # Include all concurrent long-lived requests and upload/decode workspace; see EDGE_SECURITY.md.
-  # Unset (default): 1/4 of the memory limit (min of RAM, cgroup limit, GOMEMLIMIT), at least 1 GiB.
-  # 实例级请求体分配预算；超出返回 503 + Retry-After，0 禁用。
-  # 不配置时自动取内存上限（物理内存/cgroup 限额/GOMEMLIMIT 的最小值）的 1/4，最低 1GiB；显式配置后不再自适应。
+  # Responses / Chat Completions / Messages also reserve 6 body lengths plus JSON structure workspace
+  # while rewriting, settling to 1 body length once the upstream has the request.
+  # A body that cannot fit even an idle budget gets 413 (no Retry-After).
+  # Unset (default): 1/4 of the memory limit (min of RAM, cgroup limit, GOMEMLIMIT); 1 GiB only if undetectable.
+  # Set it explicitly when setting GOMEMLIMIT; see "Small hosts" in EDGE_SECURITY.md.
+  # 实例级请求体分配预算；暂时不足返回 503 + Retry-After，空闲时也放不下返回 413，0 禁用。
+  # 不配置时自动取内存上限的 1/4（2GiB 实例约 512MiB）；仅检测失败时回退 1GiB。显式配置后不再自适应。
+  # Responses/Chat Completions/Messages 改写期间额外预留约 6 倍正文及 JSON 结构空间，请求交给上游后降为 1 倍；
+  # 异步审核独立持有预算直到入队处理结束。设置 GOMEMLIMIT 时请同时显式设置本项。
   # request_body_memory_budget_bytes: 1073741824
   # Individual socket read/write idle deadlines, not the entire SSE lifetime; 0 disables.
   # 上传单次读取、下游单次写入/flush 超时（秒），不会限制正常长流的总时长；0 禁用。
@@ -484,6 +490,12 @@ gateway:
     sticky_escape_ttft_ms: 15000
     # 错误率 EWMA 超过该阈值时跳过 sticky，默认 0.5，仅在明显降级时触发
     sticky_escape_error_rate: 0.5
+  # Exact hostnames of relays that accept Content-Encoding: zstd (all ports).
+  # Empty by default. Individual API key accounts can also opt in under Edit Account.
+  # Test support in Test Connection first. Ordinary JSON requests between 16 KiB and
+  # 64 MiB are compressed only when this saves at least 10% of the body size.
+  upstream_zstd_request_hosts: []
+
   # OpenAI HTTP upstream protocol strategy.
   # OpenAI HTTP 上游协议策略（默认 HTTP/2；代理明确不兼容时可临时回退 HTTP/1.1）。
   openai_http2:

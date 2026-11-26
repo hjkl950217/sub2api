@@ -174,7 +174,13 @@ func TestTransportErrorCooldownDoesNotChangeOtherPlatforms(t *testing.T) {
 			_ = svc.handleOpenAIUpstreamTransportError(context.Background(), c, account, errors.New("connection refused"), false)
 		}
 		require.Equal(t, 1, repo.calls, "platform=%s", platform)
-		require.WithinDuration(t, before.Add(10*time.Minute), repo.lastUntil, time.Second)
+		// OpenAI 的「连不上」按可达性错误只冷却 30 秒（#9034），Gemini 仍是默认 10 分钟；
+		// 账号级的 transport_error_cooldown_* 只对 Anthropic 生效，不改变这两个平台的默认值。
+		want := 10 * time.Minute
+		if platform == PlatformOpenAI {
+			want = 30 * time.Second
+		}
+		require.WithinDuration(t, before.Add(want), repo.lastUntil, time.Second)
 	}
 }
 

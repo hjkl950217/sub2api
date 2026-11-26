@@ -11,8 +11,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// gatewayTransportErrorTempUnschedDuration is the default cooldown after a
-// durable transport failure. Anthropic/Bedrock accounts can override it.
+// gatewayTransportErrorTempUnschedDuration is how long an account is temporarily
+// unscheduled after a durable transport failure on the Anthropic, Bedrock, or Gemini path.
+// Anthropic/Bedrock accounts can override it.
 const gatewayTransportErrorTempUnschedDuration = 10 * time.Minute
 
 // gatewayTransportFailoverBody is the Anthropic-format error body attached to
@@ -64,11 +65,12 @@ func (s *GatewayService) handleUpstreamTransportError(ctx context.Context, c *gi
 	// Transport attempt left local validation; count Ollama Cloud activity.
 	scheduleOllamaCloudUsageActivity(s.deferredService, account)
 
+	// 池模式账号把「拿不到 HTTP 响应」也视为上游暂时不可用，见 poolModeTreatsTransportErrorAs503。
 	if poolModeTreatsTransportErrorAs503(account) {
-		return poolModeTransportFailoverError(account, classifyUpstreamTransportError(err).Persistent, safeErr)
+		return poolModeTransportFailoverError(account, classifyUpstreamTransportError(err) != upstreamTransportTransient, safeErr)
 	}
 
-	if classifyUpstreamTransportError(err).Persistent {
+	if classifyUpstreamTransportError(err) != upstreamTransportTransient {
 		s.tempUnscheduleTransportError(ctx, account, safeErr)
 	}
 

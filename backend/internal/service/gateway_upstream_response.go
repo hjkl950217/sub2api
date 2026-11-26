@@ -1257,7 +1257,8 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				// 默认 *net.OpError 的 Error() 会泄露内部 IP/端口和上游地址。完整 ev.err
 				// 仅在下方 LegacyPrintf 内部日志中保留供运维诊断。
 				disconnectMsg := "upstream stream disconnected: " + sanitizeStreamError(ev.err)
-				if !c.Writer.Written() {
+				// Pings written while waiting for the upstream headers are not output.
+				if OpenAICompactKeepaliveAdjustedWrittenSize(c) < 0 {
 					logger.LegacyPrintf("service.gateway", "Upstream stream read error before any client output (account=%d), failing over: %v", account.ID, ev.err)
 					body, _ := json.Marshal(map[string]any{
 						"type": "error",
@@ -1266,11 +1267,25 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 							"message": disconnectMsg,
 						},
 					})
-					return nil, &UpstreamFailoverError{
+					failoverErr := &UpstreamFailoverError{
 						StatusCode:             http.StatusBadGateway,
 						ResponseBody:           body,
 						RetryableOnSameAccount: true,
 					}
+					// 重试成功时 handler 会丢弃该字段（见 partialStreamUsageResult 的不变式），
+					// 只有重试全部耗尽才用于补记上游已计量成本。
+					if account != nil && account.ShouldRecordFailedStreamUsage() && usage != nil && usage.hasObservedTokens() {
+						failoverErr.PartialResult = &ForwardResult{
+							Usage:            *usage,
+							Model:            originalModel,
+							UpstreamModel:    mappedModel,
+							Stream:           true,
+							Duration:         time.Since(startTime),
+							FirstTokenMs:     firstTokenMs,
+							ClientDisconnect: clientDisconnected,
+						}
+					}
+					return nil, failoverErr
 				}
 				sendErrorEvent("stream_read_error", disconnectMsg)
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream read error: %w", ev.err)

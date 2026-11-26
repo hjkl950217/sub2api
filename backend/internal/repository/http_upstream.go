@@ -167,6 +167,7 @@ type httpUpstreamService struct {
 	clients map[string]*upstreamClientEntry // 客户端缓存池，key 由隔离策略决定
 	// OpenAI 走 HTTP/HTTPS 代理时的 H2->H1 回退状态（key=标准化 proxyKey）
 	openAIHTTP2Fallbacks sync.Map
+	zstdAccounts         *upstreamZstdAccounts
 }
 
 // NewHTTPUpstream 创建通用 HTTP 上游服务
@@ -178,6 +179,10 @@ type httpUpstreamService struct {
 // 返回:
 //   - service.HTTPUpstream 接口实现
 func NewHTTPUpstream(cfg *config.Config) service.HTTPUpstream {
+	return newHTTPUpstream(cfg)
+}
+
+func newHTTPUpstream(cfg *config.Config) *httpUpstreamService {
 	return &httpUpstreamService{
 		cfg:     cfg,
 		clients: make(map[string]*upstreamClientEntry),
@@ -219,7 +224,7 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	// 执行请求
 	requestStartedAt := time.Now()
 	client := s.httpClientForUpstreamRequest(entry.client, req)
-	client = httpClientWithGrokAccessDeniedFallback(client)
+	client = s.httpClientWithUpstreamTransports(client, req.URL.Hostname(), accountID)
 	resp, err := doUpstreamRequest(client, req, s.upstreamDrainTimeout())
 	if err != nil && shouldRetryUpstreamStreamReset(entry.protocolMode, req, err) {
 		resp, err = s.retryUpstreamStreamReset(client, entry, req, accountID, err)
@@ -290,7 +295,7 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	}
 
 	client := s.httpClientForUpstreamRequest(entry.client, req)
-	client = httpClientWithGrokAccessDeniedFallback(client)
+	client = s.httpClientWithUpstreamTransports(client, req.URL.Hostname(), accountID)
 	resp, err := doUpstreamRequest(client, req, s.upstreamDrainTimeout())
 	if err != nil {
 		atomic.AddInt64(&entry.inFlight, -1)
@@ -401,7 +406,7 @@ type grokAccessDeniedFallbackTransport struct {
 	base http.RoundTripper
 }
 
-func httpClientWithGrokAccessDeniedFallback(client *http.Client) *http.Client {
+func (s *httpUpstreamService) httpClientWithUpstreamTransports(client *http.Client, hostname string, accountID int64) *http.Client {
 	if client == nil {
 		return nil
 	}
@@ -410,7 +415,8 @@ func httpClientWithGrokAccessDeniedFallback(client *http.Client) *http.Client {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	clone.Transport = &grokAccessDeniedFallbackTransport{base: base}
+	compression := &upstreamRequestZstdTransport{base: base, upstream: s, hostname: hostname, accountID: accountID}
+	clone.Transport = &grokAccessDeniedFallbackTransport{base: compression}
 	return &clone
 }
 

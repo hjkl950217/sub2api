@@ -365,12 +365,14 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	var terminal openAIRawStreamTerminalState
 	var streamError error
 	var eventType string
+	var streamFailure *ccStreamUpstreamError
+	hasModelOutput := false
 
 	writeLine := func(line string) {
 		if clientDisconnected {
 			return
 		}
-		if !clientOutputStarted && !refusalDetector.ShouldReleaseClientOutput() {
+		if !clientOutputStarted && (!hasModelOutput || !refusalDetector.ShouldReleaseClientOutput()) {
 			pendingLines = append(pendingLines, line)
 			return
 		}
@@ -430,6 +432,11 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 			// payload has been classified for failover.
 			refusalDetector.ObservePayload(payloadBytes)
 			trimmedPayload := strings.TrimSpace(payload)
+			if failure := parseCCStreamUpstreamError(trimmedPayload); failure != nil {
+				streamFailure = failure
+				break
+			}
+			hasModelOutput = hasModelOutput || ccPayloadHasModelOutput(trimmedPayload)
 			terminal.ObserveDataLine(trimmedPayload)
 			if trimmedPayload != "[DONE]" {
 				observer.ObserveOpenAI([]byte(payload), strings.TrimSpace(gjson.Get(payload, "type").String()))
@@ -437,7 +444,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 				if u := extractCCStreamUsage(payload); u != nil {
 					usage = *u
 				}
-				if firstTokenMs == nil && !usageOnlyChunk {
+				if firstTokenMs == nil && !usageOnlyChunk && hasModelOutput {
 					elapsed := int(time.Since(startTime).Milliseconds())
 					firstTokenMs = &elapsed
 				}
@@ -479,6 +486,19 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		}
 	}
 
+	if streamFailure != nil {
+		// 只有可换号的错误才在「还没给客户端任何内容」时换号；invalid_request、
+		// 上下文超限这类确定性错误换号只会把请求在整池账号上重放一遍。
+		if !clientOutputStarted && !ccStreamErrorIsDeterministic(streamFailure.Payload, streamFailure.Message) {
+			return nil, s.newOpenAIStreamFailoverErrorWithModel(c, account, false, requestID, streamFailure.Payload, streamFailure.Message, upstreamModel, resp.Header)
+		}
+		s.recordOpenAIStreamUpstreamError(c, account, false, requestID, "http_error", streamFailure.Payload, streamFailure.Message)
+		// 错误帧在循环里 break 掉了、还没写给客户端，这里补写；只写错误帧不补 [DONE]：
+		// 客户端会把 [DONE] 当成正常收尾，误把半截回答当成功（二开原有语义）。
+		_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", streamFailure.Payload)
+		c.Writer.Flush()
+		return resultWithUsage(), newOpenAIUpstreamStreamReadError(streamFailure)
+	}
 	if streamError != nil {
 		return resultWithUsage(), streamError
 	}
@@ -526,6 +546,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	if scanErr == nil && !clientDisconnected && !clientOutputStarted {
 		if refusalDetector.IsSilentRefusal() {
 			return nil, newOpenAISilentRefusalFailoverError(c, account, requestID)
+		}
+		if !hasModelOutput && usage.InputTokens == 0 && usage.OutputTokens == 0 {
+			return nil, newOpenAIRawStreamTruncatedFailoverError(c, account, requestID, ErrOpenAIUpstreamStreamTruncated)
 		}
 		if len(pendingLines) > 0 {
 			writeStreamHeaders()

@@ -102,6 +102,24 @@
         />
       </div>
 
+      <div v-if="supportsRequestZstdTest" class="space-y-1">
+        <label class="flex cursor-pointer items-center gap-2">
+          <input
+            v-model="compressRequestBody"
+            data-testid="account-test-compress-request-body"
+            type="checkbox"
+            class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
+            :disabled="status === 'connecting'"
+          />
+          <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+            {{ t('admin.accounts.requestZstd.testOption') }}
+          </span>
+        </label>
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+          {{ t('admin.accounts.requestZstd.testOptionHint') }}
+        </p>
+      </div>
+
       <div v-if="supportsPromptInput" class="space-y-1.5">
         <TextArea
           v-model="testPrompt"
@@ -1077,6 +1095,8 @@ const uploadAudioName = ref('')
 const imageFileInput = ref<HTMLInputElement | null>(null)
 const audioFileInput = ref<HTMLInputElement | null>(null)
 const isOpenAIAccount = computed(() => props.account?.platform === 'openai')
+const compressRequestBody = ref(false)
+const supportsRequestZstdTest = computed(() => props.account?.type === 'apikey')
 const isGrokAccount = computed(() => props.account?.platform === 'grok')
 const openAITestModeOptions = computed(() => [
   { value: 'default', label: t('admin.accounts.openai.testModeDefault') },
@@ -1420,6 +1440,7 @@ watch(
       withTools.value = false
       // FORK-ANCHOR: test-modal-protocol-seed-on-open (二开：打开弹窗就按平台铺好灰色协议占位)
       protocolResults.value = buildProtocolPlaceholders()
+      compressRequestBody.value = false
       resetState()
       // FORK-ANCHOR: test-modal-fingerprint-reset-on-open (二开：换账号/重开弹窗时指纹回到未检测)
       // 只在这里重置，不放进 resetState()——否则点「开始测试」会把指纹结论一起清掉。
@@ -1547,6 +1568,10 @@ const startTest = async (syncProtocols = false) => {
       grokTestModeOptions.value.find((o) => o.value === grokTestMode.value)?.label || grokTestMode.value
     addLine(t('admin.accounts.grok.selectedTestMode', { mode: modeLabel }), 'text-gray-400')
   }
+  const sendCompressed = supportsRequestZstdTest.value && compressRequestBody.value
+  if (sendCompressed) {
+    addLine(t('admin.accounts.requestZstd.testSending'), 'text-gray-400')
+  }
   addLine('', 'text-gray-300')
 
   abortStream()
@@ -1563,6 +1588,7 @@ const startTest = async (syncProtocols = false) => {
       audio_data_url?: string
       sync_protocols?: boolean
       with_tools?: boolean
+      compress_request_body?: boolean
     } = {
       model_id: showModelSelect.value ? selectedModelId.value : '',
       prompt: supportsPromptInput.value ? testPrompt.value.trim() : ''
@@ -1577,6 +1603,9 @@ const startTest = async (syncProtocols = false) => {
     }
     if (isOpenAIAccount.value) {
       requestBody.mode = testMode.value
+    }
+    if (supportsRequestZstdTest.value) {
+      requestBody.compress_request_body = sendCompressed
     }
     if (isGrokAccount.value) {
       // Always send explicit Grok mode. search/tts/stt/realtime are standalone
@@ -1680,6 +1709,7 @@ const handleEvent = (event: {
   total_ms?: number
   // FORK-ANCHOR: test-modal-protocol-endpoint-event-field (二开：该协议实际探测的地址)
   endpoint?: string
+  request_compression?: RequestCompressionReport
 }) => {
   // event.error 已在签名里（error?: string）
   switch (event.type) {
@@ -1866,6 +1896,52 @@ const handleEvent = (event: {
         streamingContent.value = ''
       }
       break
+
+  }
+  if (event.request_compression && (event.type === 'test_complete' || event.type === 'error')) {
+    reportRequestCompression(event.request_compression)
+  }
+}
+
+interface RequestCompressionReport {
+  attempts?: { host: string; raw_bytes: number; wire_bytes: number }[]
+  account_enabled?: boolean
+}
+
+const reportRequestCompression = (report: RequestCompressionReport) => {
+  const attempts = Array.isArray(report.attempts) ? report.attempts : []
+  addLine('', 'text-gray-300')
+  if (attempts.length === 0) {
+    addLine(t('admin.accounts.requestZstd.noAttempt'), 'text-yellow-400')
+    return
+  }
+  for (const attempt of attempts) {
+    addLine(
+      t('admin.accounts.requestZstd.attempt', {
+        raw: attempt.raw_bytes,
+        wire: attempt.wire_bytes,
+        host: attempt.host
+      }),
+      'text-cyan-300'
+    )
+  }
+  // 协议矩阵下 test_complete 的 success 是「至少一个协议通过」；只要有一个协议失败，
+  // 就不能下「上游能接收 zstd」的结论，否则会按错的结论去开压缩。
+  const protocolFailure = protocolResults.value.some((result) => result.success === false)
+  if (status.value === 'success' && !protocolFailure) {
+    addLine(
+      report.account_enabled
+        ? t('admin.accounts.requestZstd.supportedEnabled')
+        : t('admin.accounts.requestZstd.supported'),
+      'text-green-400'
+    )
+  } else if (status.value === 'error') {
+    addLine(
+      report.account_enabled
+        ? t('admin.accounts.requestZstd.failedEnabled')
+        : t('admin.accounts.requestZstd.failed'),
+      'text-yellow-400'
+    )
   }
 }
 
