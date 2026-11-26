@@ -1176,6 +1176,34 @@ fork 会给手动刷新并发跑用量查询并用 `getById` 回写整行，测�
 
 `account-test-bedrock-prompt-payload`、`version-view-official-changelog-zh`、`version-view-official-changelog-en`、`platform-option-i18n-label`。锚点总数 865 → 869。
 
+### 2.34 合并上游 0.2.25（2026-11-26）
+
+上游 0.2.25 含 15 个提交，改动集中在账号的请求头覆写身份上报变量（`{{user_id}}` 等）、按上游分组同步账号名称与备注、openai 透传错误字段收紧。合并时 8 个文件冲突，按「保留 fork 锚点 + 吸收上游语义」逐块处理。
+
+#### 上游行为变化（已采纳）
+
+| 变化 | 影响 |
+|---|---|
+| `Account.ApplyHeaderOverrides` 增加 `ctx` 参数（`ApplyHeaderOverrides(ctx, h)`） | 二开自己的三处调用点补上 `req.Context()` / `context.Background()`：`account_test_service.go` 的 `applyClaudeAccountTestHeaders`、`cn_provider_balance_service.go` 的 `probeScript`、`fingerprint_service.go` 的 `fingerprintExtraHeaders`（指纹探测无用户身份，传 `context.Background()`，含变量的覆写头整条不发送） |
+| 新增 `applyErrorPassthroughRuleDetailed`（多返回 `matched`），`applyErrorPassthroughRuleWithRule` 改为五返回值 | 二开原来自己加的 `applyErrorPassthroughRuleCore` 与它重复，整体采纳上游版本；二开唯一用四返回值的调用点（`openai_gateway_upstream_errors.go` 的 `handleErrorResponse`）改成五返回值、`matched` 用 `_` 接 |
+| 新增 `UpstreamGroupSyncButton` + `upstream_billing_group_sync_enabled`，按上游分组回填账号名称与备注 | 创建弹窗与编辑弹窗都接入；`upstreamGroupSource` 在上游是「未改动就走 `account_id`」，二开编辑弹窗的 API Key 框显示掩码会走错分支，见下 |
+| openai compact 的 `response.failed` 一律改写容量降载码 | 与二开已有的 `openAICapacityShedRetryableClientCode` 是同一套语义，合并后只有一份 |
+| 升级 `gorilla/websocket` 修 GO-2026-6278 | `go.mod` / `go.sum` 随更新 |
+
+#### fork 行为保留（上游新测试按 fork 语义调整）
+
+- **建号默认倍率同步**（锚点 `create-default-rate-sync`）：创建时显式打开探测的账号，「同步上游声明倍率」默认一起打开。上游新测试 `TestCreateAccountGroupSyncIsExplicitAndEnablesOnlyTheProbe` 用「只给 `GroupSyncEnabled`、不给 `ProbeEnabled`」的入参断言倍率同步为关，与二开的「默认开」冲突。判定为**吸收上游语义、收窄二开条件**：只有 `input.ProbeEnabled` 显式为 `true` 时才打开倍率同步（创建弹窗默认就发 `true`，界面上行为不变），不改上游测试。
+- **上游新增函数与二开同名**：上游在 `openai_gateway_passthrough.go` 新增 `isOpenAIInvalidEncryptedContentError(statusCode, upstreamMsg, body)`，二开在 `openai_encrypted_content_sse_retry.go` 已有 `isOpenAIInvalidEncryptedContentError(code, message)`。判定为**按语义分工改名上游那个**（锚点 `rename-invalid-encrypted-content-response-error`），改名为 `isOpenAIInvalidEncryptedContentResponseError`，两边语义都不动。
+- **编辑弹窗 API Key 掩码**（锚点 `edit-api-key-reveal-input`）：上游的分组预览在上游用 `input[type="password"]` 取值，二开掩码态是 `text`，且掩码 `****` 会被当成真实 API Key 发给上游。判定为**改二开代码**：`upstreamGroupSource` 里掩码一律视为「Key 没改」（锚点 `edit-group-sync-masked-key`），走上游的 `account_id` 分支用已存凭据；上游那条测试的选择器同步改为二开输入框的稳定特征（锚点 `test-edit-group-sync-masked-key`）。
+- **建号弹窗的探测开关对所有平台常显**（锚点 `create-autoprobe-apikey-gate`）：分组同步字段按同一门控只对 `apikey` 下发，否则「非 apikey 传 `probe=undefined`」与「分组同步为 true」凑一起会被后端判 `ErrUpstreamBillingGroupSyncRequiresProbe`。
+- **建号预览地址取兜底/已勾选协议端点**（锚点 `create-cn-preview-base-url`）：上游本次把该地址抽成 `previewBaseUrl` 供分组预览复用，二开的选择逻辑折进 `previewBaseUrl`，分组预览与模型预览共用同一地址。
+
+#### 新增锚点（3 个）
+
+`rename-invalid-encrypted-content-response-error`、`edit-group-sync-masked-key`、`test-edit-group-sync-masked-key`。锚点总数 869 → 872（源码 852 + `.github/` 20）。
+
+本机验证：`go build ./...` 通过；`go vet -tags=unit ./...` 仅剩二开早已 `//nolint:govet` 的两条 copylocks；`gofmt -l`（`git archive HEAD backend` 导出的 LF 版）无输出；unit 测试 `internal/server`（含 middleware/routes）、`internal/handler/admin`、`internal/repository`、`internal/service` 全过；前端 `vue-tsc --noEmit` 0 错误、`eslint` 变更文件 0、`make test-frontend-critical` 41 文件 / 874 用例全过。全量测试与 golangci-lint 交给 CI（`gh workflow run backend-ci.yml -R hjkl950217/sub2api --ref main`）。
+
 ## 3. 发版方式
 
 版本号与上游保持一致，**不追加第四段**。
