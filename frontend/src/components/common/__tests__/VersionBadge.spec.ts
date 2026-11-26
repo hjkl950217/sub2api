@@ -51,7 +51,7 @@ async function mountWithDropdown(state: Record<string, unknown>) {
 describe('VersionBadge fork 仓库链接', () => {
   it('已是最新（无更新）时也显示 fork 仓库链接', async () => {
     const wrapper = await mountWithDropdown({ hasUpdate: false })
-    // 走的是「已是最新」分支：有「查看发布」，链接也要在
+    // 走的是「已是最新」分支：有「查看官方更新日志」，链接也要在
     expect(wrapper.text()).toContain('version.viewRelease')
     expect(wrapper.find(`a[href="${FORK_URL}"]`).exists()).toBe(true)
   })
