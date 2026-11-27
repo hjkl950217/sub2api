@@ -492,16 +492,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 						}(),
 					})
 
-					looksLikeToolSignatureError := func(msg string) bool {
-						m := strings.ToLower(msg)
-						return strings.Contains(m, "tool_use") ||
-							strings.Contains(m, "tool_result") ||
-							strings.Contains(m, "functioncall") ||
-							strings.Contains(m, "function_call") ||
-							strings.Contains(m, "functionresponse") ||
-							strings.Contains(m, "function_response")
-					}
-
 					// 避免在重试预算已耗尽时再发起额外请求
 					if time.Since(retryStart) >= maxRetryElapsed {
 						resp.Body = io.NopCloser(bytes.NewReader(respBody))
@@ -554,46 +544,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 										return ""
 									}(),
 								})
-								msg2 := extractUpstreamErrorMessage(retryRespBody)
-								if looksLikeToolSignatureError(msg2) && time.Since(retryStart) < maxRetryElapsed {
-									logger.LegacyPrintf("service.gateway", "Account %d: signature retry still failing and looks tool-related, retrying with tool blocks downgraded", account.ID)
-									filteredBody2 := FilterSignatureSensitiveBlocksForRetry(body, reqModel)
-									retryCtx2, releaseRetryCtx2 := detachStreamUpstreamContext(ctx, reqStream)
-									retryReq2, retryWireBody2, buildErr2 := s.buildUpstreamRequest(retryCtx2, c, account, filteredBody2, token, tokenType, reqModel, reqStream, shouldMimicClaudeCode)
-									releaseRetryCtx2()
-									if buildErr2 == nil {
-										retryResp2, retryErr2 := s.doUpstreamWithClientKeepalive(c, reqStream, retryReq2, proxyURL, account, tlsProfile)
-										if retryErr2 == nil {
-											if retryResp2.StatusCode < 400 {
-												// 二阶段工具块降级成功时也必须更新当前 body。
-												lastWireBody = retryWireBody2
-												if err := replaceBody(retryWireBody2); err != nil {
-													_ = retryResp2.Body.Close()
-													return nil, err
-												}
-											}
-											resp = retryResp2
-											break
-										}
-										if retryResp2 != nil && retryResp2.Body != nil {
-											_ = retryResp2.Body.Close()
-										}
-										appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-											ProxyID:            opsUpstreamProxyID(account),
-											ProxyName:          opsUpstreamProxyName(account),
-											Platform:           account.Platform,
-											AccountID:          account.ID,
-											AccountName:        account.Name,
-											UpstreamStatusCode: 0,
-											UpstreamURL:        safeUpstreamURL(retryReq2.URL.String()),
-											Kind:               "signature_retry_tools_request_error",
-											Message:            sanitizeUpstreamErrorMessage(retryErr2.Error()),
-										})
-										logger.LegacyPrintf("service.gateway", "Account %d: tool-downgrade signature retry failed: %v", account.ID, retryErr2)
-									} else {
-										logger.LegacyPrintf("service.gateway", "Account %d: tool-downgrade signature retry build failed: %v", account.ID, buildErr2)
-									}
-								}
 							}
 
 							// Fall back to the original retry response context.

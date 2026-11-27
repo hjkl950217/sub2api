@@ -679,7 +679,7 @@ func TestFilterThinkingBlocksForRetry_PreservesNonEmptyTextBlocks(t *testing.T) 
 	require.Equal(t, input, out)
 }
 
-func TestFilterSignatureSensitiveBlocksForRetry_DowngradesTools(t *testing.T) {
+func TestFilterSignatureSensitiveBlocksForRetry_KeepsToolBlocks(t *testing.T) {
 	input := []byte(`{
 		"thinking":{"type":"enabled","budget_tokens":1024},
 		"messages":[
@@ -697,21 +697,13 @@ func TestFilterSignatureSensitiveBlocksForRetry_DowngradesTools(t *testing.T) {
 	_, hasThinking := req["thinking"]
 	require.False(t, hasThinking)
 
-	msgs, ok := req["messages"].([]any)
-	require.True(t, ok)
-	msg0, ok := msgs[0].(map[string]any)
-	require.True(t, ok)
-	content, ok := msg0["content"].([]any)
-	require.True(t, ok)
-	require.Len(t, content, 2)
-	content0, ok := content[0].(map[string]any)
-	require.True(t, ok)
-	content1, ok := content[1].(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "text", content0["type"])
-	require.Equal(t, "text", content1["type"])
-	require.Contains(t, content0["text"], "tool_use")
-	require.Contains(t, content1["text"], "tool_result")
+	content := gjson.GetBytes(out, "messages.0.content").Array()
+	require.Len(t, content, 2, "tool blocks must stay structured after the retry filter")
+	require.Equal(t, "tool_use", content[0].Get("type").String())
+	require.Equal(t, "t1", content[0].Get("id").String())
+	require.Equal(t, "ls", content[0].Get("input.command").String())
+	require.Equal(t, "tool_result", content[1].Get("type").String())
+	require.Equal(t, "t1", content[1].Get("tool_use_id").String())
 }
 
 func TestFilterSignatureSensitiveBlocksForRetry_KeepsToolResultMediaBlocks(t *testing.T) {
@@ -737,35 +729,15 @@ func TestFilterSignatureSensitiveBlocksForRetry_KeepsToolResultMediaBlocks(t *te
 	out := FilterSignatureSensitiveBlocksForRetry(input, "claude-sonnet-4-5")
 
 	content := gjson.GetBytes(out, "messages.1.content").Array()
-	require.Len(t, content, 4)
+	require.Len(t, content, 2, "tool_result blocks and nested media must stay untouched")
 
-	require.Equal(t, "text", content[0].Get("type").String())
-	require.Contains(t, content[0].Get("text").String(), "tool_use_id=t1")
-	require.Contains(t, content[0].Get("text").String(), "image a")
-	require.NotContains(t, content[0].Get("text").String(), "QUFBQQ==")
-	require.Equal(t, "image", content[1].Get("type").String())
-	require.Equal(t, "QUFBQQ==", content[1].Get("source.data").String())
+	require.Equal(t, "tool_result", content[0].Get("type").String())
+	require.Equal(t, "t1", content[0].Get("tool_use_id").String())
+	require.Equal(t, "QUFBQQ==", content[0].Get("content.1.source.data").String())
 
-	require.Equal(t, "text", content[2].Get("type").String())
-	require.Equal(t, "(tool_result) tool_use_id=t2", content[2].Get("text").String())
-	require.Equal(t, "document", content[3].Get("type").String())
-	require.Equal(t, "QkJCQg==", content[3].Get("source.data").String())
-}
-
-func TestSplitToolResultMediaBlocks(t *testing.T) {
-	rest, media := splitToolResultMediaBlocks("plain text")
-	require.Equal(t, "plain text", rest)
-	require.Empty(t, media)
-
-	textOnly := []any{map[string]any{"type": "text", "text": "ok"}}
-	rest, media = splitToolResultMediaBlocks(textOnly)
-	require.Equal(t, textOnly, rest)
-	require.Empty(t, media)
-
-	image := map[string]any{"type": "image"}
-	rest, media = splitToolResultMediaBlocks([]any{image})
-	require.Nil(t, rest)
-	require.Equal(t, []any{image}, media)
+	require.Equal(t, "tool_result", content[1].Get("type").String())
+	require.Equal(t, "t2", content[1].Get("tool_use_id").String())
+	require.Equal(t, "QkJCQg==", content[1].Get("content.0.source.data").String())
 }
 
 // ============ Group 6b: context_management.edits 清理测试 ============

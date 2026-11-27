@@ -1399,17 +1399,14 @@ func anthropicMessageContentHasBody(content gjson.Result) bool {
 	}
 }
 
-// FilterSignatureSensitiveBlocksForRetry is a stronger retry filter for cases where upstream errors indicate
-// signature/thought_signature validation issues involving tool blocks.
+// FilterSignatureSensitiveBlocksForRetry strips thinking/redacted_thinking
+// blocks and thinking control fields before retrying a request whose upstream
+// rejected signatures.
 //
-// This performs everything in FilterThinkingBlocksForRetry, plus:
-//   - Convert `tool_use` blocks to text (name/id/input) so we stop sending structured tool calls.
-//   - Convert `tool_result` blocks to text so we keep tool results visible without tool semantics.
-//     Nested image/document blocks are kept as standalone blocks right after that text, so their
-//     base64 data is not counted as text tokens.
-//
-// Use this only when needed: converting tool blocks to text changes model behaviour and can increase the
-// risk of prompt injection (tool output becomes plain conversation text).
+// FORK-ANCHOR: signature-retry-no-tool-downgrade (二开 #8881：不再把工具块转成纯文本)
+// 二开（#8881）：不再把 tool_use/tool_result 转成纯文本。工具块降级会污染后续
+// 会话上下文，且让上游把工具结果当普通对话文本，收益低于代价；工具签名错误时
+// 请求直接失败。
 //
 // mappedModel 同 FilterThinkingBlocksForRetry：仅 anthropic-strict 执行变形；
 // passback-required 与 unknown 都返回原 body，避免在不熟悉的上游上盲目变形。
@@ -1423,10 +1420,6 @@ func FilterSignatureSensitiveBlocksForRetry(body []byte, mappedModel string) []b
 		!bytes.Contains(body, []byte(`"type": "thinking"`)) &&
 		!bytes.Contains(body, []byte(`"type":"redacted_thinking"`)) &&
 		!bytes.Contains(body, []byte(`"type": "redacted_thinking"`)) &&
-		!bytes.Contains(body, []byte(`"type":"tool_use"`)) &&
-		!bytes.Contains(body, []byte(`"type": "tool_use"`)) &&
-		!bytes.Contains(body, []byte(`"type":"tool_result"`)) &&
-		!bytes.Contains(body, []byte(`"type": "tool_result"`)) &&
 		!bytes.Contains(body, []byte(`"thinking":`)) &&
 		!bytes.Contains(body, []byte(`"thinking" :`)) {
 		return body
@@ -1511,46 +1504,6 @@ func FilterSignatureSensitiveBlocksForRetry(body []byte, mappedModel string) []b
 			case "redacted_thinking":
 				modifiedThisMsg = true
 				continue
-			case "tool_use":
-				modifiedThisMsg = true
-				name, _ := blockMap["name"].(string)
-				id, _ := blockMap["id"].(string)
-				input := blockMap["input"]
-				inputJSON, _ := json.Marshal(input)
-				text := "(tool_use)"
-				if name != "" {
-					text += " name=" + name
-				}
-				if id != "" {
-					text += " id=" + id
-				}
-				if len(inputJSON) > 0 && string(inputJSON) != "null" {
-					text += " input=" + string(inputJSON)
-				}
-				newContent = append(newContent, map[string]any{"type": "text", "text": text})
-				continue
-			case "tool_result":
-				modifiedThisMsg = true
-				toolUseID, _ := blockMap["tool_use_id"].(string)
-				isError, _ := blockMap["is_error"].(bool)
-				// image/document 块原样提到 text 之后，避免 base64 被序列化进 text 按文字计 token。
-				content, mediaBlocks := splitToolResultMediaBlocks(blockMap["content"])
-				text := "(tool_result)"
-				if toolUseID != "" {
-					text += " tool_use_id=" + toolUseID
-				}
-				if isError {
-					text += " is_error=true"
-				}
-				if content != nil {
-					contentJSON, _ := json.Marshal(content)
-					if len(contentJSON) > 0 && string(contentJSON) != "null" {
-						text += "\n" + string(contentJSON)
-					}
-				}
-				newContent = append(newContent, map[string]any{"type": "text", "text": text})
-				newContent = append(newContent, mediaBlocks...)
-				continue
 			}
 
 			if blockType == "" {
@@ -1598,32 +1551,6 @@ func FilterSignatureSensitiveBlocksForRetry(body []byte, mappedModel string) []b
 		return body
 	}
 	return newBody
-}
-
-// splitToolResultMediaBlocks 从 tool_result.content 中拆出 image/document 块。
-// 返回剩余内容（无剩余时为 nil）和按原顺序排列的媒体块；非数组 content 原样返回。
-func splitToolResultMediaBlocks(content any) (any, []any) {
-	items, ok := content.([]any)
-	if !ok {
-		return content, nil
-	}
-	var rest, media []any
-	for _, item := range items {
-		if itemMap, ok := item.(map[string]any); ok {
-			if itemType, _ := itemMap["type"].(string); itemType == "image" || itemType == "document" {
-				media = append(media, itemMap)
-				continue
-			}
-		}
-		rest = append(rest, item)
-	}
-	if len(media) == 0 {
-		return content, nil
-	}
-	if len(rest) == 0 {
-		return nil, media
-	}
-	return rest, media
 }
 
 // filterThinkingBlocksInternal removes invalid thinking blocks from request
