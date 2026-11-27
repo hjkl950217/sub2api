@@ -1216,6 +1216,8 @@ type GatewayConfig struct {
 	// 达到后把 503 交还客户端退避重试；<= 0（默认）表示不限
 	MaxCapacityShedAttempts int `mapstructure:"max_capacity_shed_attempts"`
 
+	// Let the upstream decide whether to stream thought summaries on Antigravity Gemini compatibility requests.
+	AntigravityGeminiOmitIncludeThoughts bool `mapstructure:"antigravity_gemini_omit_include_thoughts"`
 	// Antigravity 429 fallback 限流时间（分钟），解析重置时间失败时使用
 	AntigravityFallbackCooldownMinutes int `mapstructure:"antigravity_fallback_cooldown_minutes"`
 
@@ -2659,6 +2661,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.image_concurrency.overflow_mode", ImageConcurrencyOverflowModeReject)
 	viper.SetDefault("gateway.image_concurrency.wait_timeout_seconds", 30)
 	viper.SetDefault("gateway.image_concurrency.max_waiting_requests", 100)
+	viper.SetDefault("gateway.antigravity_gemini_omit_include_thoughts", false)
 	viper.SetDefault("gateway.antigravity_fallback_cooldown_minutes", 1)
 	viper.SetDefault("gateway.antigravity_extra_retries", 10)
 	viper.SetDefault("gateway.max_body_size", int64(256*1024*1024))

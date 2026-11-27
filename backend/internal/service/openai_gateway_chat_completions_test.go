@@ -2231,7 +2231,7 @@ func TestForwardAsAnthropic_StrictThirdPartyUpstreamDropsReasoningSummary(t *tes
 	require.Error(t, err)
 	require.Nil(t, result)
 	require.Equal(t, "https://api.commandcode.ai/provider/v1/responses", upstream.lastReq.URL.String())
-	require.Equal(t, "medium", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
+	require.Equal(t, "high", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "reasoning.summary").Exists())
 
 	// input 每项必须带 type（anthropic 转换器无缺 type 缺陷，回归保护）。

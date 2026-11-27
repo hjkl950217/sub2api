@@ -108,7 +108,7 @@ func TestForwardAsAnthropic_ConvertedPolicyFinalModelCapabilities(t *testing.T) 
 			{name: "GLM unbound unchanged", platform: PlatformZhipu, model: "glm-5.3", effort: "high", unbound: true, wantEffort: "high"},
 			{name: "GLM unbound normalization unchanged", platform: PlatformZhipu, model: "glm-5.3", effort: "medium", unbound: true, wantEffort: "medium", wantChatEffort: "high"},
 			{name: "GLM empty policy normalization unchanged", platform: PlatformZhipu, model: "glm-5.3", effort: "medium", wantEffort: "medium", wantChatEffort: "high"},
-			{name: "omitted effort default unchanged", platform: PlatformDeepseek, model: "deepseek-flash", unbound: true, wantEffort: "medium"},
+			{name: "omitted effort defaults to DeepSeek high", platform: PlatformDeepseek, model: "deepseek-flash", unbound: true, wantEffort: "high"},
 		} {
 			t.Run(protocol+"/"+test.name, func(t *testing.T) {
 				platform := test.platform
