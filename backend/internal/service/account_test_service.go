@@ -141,6 +141,41 @@ func markAccountTestToolCall(c *gin.Context) {
 	*seen = true
 }
 
+// FORK-ANCHOR: account-test-tool-call-content (二开：带工具调用时把工具内容回显到测试页)
+// 带工具调用的测试上游只回工具调用、不回正文，页面上「响应」区会是空的。把工具名和参数
+// 当正文发出去，就能看到 echo 实际收到的参数；服务端判定仍然只看 markAccountTestToolCall。
+func (s *AccountTestService) sendAccountTestToolCallText(c *gin.Context, text string) {
+	if text == "" {
+		return
+	}
+	s.sendEvent(c, TestEvent{Type: "content", Text: text})
+}
+
+// accountTestToolCallPrefix 给工具名加一行可见的前缀，先换行免得和正文粘在一起。
+func accountTestToolCallPrefix(name string) string {
+	if name == "" {
+		return "\n[工具调用] "
+	}
+	return "\n[工具调用] " + name + " "
+}
+
+// sendAccountTestToolCallsText 回显 Chat Completions 的 tool_calls 增量（名字只在首块出现，参数是分片）。
+func (s *AccountTestService) sendAccountTestToolCallsText(c *gin.Context, toolCalls []any) {
+	for _, raw := range toolCalls {
+		call, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		fn, _ := call["function"].(map[string]any)
+		if name, _ := fn["name"].(string); name != "" {
+			s.sendAccountTestToolCallText(c, accountTestToolCallPrefix(name))
+		}
+		if args, _ := fn["arguments"].(string); args != "" {
+			s.sendAccountTestToolCallText(c, args)
+		}
+	}
+}
+
 // ensureAccountTestToolCall 在带工具调用测试时校验流里确实出现了工具调用。
 // FORK-ANCHOR: account-test-tool-call-verify (二开：工具调用测试的通过条件)
 func (s *AccountTestService) ensureAccountTestToolCall(c *gin.Context) error {
@@ -3224,11 +3259,16 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, body io.Reader)
 			// FORK-ANCHOR: account-test-tool-call-claude-stream (二开：Anthropic 流里的工具调用识别)
 			if block, ok := data["content_block"].(map[string]any); ok && block["type"] == "tool_use" {
 				markAccountTestToolCall(c)
+				name, _ := block["name"].(string)
+				s.sendAccountTestToolCallText(c, accountTestToolCallPrefix(name))
 			}
 		case "content_block_delta":
 			if delta, ok := data["delta"].(map[string]any); ok {
 				if deltaType, _ := delta["type"].(string); deltaType == "input_json_delta" {
 					markAccountTestToolCall(c)
+					if partial, ok := delta["partial_json"].(string); ok {
+						s.sendAccountTestToolCallText(c, partial)
+					}
 				}
 				if text, ok := delta["text"].(string); ok {
 					s.sendEvent(c, TestEvent{Type: "content", Text: text})
@@ -3310,6 +3350,7 @@ func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, 
 				// FORK-ANCHOR: account-test-tool-call-chat-stream (二开：Chat Completions 流里的工具调用识别)
 				if toolCalls, ok := delta["tool_calls"].([]any); ok && len(toolCalls) > 0 {
 					markAccountTestToolCall(c)
+					s.sendAccountTestToolCallsText(c, toolCalls)
 				}
 			}
 			if message, ok := choice["message"].(map[string]any); ok {
@@ -3318,6 +3359,7 @@ func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, 
 				}
 				if toolCalls, ok := message["tool_calls"].([]any); ok && len(toolCalls) > 0 {
 					markAccountTestToolCall(c)
+					s.sendAccountTestToolCallsText(c, toolCalls)
 				}
 			}
 			if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
@@ -3378,8 +3420,18 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader)
 			// FORK-ANCHOR: account-test-tool-call-responses-stream (二开：Responses 流里的工具调用识别)
 			if item, ok := data["item"].(map[string]any); ok && item["type"] == "function_call" {
 				markAccountTestToolCall(c)
+				// 只在 added 时回显工具名：done 会把完整参数一起带回来，名字没必要显示两遍。
+				if eventType == "response.output_item.added" {
+					name, _ := item["name"].(string)
+					s.sendAccountTestToolCallText(c, accountTestToolCallPrefix(name))
+				}
 			}
-		case "response.function_call_arguments.delta", "response.function_call_arguments.done":
+		case "response.function_call_arguments.delta":
+			markAccountTestToolCall(c)
+			if delta, ok := data["delta"].(string); ok {
+				s.sendAccountTestToolCallText(c, delta)
+			}
+		case "response.function_call_arguments.done":
 			markAccountTestToolCall(c)
 		case "response.completed", "response.done":
 			return s.finishAccountTest(c, "")

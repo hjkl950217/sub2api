@@ -37,7 +37,14 @@ func (t *upstreamRequestZstdTransport) RoundTrip(req *http.Request) (*http.Respo
 	if !strings.EqualFold(t.hostname, req.URL.Hostname()) {
 		accountID = 0 // a different host needs its own explicit opt-in
 	}
-	return t.base.RoundTrip(t.upstream.compressUpstreamRequestBody(req, accountID))
+	out := t.upstream.compressUpstreamRequestBody(req, accountID)
+	resp, err := t.base.RoundTrip(out)
+	// FORK-ANCHOR: upstream-zstd-host-policy-roundtrip (二开：按 response 状态码维护 host 熔断)
+	// 只有真的压缩过、且拿到了响应才记：网络错误/客户端取消与压缩无关，不算到 host 头上。
+	if out != req && err == nil && resp != nil {
+		t.upstream.zstdHosts.record(req.URL.Hostname(), resp.StatusCode)
+	}
+	return resp, err
 }
 
 // Use the final, replayable JSON that is about to be sent. Never consume the
@@ -47,11 +54,20 @@ func (s *httpUpstreamService) compressUpstreamRequestBody(req *http.Request, acc
 		return req
 	}
 	probe := service.UpstreamRequestZstdProbeFromContext(req.Context())
-	if probe != nil {
+	switch {
+	case probe != nil:
 		if !probe.Compress {
 			return req
 		}
-	} else if req.ContentLength < upstreamZstdMinBodyBytes || !s.wantsZstdRequestBody(req.URL.Hostname(), accountID) {
+	case req.ContentLength < upstreamZstdMinBodyBytes:
+		return req
+	case !s.wantsZstdRequestBody(req.URL.Hostname(), accountID):
+		return req
+	case s.zstdHosts.blocked(req.URL.Hostname()):
+		// FORK-ANCHOR: upstream-zstd-host-policy-skip (二开：这个 host 刚拒过压缩请求，先不压)
+		return req
+	case isLocalCompressionHost(req.URL.Hostname()) && !s.zstdHostAllowed(req.URL.Hostname()):
+		// FORK-ANCHOR: upstream-zstd-local-host-skip (二开：本机/内网上游不压，省不到网络时间)
 		return req
 	}
 	if !compressibleUpstreamJSON(req.Header) {
@@ -113,10 +129,16 @@ func (s *httpUpstreamService) compressUpstreamRequestBody(req *http.Request, acc
 	return out
 }
 
-func (s *httpUpstreamService) wantsZstdRequestBody(hostname string, accountID int64) bool {
-	return (s.cfg != nil && slices.ContainsFunc(s.cfg.Gateway.UpstreamZstdRequestHosts, func(host string) bool {
+// zstdHostAllowed 报告该 host 是否被显式写进全局白名单。白名单是运维的明确决定，
+// 因此它压过「内网不压」的默认规则。
+func (s *httpUpstreamService) zstdHostAllowed(hostname string) bool {
+	return s.cfg != nil && slices.ContainsFunc(s.cfg.Gateway.UpstreamZstdRequestHosts, func(host string) bool {
 		return strings.EqualFold(host, hostname)
-	})) || s.zstdAccounts.enabled(accountID)
+	})
+}
+
+func (s *httpUpstreamService) wantsZstdRequestBody(hostname string, accountID int64) bool {
+	return s.zstdHostAllowed(hostname) || s.zstdAccounts.enabled(accountID)
 }
 
 func compressibleUpstreamJSON(headers http.Header) bool {

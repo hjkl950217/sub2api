@@ -151,11 +151,16 @@ func (s *AccountTestService) processCNProviderAdaptiveAnthropicStream(c *gin.Con
 			// FORK-ANCHOR: account-test-tool-call-adaptive-stream (二开：adaptive Anthropic 流里的工具调用识别)
 			if block, ok := data["content_block"].(map[string]any); ok && block["type"] == "tool_use" {
 				markAccountTestToolCall(c)
+				name, _ := block["name"].(string)
+				s.sendAccountTestToolCallText(c, accountTestToolCallPrefix(name))
 			}
 		case "content_block_delta":
 			if delta, ok := data["delta"].(map[string]any); ok {
 				if deltaType, _ := delta["type"].(string); deltaType == "input_json_delta" {
 					markAccountTestToolCall(c)
+					if partial, ok := delta["partial_json"].(string); ok {
+						s.sendAccountTestToolCallText(c, partial)
+					}
 				}
 				if text, ok := delta["text"].(string); ok && text != "" {
 					s.sendEvent(c, TestEvent{Type: "content", Text: text})

@@ -92,6 +92,25 @@ data: [DONE]
 	require.Contains(t, body, `"protocol":"responses","protocol_ok":true`)
 }
 
+// FORK-ANCHOR: account-test-tool-call-content-test (二开：带工具调用时把工具名与参数回显到测试页)
+// 上游只回工具调用、不回正文，页面「响应」区会是空的；工具名和参数要以正文形式发出去。
+func TestForkAccountTestWithToolsEchoesToolCallContent(t *testing.T) {
+	account := forkOpenAIMatrixTestAccount(922)
+	svc, _, _ := protocolSyncTestService(account, protocolMatrixResponses(
+		func() *http.Response { return toolCallChatTestResponse() },
+		nil,
+		func() *http.Response { return toolCallResponsesTestResponse() },
+	), true)
+	c, recorder := newTestContext()
+
+	err := svc.TestAccountConnection(c, account.ID, "gpt-4o", "hello", AccountTestModeDefault, AccountTestOptions{WithTools: true})
+	require.NoError(t, err)
+
+	body := recorder.Body.String()
+	require.Contains(t, body, "[工具调用] echo", "Chat 与 Responses 两条路径都要回显工具名")
+	require.Contains(t, body, `{\"message\":\"测试\"}`, "工具参数要显示出来，页面才知道 echo 收到了什么")
+}
+
 // 工具调用的默认测试消息与普通默认消息不同。
 func TestForkAccountToolTestPayloadDefaults(t *testing.T) {
 	chatPayload := createOpenAIChatCompletionsTestPayloadTools("gpt-4o", "", true)

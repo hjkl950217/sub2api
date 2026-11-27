@@ -168,6 +168,8 @@ type httpUpstreamService struct {
 	// OpenAI 走 HTTP/HTTPS 代理时的 H2->H1 回退状态（key=标准化 proxyKey）
 	openAIHTTP2Fallbacks sync.Map
 	zstdAccounts         *upstreamZstdAccounts
+	// FORK-ANCHOR: upstream-zstd-host-policy-field (二开：上游压缩的 host 级策略：内网跳过 + 按 host 熔断)
+	zstdHosts *upstreamZstdHostPolicy
 }
 
 // NewHTTPUpstream 创建通用 HTTP 上游服务
@@ -184,8 +186,9 @@ func NewHTTPUpstream(cfg *config.Config) service.HTTPUpstream {
 
 func newHTTPUpstream(cfg *config.Config) *httpUpstreamService {
 	return &httpUpstreamService{
-		cfg:     cfg,
-		clients: make(map[string]*upstreamClientEntry),
+		cfg:       cfg,
+		clients:   make(map[string]*upstreamClientEntry),
+		zstdHosts: newUpstreamZstdHostPolicy(),
 	}
 }
 

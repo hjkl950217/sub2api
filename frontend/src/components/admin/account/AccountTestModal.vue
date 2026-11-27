@@ -1576,6 +1576,11 @@ const startTest = async (syncProtocols = false) => {
   if (sendCompressed) {
     addLine(t('admin.accounts.requestZstd.testSending'), 'text-gray-400')
   }
+  // FORK-ANCHOR: test-modal-request-zstd-clear-on-unchecked (二开：本轮没跑压缩测试就清掉旧结论)
+  // 否则先跑一次带压缩的测试，取消勾选再测一次，「更新协议」会把没测过的旧结论写回账号。
+  if (!sendCompressed) {
+    requestZstdOk.value = null
+  }
   addLine('', 'text-gray-300')
 
   abortStream()

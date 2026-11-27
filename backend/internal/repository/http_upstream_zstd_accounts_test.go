@@ -28,26 +28,21 @@ func zstdAccountsWith(ids ...int64) *upstreamZstdAccounts {
 }
 
 // 账号打开了开关就压，不需要 host 在列表里；别的账号照常原样发。
+// 用域名直接调压缩函数：httptest 的 127.0.0.1 会被「内网 host 不压」的规则挡住，
+// 那条规则由 upstream_zstd_host_policy_test.go 覆盖。
 func TestHTTPUpstreamZstdRequestBodyAccountSwitch(t *testing.T) {
-	srv, got := newZstdUpstream(t, false)
 	s := zstdTestService(t, nil)
 	s.zstdAccounts = zstdAccountsWith(7)
 	body := compressibleBody(64 << 10)
 
-	for _, accountID := range []int64{7, 8} {
-		req, err := http.NewRequest(http.MethodPost, srv.URL+"/v1/messages", bytes.NewReader(body))
-		require.NoError(t, err)
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := s.Do(req, "", accountID, 1)
-		require.NoError(t, err)
-		require.NoError(t, resp.Body.Close())
-	}
+	compressed := zstdPolicyRequest(t, "https://relay.example/v1/messages", body)
+	out := s.compressUpstreamRequestBody(compressed, 7)
+	require.NotSame(t, compressed, out)
+	require.Equal(t, "zstd", out.Header.Get("Content-Encoding"))
+	require.Less(t, out.ContentLength, int64(len(body))/2)
 
-	require.Equal(t, []string{"zstd", ""}, got.encoding)
-	require.Less(t, got.wire[0], int64(len(body))/2)
-	require.Equal(t, int64(len(body)), got.wire[1])
-	require.Equal(t, body, got.decoded[0])
-	require.Equal(t, body, got.decoded[1])
+	untouched := zstdPolicyRequest(t, "https://relay.example/v1/messages", body)
+	require.Same(t, untouched, s.compressUpstreamRequestBody(untouched, 8))
 }
 
 // 账号测试勾选了压缩：几百字节的 JSON 也压（正常门槛 16KB 一个都不会压），并记到探针里；

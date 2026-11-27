@@ -1115,6 +1115,82 @@
         </div>
       </div>
 
+      <!-- FORK-ANCHOR: bulk-edit-field-catalog-template (二开：登记表里的字段自动渲染，不用逐个手写） -->
+      <div
+        v-for="field in visibleBulkFields"
+        :key="field.key"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="mb-3 flex items-center justify-between gap-4">
+          <div class="flex-1">
+            <label
+              :id="`bulk-edit-${field.key}-label`"
+              class="input-label mb-0"
+              :for="`bulk-edit-${field.key}-enabled`"
+            >
+              {{ t(field.labelKey) }}
+            </label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t(field.hintKey) }}
+            </p>
+          </div>
+          <input
+            v-model="bulkEditFieldState[field.key].enabled"
+            :id="`bulk-edit-${field.key}-enabled`"
+            data-testid="bulk-edit-field-enabled"
+            :data-field-key="field.key"
+            type="checkbox"
+            :aria-controls="`bulk-edit-${field.key}-body`"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+        </div>
+        <div
+          :id="`bulk-edit-${field.key}-body`"
+          :class="!bulkEditFieldState[field.key].enabled && 'pointer-events-none opacity-50'"
+          role="group"
+          :aria-labelledby="`bulk-edit-${field.key}-label`"
+        >
+          <Select
+            v-if="field.control === 'toggle'"
+            v-model="bulkEditFieldState[field.key].value"
+            :disabled="!bulkEditFieldState[field.key].enabled"
+            data-testid="bulk-edit-field-toggle"
+            :options="bulkToggleOptions"
+            :aria-labelledby="`bulk-edit-${field.key}-label`"
+          />
+          <Select
+            v-else-if="field.control === 'select'"
+            v-model="bulkEditFieldState[field.key].value"
+            :disabled="!bulkEditFieldState[field.key].enabled"
+            data-testid="bulk-edit-field-select"
+            :options="field.options.map((option) => ({ value: option.value, label: t(option.labelKey) }))"
+            :aria-labelledby="`bulk-edit-${field.key}-label`"
+          />
+          <input
+            v-else-if="field.control === 'text'"
+            v-model="bulkEditFieldState[field.key].value"
+            type="text"
+            :disabled="!bulkEditFieldState[field.key].enabled"
+            data-testid="bulk-edit-field-text"
+            class="input"
+            :class="!bulkEditFieldState[field.key].enabled && 'cursor-not-allowed opacity-50'"
+            :aria-labelledby="`bulk-edit-${field.key}-label`"
+          />
+          <input
+            v-else
+            v-model="bulkEditFieldState[field.key].value"
+            type="number"
+            :min="field.min"
+            :max="field.max"
+            :disabled="!bulkEditFieldState[field.key].enabled"
+            data-testid="bulk-edit-field-number"
+            class="input"
+            :class="!bulkEditFieldState[field.key].enabled && 'cursor-not-allowed opacity-50'"
+            :aria-labelledby="`bulk-edit-${field.key}-label`"
+          />
+        </div>
+      </div>
+
       <!-- OpenAI API Key endpoint capabilities -->
       <div v-if="allOpenAIAPIKey" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between gap-4">
@@ -1558,7 +1634,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
@@ -1608,6 +1684,13 @@ import {
   resolveOpenAIWSModeHintKey
 } from '@/utils/openaiWsMode'
 import type { OpenAIWSMode } from '@/utils/openaiWsMode'
+// FORK-ANCHOR: bulk-edit-field-catalog-import (二开：按属性标记自动生成可批量编辑的字段)
+import {
+  bulkEditFieldPayload,
+  bulkEditFields,
+  visibleBulkEditFields,
+  type BulkEditField
+} from '@/components/account/bulkEditFieldCatalog'
 interface Props {
   show: boolean
   accountIds: number[]
@@ -1713,6 +1796,26 @@ const allAnthropicOAuthOrSetupToken = computed(() => {
     targetSelectedTypes.value.every(t => t === 'oauth' || t === 'setup-token')
   )
 })
+
+// FORK-ANCHOR: bulk-edit-field-catalog-state (二开：登记表字段的状态与可见性)
+// 每个登记字段两个状态：enabled = 本次是否批量改它，value = 改成什么（统一存字符串，写库前转换）。
+// 未勾选 enabled 时 payload 里不出现该键，各账号保留原值（后端是 JSONB 键合并）。
+const defaultFieldValue = (field: BulkEditField): string => {
+  if (field.control === 'toggle') return 'enabled'
+  if (field.control === 'select') return field.options[0]?.value ?? ''
+  return ''
+}
+const bulkEditFieldState = reactive<Record<string, { enabled: boolean; value: string }>>({})
+for (const field of bulkEditFields) {
+  bulkEditFieldState[field.key] = { enabled: false, value: defaultFieldValue(field) }
+}
+const bulkToggleOptions = computed(() => [
+  { value: 'enabled', label: t('common.enabled') },
+  { value: 'disabled', label: t('common.disabled') }
+])
+const visibleBulkFields = computed(() =>
+  visibleBulkEditFields(targetSelectedPlatforms.value, targetSelectedTypes.value)
+)
 
 const filteredPresets = computed(() => {
   if (targetSelectedPlatforms.value.length === 0) return []
@@ -2261,6 +2364,16 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     umqExtra.user_msg_queue_enabled = false  // 清理旧字段（JSONB merge）
   }
 
+  // FORK-ANCHOR: bulk-edit-field-catalog-payload (二开：登记表里的字段按勾选写进 extra)
+  for (const field of visibleBulkFields.value) {
+    const state = bulkEditFieldState[field.key]
+    if (!state?.enabled) continue
+    const value = bulkEditFieldPayload(field, state.value)
+    if (value !== undefined) {
+      ensureExtra()[field.key] = value
+    }
+  }
+
   if (credentialsChanged) {
     updates.credentials = credentials
   }
@@ -2343,7 +2456,9 @@ const handleSubmit = async () => {
     enableOpenAICompactMode.value ||
     enableOpenAICompactModelMapping.value ||
     enableRpmLimit.value ||
-    userMsgQueueMode.value !== null
+    userMsgQueueMode.value !== null ||
+    // FORK-ANCHOR: bulk-edit-field-catalog-submit-guard (二开：登记表字段也算已选字段)
+    Object.values(bulkEditFieldState).some((state) => state.enabled)
 
   if (!hasAnyFieldEnabled) {
     appStore.showError(t('admin.accounts.bulkEdit.noFieldsSelected'))
@@ -2499,6 +2614,10 @@ watch(
       enableOpenAICompactMode.value = false
       enableOpenAICompactModelMapping.value = false
       enableRpmLimit.value = false
+      // FORK-ANCHOR: bulk-edit-field-catalog-reset (二开：登记表字段一并复位)
+      for (const field of bulkEditFields) {
+        bulkEditFieldState[field.key] = { enabled: false, value: defaultFieldValue(field) }
+      }
 
       // Reset all values
       baseUrl.value = ''

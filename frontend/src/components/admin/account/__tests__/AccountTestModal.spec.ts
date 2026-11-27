@@ -894,6 +894,23 @@ describe('AccountTestModal', () => {
       const [, request] = (global.fetch as any).mock.calls[0]
       expect(JSON.parse(request.body)).toHaveProperty('compress_request_body', false)
     })
+
+    // FORK-ANCHOR: test-modal-request-zstd-clear-on-unchecked-spec (二开：没跑压缩测试就不回写旧结论)
+    it('本轮没勾选压缩测试时清掉上一轮的结论', async () => {
+      getAvailableModels.mockResolvedValue([{ id: 'deepseek-v4.1-flash', display_name: 'DeepSeek V4.1 Flash' }])
+      global.fetch = vi.fn().mockResolvedValue(
+        createStreamResponse(['data: {"type":"test_complete","success":true}\n'])
+      ) as any
+      const wrapper = mountModal(apiKeyAccount)
+      await wrapper.setProps({ show: true })
+      await flushPromises()
+      ;(wrapper.vm as any).requestZstdOk = true
+      await wrapper.get('[data-testid="account-test-compress-request-body"]').setValue(false)
+      await (wrapper.vm as any).startTest()
+      await flushPromises()
+
+      expect((wrapper.vm as any).requestZstdOk).toBeNull()
+    })
   })
 })
 

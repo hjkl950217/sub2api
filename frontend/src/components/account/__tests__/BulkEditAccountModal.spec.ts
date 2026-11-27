@@ -1175,4 +1175,80 @@ describe('BulkEditAccountModal', () => {
       }
     })
   })
+
+  // FORK-ANCHOR: bulk-edit-field-catalog-spec (二开：登记表字段按属性标记自动出现并能批量写回)
+  it('按属性标记渲染压缩请求体开关，勾选后写进 extra', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    const enabled = wrapper.get(
+      '[data-testid="bulk-edit-field-enabled"][data-field-key="upstream_request_zstd"]'
+    )
+    await enabled.setValue(true)
+    await wrapper.get('[data-testid="bulk-edit-field-toggle"]').setValue('disabled')
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: {
+        upstream_request_zstd: false
+      }
+    })
+  })
+
+  it('不勾选时该键不出现在 payload 里', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await wrapper.get('#bulk-edit-concurrency-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const [, updates] = vi.mocked(adminAPI.accounts.bulkUpdate).mock.calls[0]
+    expect((updates as any).extra?.upstream_request_zstd).toBeUndefined()
+  })
+
+  it('非 apikey 账号不显示压缩请求体开关', async () => {
+    const wrapper = mountModal({ selectedPlatforms: ['grok'], selectedTypes: ['oauth'] })
+    await flushPromises()
+
+    expect(
+      wrapper
+        .find('[data-testid="bulk-edit-field-enabled"][data-field-key="upstream_request_zstd"]')
+        .exists()
+    ).toBe(false)
+  })
+
+  it('下拉类属性按选项值写入 extra', async () => {
+    const wrapper = mountModal({ selectedPlatforms: ['anthropic'], selectedTypes: ['apikey'] })
+    await flushPromises()
+
+    await wrapper
+      .get('[data-testid="bulk-edit-field-enabled"][data-field-key="anthropic_apikey_auth_scheme"]')
+      .setValue(true)
+    await wrapper.get('[data-testid="bulk-edit-field-select"]').setValue('authorization_bearer')
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: {
+        anthropic_apikey_auth_scheme: 'authorization_bearer'
+      }
+    })
+  })
+
+  it('按平台显示各自适用的属性', async () => {
+    const wrapper = mountModal({ selectedPlatforms: ['openai'], selectedTypes: ['oauth'] })
+    await flushPromises()
+
+    const keys = wrapper
+      .findAll('[data-testid="bulk-edit-field-enabled"]')
+      .map((input) => input.attributes('data-field-key'))
+    expect(keys).toContain('auto_pause_5h_disabled')
+    expect(keys).toContain('auto_pause_7d_disabled')
+    expect(keys).not.toContain('upstream_request_zstd')
+    expect(keys).not.toContain('anthropic_passthrough')
+    // 上游 ID 头名是全平台通用属性
+    expect(keys).toContain('upstream_request_id_header')
+  })
 })
