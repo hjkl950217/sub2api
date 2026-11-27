@@ -184,6 +184,12 @@ func responsesItemWire(item *ResponsesOutput) map[string]any {
 		m["call_id"] = item.CallID
 		m["name"] = item.Name
 		m["arguments"] = item.Arguments
+		// 密封参数的密文标记必须原样回传（含显式 null/[]），丢弃后上游会把
+		// 密文参数当成明文，重放时签名校验失败。
+		// FORK-ANCHOR: responses-function-call-encrypted-args (二开：回程重建保留 encrypted_function_args，修复 #8582)
+		if item.EncryptedFunctionArgs != nil {
+			m["encrypted_function_args"] = item.EncryptedFunctionArgs
+		}
 		// namespace 子工具的还原调用：codex 按 namespace+name 路由，缺少该字段
 		// 会被判为 unsupported call。
 		if item.Namespace != "" {

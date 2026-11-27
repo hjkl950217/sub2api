@@ -223,3 +223,31 @@ func TestResponsesStreamEventUnmarshal_ToolSearchObjectArguments(t *testing.T) {
 	require.NotNil(t, event.Item)
 	require.Equal(t, `{"query":"gmail"}`, event.Item.Arguments)
 }
+
+// FORK-ANCHOR: responses-function-call-encrypted-args-test (二开：#8582 回程重建保留密文参数标记)
+func TestWire_FunctionCallItemPreservesEncryptedFunctionArgs(t *testing.T) {
+	for name, raw := range map[string]string{
+		"sealed object": `{"v":1,"sig":"abc"}`,
+		"explicit null": `null`,
+		"empty array":   `[]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := marshalEvent(t, ResponsesStreamEvent{
+				Type:        "response.output_item.done",
+				OutputIndex: 1,
+				Item: &ResponsesOutput{
+					Type: "function_call", ID: "fc_1", CallID: "call_a", Name: "exec",
+					Arguments:             `{"cmd":"ls"}`,
+					EncryptedFunctionArgs: json.RawMessage(raw),
+				},
+			})
+			item, ok := m["item"].(map[string]any)
+			require.True(t, ok, "item must be an object")
+			got, exists := item["encrypted_function_args"]
+			require.Truef(t, exists, "encrypted_function_args must survive the wire rebuild")
+			var want any
+			require.NoError(t, json.Unmarshal([]byte(raw), &want))
+			require.Equal(t, want, got)
+		})
+	}
+}
