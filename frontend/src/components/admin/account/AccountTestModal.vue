@@ -1095,7 +1095,9 @@ const uploadAudioName = ref('')
 const imageFileInput = ref<HTMLInputElement | null>(null)
 const audioFileInput = ref<HTMLInputElement | null>(null)
 const isOpenAIAccount = computed(() => props.account?.platform === 'openai')
-const compressRequestBody = ref(false)
+const compressRequestBody = ref(true)
+// 本次压缩测试结论：true=上游可用，false=失败，null=没测或无法判断。更新协议时一并回写。
+const requestZstdOk = ref<boolean | null>(null)
 const supportsRequestZstdTest = computed(() => props.account?.type === 'apikey')
 const isGrokAccount = computed(() => props.account?.platform === 'grok')
 const openAITestModeOptions = computed(() => [
@@ -1440,7 +1442,8 @@ watch(
       withTools.value = false
       // FORK-ANCHOR: test-modal-protocol-seed-on-open (二开：打开弹窗就按平台铺好灰色协议占位)
       protocolResults.value = buildProtocolPlaceholders()
-      compressRequestBody.value = false
+      compressRequestBody.value = true
+      requestZstdOk.value = null
       resetState()
       // FORK-ANCHOR: test-modal-fingerprint-reset-on-open (二开：换账号/重开弹窗时指纹回到未检测)
       // 只在这里重置，不放进 resetState()——否则点「开始测试」会把指纹结论一起清掉。
@@ -1538,13 +1541,14 @@ const startProtocolSync = async () => {
   const passed = protocolResults.value
     .filter((result) => result.protocol !== NETWORK_PING_PROTOCOL && result.success)
     .map((result) => result.protocol)
-  if (passed.length === 0) {
+  const zstd = requestZstdOk.value
+  if (passed.length === 0 && zstd === null) {
     appStore.showError(t('admin.accounts.syncProtocolsNonePassed'))
     return
   }
   savingProtocols.value = true
   try {
-    await adminAPI.accounts.updateProbedProtocols(props.account.id, passed)
+    await adminAPI.accounts.updateProbedProtocols(props.account.id, passed, zstd)
     appStore.showSuccess(t('admin.accounts.syncProtocolsSuccess'))
     emit('protocols-updated')
   } catch (error: unknown) {
@@ -1910,6 +1914,7 @@ interface RequestCompressionReport {
 
 const reportRequestCompression = (report: RequestCompressionReport) => {
   const attempts = Array.isArray(report.attempts) ? report.attempts : []
+  requestZstdOk.value = null
   addLine('', 'text-gray-300')
   if (attempts.length === 0) {
     addLine(t('admin.accounts.requestZstd.noAttempt'), 'text-yellow-400')
@@ -1929,6 +1934,7 @@ const reportRequestCompression = (report: RequestCompressionReport) => {
   // 就不能下「上游能接收 zstd」的结论，否则会按错的结论去开压缩。
   const protocolFailure = protocolResults.value.some((result) => result.success === false)
   if (status.value === 'success' && !protocolFailure) {
+    requestZstdOk.value = true
     addLine(
       report.account_enabled
         ? t('admin.accounts.requestZstd.supportedEnabled')
@@ -1936,6 +1942,7 @@ const reportRequestCompression = (report: RequestCompressionReport) => {
       'text-green-400'
     )
   } else if (status.value === 'error') {
+    requestZstdOk.value = false
     addLine(
       report.account_enabled
         ? t('admin.accounts.requestZstd.failedEnabled')

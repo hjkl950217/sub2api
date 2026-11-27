@@ -45,6 +45,8 @@ type BatchTestTarget struct {
 	AccountID int64  `json:"account_id"`
 	ModelID   string `json:"model_id"`
 	Prompt    string `json:"prompt"`
+	// FORK-ANCHOR: batch-test-compress-request-body (二开：批量测试同样带压缩请求体测试)
+	CompressRequestBody *bool `json:"compress_request_body,omitempty"`
 }
 
 // BatchTestAccountInfo 是候选账号里的一项。
@@ -346,7 +348,10 @@ func (s *AccountTestService) runSingleBatchTarget(ctx context.Context, sink *bat
 	ginCtx, _ := gin.CreateTestContext(writer)
 	ginCtx.Request = (&http.Request{}).WithContext(testCtx)
 
-	err := s.TestAccountConnection(ginCtx, target.AccountID, target.ModelID, target.Prompt, AccountTestModeDefault)
+	err := s.TestAccountConnection(ginCtx, target.AccountID, target.ModelID, target.Prompt, AccountTestModeDefault, AccountTestOptions{
+		// FORK-ANCHOR: batch-test-compress-option-pass (二开：把批量压缩测试开关透传给单账号测试)
+		CompressRequestBody: target.CompressRequestBody,
+	})
 	// 收尾事件不能只看 TestAccountConnection 的返回值：协议矩阵路径在探测完全失败时
 	// 仍返回 nil，只把结论放在 test_complete 的 success 里。
 	switch {

@@ -353,3 +353,18 @@ func TestForkBatchTestRunRespectsConcurrencyLimit(t *testing.T) {
 
 	require.Equal(t, 1, upstream.maxActiveAccounts(), "并发 1 时同一时刻只有一个账号在测")
 }
+
+// FORK-ANCHOR: batch-test-compress-target-bind-test (二开：批量目标能绑定压缩测试开关)
+func TestBatchTestTargetBindsCompressRequestBody(t *testing.T) {
+	var targets []BatchTestTarget
+	require.NoError(t, json.Unmarshal([]byte(`[
+		{"account_id":1,"model_id":"gpt-5.4","prompt":"hi","compress_request_body":true}
+	]`), &targets))
+	require.Len(t, targets, 1)
+	require.NotNil(t, targets[0].CompressRequestBody)
+	require.True(t, *targets[0].CompressRequestBody)
+
+	var absent []BatchTestTarget
+	require.NoError(t, json.Unmarshal([]byte(`[{"account_id":1,"model_id":"m","prompt":"p"}]`), &absent))
+	require.Nil(t, absent[0].CompressRequestBody, "未传字段时保持 nil，单账号测试不会启用压缩")
+}

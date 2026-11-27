@@ -1300,7 +1300,10 @@ func (h *AccountHandler) Delete(c *gin.Context) {
 }
 
 type UpdateProbedProtocolsRequest struct {
-	Protocols []string `json:"protocols" binding:"required,min=1"`
+	Protocols []string `json:"protocols"`
+	// FORK-ANCHOR: probed-request-zstd-request (二开：协议回写时一并写回压缩请求体测试结论)
+	// RequestZstd 为 nil 表示本次测试没跑压缩测试，不改账号配置。
+	RequestZstd *bool `json:"request_zstd"`
 }
 
 // FORK-ANCHOR: account-probed-protocols-update (二开：仅保存已有探测结果，不发起连接测试)
@@ -1315,13 +1318,25 @@ func (h *AccountHandler) UpdateProbedProtocols(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if len(req.Protocols) == 0 && req.RequestZstd == nil {
+		response.BadRequest(c, "at least one passed protocol or request_zstd is required")
+		return
+	}
 	if h.accountTestService == nil {
 		response.Error(c, http.StatusServiceUnavailable, "Account test service unavailable")
 		return
 	}
-	if err := h.accountTestService.UpdateProbedCNProtocols(c.Request.Context(), accountID, req.Protocols); err != nil {
-		response.ErrorFrom(c, err)
-		return
+	if len(req.Protocols) > 0 {
+		if err := h.accountTestService.UpdateProbedCNProtocols(c.Request.Context(), accountID, req.Protocols); err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+	}
+	if req.RequestZstd != nil {
+		if err := h.accountTestService.UpdateAccountRequestZstd(c.Request.Context(), accountID, *req.RequestZstd); err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
 	}
 	response.Success(c, gin.H{"updated": true})
 }

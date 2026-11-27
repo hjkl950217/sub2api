@@ -29,6 +29,25 @@
           />
         </div>
 
+        <!-- FORK-ANCHOR: batch-test-compress-request-body-option (二开：批量测试也带压缩请求体测试，默认打开) -->
+        <div class="space-y-1">
+          <label class="flex cursor-pointer items-center gap-2">
+            <input
+              v-model="compressRequestBody"
+              data-testid="batch-test-compress-request-body"
+              type="checkbox"
+              class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
+              :disabled="running"
+            />
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+              {{ t('admin.accounts.requestZstd.testOption') }}
+            </span>
+          </label>
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.requestZstd.testOptionHint') }}
+          </p>
+        </div>
+
         <!-- 每个平台一组：组头选模型，组内逐账号一行状态 -->
         <div
           v-for="group in groups"
@@ -357,6 +376,9 @@ interface BatchRow {
   // 逐协议报错挂在各自的 ProtocolResult.error 上，不重复进这里。
   rowFailure: string
   schedulable: boolean
+  // FORK-ANCHOR: batch-test-row-request-zstd-field (二开：该行压缩请求体测试结论)
+  // null = 没测或无法判断，true/false 才写回账号配置。
+  requestZstd: boolean | null
   // FORK-ANCHOR: batch-test-fingerprint-field (二开：模型指纹检测状态)
   // 和协议测试完全独立：默认不跑，也不随「开始测试」触发，走单独的按钮。
   fingerprint: FingerprintRowState
@@ -398,6 +420,8 @@ const groups = ref<BatchTestAccountGroup[]>([])
 const rows = ref<BatchRow[]>([])
 const selectedModels = ref<Record<string, string>>({})
 const testPrompt = ref('')
+// FORK-ANCHOR: batch-test-compress-request-body-default (二开：批量压缩测试默认打开)
+const compressRequestBody = ref(true)
 const loadingPlan = ref(false)
 const running = ref(false)
 const savingProtocols = ref(false)
@@ -429,7 +453,7 @@ const probedRows = computed(() =>
   rows.value.filter(
     (row) =>
       (row.status === 'success' || row.status === 'error') &&
-      row.protocols.some((r) => r.protocol !== NETWORK_PING_PROTOCOL && r.success)
+      (row.requestZstd !== null || row.protocols.some((r) => r.protocol !== NETWORK_PING_PROTOCOL && r.success))
   )
 )
 
@@ -720,6 +744,7 @@ const loadPlan = async () => {
           // FORK-ANCHOR: batch-test-protocol-endpoint-placeholder (二开：占位标签也带端点字段)
           protocols: (account.protocols || []).map((protocol) => ({ protocol, success: null, probing: false, error: '', body: '', expanded: false, firstByteMs: null, totalMs: null, endpoint: '' })),
           rowFailure: '',
+          requestZstd: null,
           schedulable: account.schedulable,
           fingerprint: { status: 'idle', predictionName: '', prediction: '', probability: null, usedOutputs: 0, error: '', elapsedMs: 0, samplesDone: 0, samplesTotal: 0 }
         })
@@ -759,13 +784,19 @@ watch(
 )
 
 const buildTargets = () => {
-  const targets: Array<{ account_id: number; model_id: string; prompt: string }> = []
+  const targets: Array<{ account_id: number; model_id: string; prompt: string; compress_request_body?: boolean }> = []
   groups.value.forEach((group) => {
     const modelID = selectedModels.value[group.platform]
     if (!modelID) return
     group.accounts.forEach((account) => {
       if (!account.eligible) return
-      targets.push({ account_id: account.id, model_id: modelID, prompt: testPrompt.value.trim() })
+      targets.push({
+        account_id: account.id,
+        model_id: modelID,
+        prompt: testPrompt.value.trim(),
+        // FORK-ANCHOR: batch-test-compress-request-body-target (二开：批量压缩测试开关随目标下发)
+        compress_request_body: compressRequestBody.value
+      })
     })
   })
   return targets
@@ -790,6 +821,7 @@ const startTest = async () => {
       result.endpoint = ''
     })
     row.rowFailure = ''
+    row.requestZstd = null
   })
   running.value = true
   abortStream()
@@ -857,6 +889,8 @@ const handleEvent = (event: {
   total_ms?: number
   // FORK-ANCHOR: batch-test-protocol-endpoint-event-field (二开：该协议实际探测的地址)
   endpoint?: string
+  // FORK-ANCHOR: batch-test-compress-report-event-field (二开：压缩请求体测试报告，随 test_complete 到达)
+  request_compression?: { attempts?: { host: string; raw_bytes: number; wire_bytes: number }[] }
 }) => {
   if (typeof event.account_id !== 'number') return
   const row = rowsById.value.get(event.account_id)
@@ -898,6 +932,22 @@ const handleEvent = (event: {
         target.endpoint = event.endpoint || ''
       }
       break
+    // FORK-ANCHOR: batch-test-compress-report-capture (二开：按单账号同样的规则判定压缩测试结论)
+    // 协议矩阵下 success 是「至少一个协议通过」，有协议失败就不能下「上游支持 zstd」的结论。
+    case 'test_complete': {
+      const attempts = Array.isArray(event.request_compression?.attempts) ? event.request_compression.attempts : []
+      if (attempts.length > 0) {
+        const protocolFailure = row.protocols.some(
+          (result) => result.protocol !== NETWORK_PING_PROTOCOL && result.success === false
+        )
+        if (event.success === true && !protocolFailure) {
+          row.requestZstd = true
+        } else if (event.success === false) {
+          row.requestZstd = false
+        }
+      }
+      break
+    }
     case 'error':
       row.status = 'error'
       row.error = event.error || ''
@@ -981,7 +1031,8 @@ const updateProtocols = async () => {
     id: row.id,
     passed: row.protocols
       .filter((result) => result.protocol !== NETWORK_PING_PROTOCOL && result.success)
-      .map((result) => result.protocol)
+      .map((result) => result.protocol),
+    requestZstd: row.requestZstd
   }))
   if (!targets.length) {
     appStore.showError(t('admin.accounts.batchTest.updateProtocolsNone'))
@@ -992,7 +1043,8 @@ const updateProtocols = async () => {
   let failed = 0
   for (const target of targets) {
     try {
-      await adminAPI.accounts.updateProbedProtocols(target.id, target.passed)
+      // FORK-ANCHOR: batch-test-compress-writeback (二开：更新协议时一并回写压缩测试结论)
+      await adminAPI.accounts.updateProbedProtocols(target.id, target.passed, target.requestZstd)
       success++
     } catch (error) {
       console.error('Failed to update probed protocols:', error)

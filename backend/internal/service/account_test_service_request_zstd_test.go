@@ -3,6 +3,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -148,4 +149,39 @@ func TestAccountIsUpstreamRequestZstdEnabled(t *testing.T) {
 	require.False(t, (&Account{}).IsUpstreamRequestZstdEnabled())
 	require.False(t, (&Account{Type: AccountTypeAPIKey, Extra: map[string]any{AccountExtraUpstreamRequestZstd: "true"}}).IsUpstreamRequestZstdEnabled())
 	require.True(t, (&Account{Type: AccountTypeAPIKey, Extra: map[string]any{AccountExtraUpstreamRequestZstd: true}}).IsUpstreamRequestZstdEnabled())
+}
+
+type zstdUpdateAccountRepo struct {
+	AccountRepository
+	account *Account
+	updated bool
+}
+
+func (r *zstdUpdateAccountRepo) GetByID(context.Context, int64) (*Account, error) {
+	return r.account, nil
+}
+
+func (r *zstdUpdateAccountRepo) Update(_ context.Context, account *Account) error {
+	r.updated = true
+	r.account = account
+	return nil
+}
+
+// FORK-ANCHOR: probed-request-zstd-sync-test (二开：压缩测试结论回写账号配置)
+func TestUpdateAccountRequestZstd(t *testing.T) {
+	account := zstdTestAccount(false)
+	repo := &zstdUpdateAccountRepo{account: account}
+	svc := &AccountTestService{accountRepo: repo}
+
+	require.NoError(t, svc.UpdateAccountRequestZstd(context.Background(), account.ID, true))
+	require.True(t, repo.updated)
+	require.True(t, account.IsUpstreamRequestZstdEnabled())
+
+	require.NoError(t, svc.UpdateAccountRequestZstd(context.Background(), account.ID, false))
+	_, exists := account.Extra[AccountExtraUpstreamRequestZstd]
+	require.False(t, exists)
+	require.False(t, account.IsUpstreamRequestZstdEnabled())
+
+	account.Type = AccountTypeOAuth
+	require.Error(t, svc.UpdateAccountRequestZstd(context.Background(), account.ID, true))
 }

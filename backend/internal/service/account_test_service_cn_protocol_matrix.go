@@ -328,6 +328,28 @@ func (s *AccountTestService) UpdateProbedCNProtocols(ctx context.Context, accoun
 	return s.accountRepo.Update(ctx, account)
 }
 
+// FORK-ANCHOR: probed-request-zstd-sync (二开：按压缩请求体测试结果更新账号配置)
+// UpdateAccountRequestZstd 把账号 extra 里的 upstream_request_zstd 写成测试结论：
+// 通过时置 true，失败时删除该键（回到默认不压缩）。只对 API Key 账号生效。
+func (s *AccountTestService) UpdateAccountRequestZstd(ctx context.Context, accountID int64, enabled bool) error {
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	if account == nil || account.Type != AccountTypeAPIKey {
+		return infraerrors.BadRequest("INVALID_ACCOUNT_TYPE", "request zstd sync is only supported for API-key accounts")
+	}
+	if account.Extra == nil {
+		account.Extra = map[string]any{}
+	}
+	if enabled {
+		account.Extra[AccountExtraUpstreamRequestZstd] = true
+	} else {
+		delete(account.Extra, AccountExtraUpstreamRequestZstd)
+	}
+	return s.accountRepo.Update(ctx, account)
+}
+
 func setProbedCNProtocols(account *Account, passed []string) bool {
 	// 旧字段继续映射到 Chat 端点与当前兜底协议，兼容既有账号读取路径。
 	selected := make([]string, 0, len(cnProtocolProbeOrder))

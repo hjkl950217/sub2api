@@ -209,8 +209,8 @@ describe('AccountBatchTestModal', () => {
 
     const [, request] = (global.fetch as any).mock.calls[0]
     expect(JSON.parse(request.body).targets).toEqual([
-      { account_id: 1, model_id: 'gpt-4o', prompt: 'hi' },
-      { account_id: 2, model_id: 'gpt-4o', prompt: 'hi' }
+      { account_id: 1, model_id: 'gpt-4o', prompt: 'hi', compress_request_body: true },
+      { account_id: 2, model_id: 'gpt-4o', prompt: 'hi', compress_request_body: true }
     ])
 
     expect(wrapper.get('[data-testid="batch-row-1"]').text()).toContain('passed')
@@ -242,8 +242,8 @@ describe('AccountBatchTestModal', () => {
     await wrapper.get('[data-testid="batch-update-protocols-button"]').trigger('click')
     await flushPromises()
 
-    expect(updateProbedProtocols).toHaveBeenCalledWith(1, ['chat_completions'])
-    expect(updateProbedProtocols).toHaveBeenCalledWith(2, ['chat_completions', 'responses'])
+    expect(updateProbedProtocols).toHaveBeenCalledWith(1, ['chat_completions'], null)
+    expect(updateProbedProtocols).toHaveBeenCalledWith(2, ['chat_completions', 'responses'], null)
     expect(wrapper.emitted('updated')).toHaveLength(1)
   })
 
@@ -272,7 +272,7 @@ describe('AccountBatchTestModal', () => {
     await wrapper.get('[data-testid="batch-update-protocols-button"]').trigger('click')
     await flushPromises()
     // ping 通过也不能被当成可写回的协议
-    expect(updateProbedProtocols).toHaveBeenCalledWith(1, ['chat_completions', 'responses'])
+    expect(updateProbedProtocols).toHaveBeenCalledWith(1, ['chat_completions', 'responses'], null)
   })
 
   // FORK-ANCHOR: batch-test-protocol-endpoint-spec (二开：结果行显示实际探测的 host)
@@ -326,7 +326,7 @@ describe('AccountBatchTestModal', () => {
     await flushPromises()
 
     expect(updateProbedProtocols).toHaveBeenCalledTimes(1)
-    expect(updateProbedProtocols).toHaveBeenCalledWith(1, ['chat_completions'])
+    expect(updateProbedProtocols).toHaveBeenCalledWith(1, ['chat_completions'], null)
   })
 
   it('打开弹窗就按平台铺好协议占位标签（灰色），测试推进时逐个变色', async () => {

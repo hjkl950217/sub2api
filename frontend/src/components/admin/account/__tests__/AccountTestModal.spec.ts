@@ -167,7 +167,7 @@ describe('AccountTestModal', () => {
     expect(JSON.parse(request.body)).toEqual({
       model_id: 'gemini-3.1-flash-image',
       prompt: 'draw a tiny orange cat astronaut',
-      compress_request_body: false
+      compress_request_body: true
     })
 
     const preview = wrapper.find('img[alt="test-image-1"]')
@@ -299,7 +299,7 @@ describe('AccountTestModal', () => {
     await wrapper.get('[data-testid="sync-protocols-button"]').trigger('click')
     await flushPromises()
 
-    expect(updateProbedProtocols).toHaveBeenCalledWith(7, ['chat_completions', 'responses'])
+    expect(updateProbedProtocols).toHaveBeenCalledWith(7, ['chat_completions', 'responses'], null)
     expect(global.fetch).toHaveBeenCalledTimes(1)
     const [, testRequest] = (global.fetch as any).mock.calls[0]
     expect(JSON.parse(testRequest.body)).not.toHaveProperty('sync_protocols')
@@ -346,7 +346,7 @@ describe('AccountTestModal', () => {
     await button.trigger('click')
     await flushPromises()
 
-    expect(updateProbedProtocols).toHaveBeenCalledWith(8, ['chat_completions'])
+    expect(updateProbedProtocols).toHaveBeenCalledWith(8, ['chat_completions'], null)
   })
 
   // FORK-ANCHOR: test-test-modal-tool-call-toggle (二开：带工具调用开关切换默认消息并随请求发送)
@@ -883,7 +883,11 @@ describe('AccountTestModal', () => {
       const wrapper = mountModal(apiKeyAccount)
       await wrapper.setProps({ show: true })
       await flushPromises()
-      expect(wrapper.find('[data-testid="account-test-compress-request-body"]').exists()).toBe(true)
+      const checkbox = wrapper.get('[data-testid="account-test-compress-request-body"]')
+      expect(checkbox.exists()).toBe(true)
+      // 默认勾选，取消后应显式发送 false
+      expect((checkbox.element as HTMLInputElement).checked).toBe(true)
+      await checkbox.setValue(false)
       await (wrapper.vm as any).startTest()
       await flushPromises()
 

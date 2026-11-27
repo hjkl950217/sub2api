@@ -259,8 +259,17 @@ export async function update(id: number, updates: UpdateAccountRequest): Promise
 }
 
 // FORK-ANCHOR: account-probed-protocols-api (二开：提交已有协议探测通过结果)
-export async function updateProbedProtocols(id: number, protocols: string[]): Promise<{ updated: boolean }> {
-  const { data } = await apiClient.put<{ updated: boolean }>(`/admin/accounts/${id}/protocols`, { protocols })
+// FORK-ANCHOR: probed-request-zstd-api (二开：一并提交压缩请求体测试结论)
+export async function updateProbedProtocols(
+  id: number,
+  protocols: string[],
+  requestZstd?: boolean | null
+): Promise<{ updated: boolean }> {
+  const body: { protocols: string[]; request_zstd?: boolean } = { protocols }
+  if (typeof requestZstd === 'boolean') {
+    body.request_zstd = requestZstd
+  }
+  const { data } = await apiClient.put<{ updated: boolean }>(`/admin/accounts/${id}/protocols`, body)
   return data
 }
 
