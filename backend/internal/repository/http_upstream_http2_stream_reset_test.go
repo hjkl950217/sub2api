@@ -141,6 +141,39 @@ func TestIsUpstreamHTTP2StreamReset_Classification(t *testing.T) {
 	}
 }
 
+// FORK-ANCHOR: upstream-http2-connection-reset-test (二开 #8933：连接级重置识别)
+func TestIsUpstreamHTTP2ConnectionReset_Classification(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "连接级丢失",
+			err:  errors.New(`Get "https://cdn.example.test/v1/messages": http2: client connection lost`),
+			want: true,
+		},
+		{
+			name: "TCP 连接被重置",
+			err:  errors.New("read tcp 10.0.0.2:54321->1.2.3.4:443: read: connection reset by peer"),
+			want: true,
+		},
+		{
+			name: "单流重置不在本函数处理",
+			err:  peerStreamReset(35, http2.ErrCodeProtocol),
+			want: false,
+		},
+		{name: "连接被拒不是重置", err: errors.New("connection refused"), want: false},
+		{name: "超时不重试", err: context.DeadlineExceeded, want: false},
+		{name: "空错误", err: nil, want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, isUpstreamHTTP2ConnectionReset(tc.err))
+		})
+	}
+}
+
 func TestShouldRetryUpstreamStreamReset_Gating(t *testing.T) {
 	resetErr := peerStreamReset(35, http2.ErrCodeProtocol)
 
@@ -152,6 +185,12 @@ func TestShouldRetryUpstreamStreamReset_Gating(t *testing.T) {
 	t.Run("long_stream_h2 同样需要重试", func(t *testing.T) {
 		require.True(t, shouldRetryUpstreamStreamReset(
 			upstreamProtocolModeLongStreamH2, newUpstreamPostRequest(t, []byte(`{}`)), resetErr))
+	})
+
+	t.Run("连接级重置同样重试", func(t *testing.T) {
+		require.True(t, shouldRetryUpstreamStreamReset(
+			upstreamProtocolModeOpenAIH2, newUpstreamPostRequest(t, []byte(`{}`)),
+			errors.New("http2: client connection lost")))
 	})
 
 	t.Run("非显式 h2 模式不介入", func(t *testing.T) {

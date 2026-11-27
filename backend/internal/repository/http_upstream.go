@@ -1210,10 +1210,29 @@ func isUpstreamHTTP2StreamReset(err error) bool {
 	}
 }
 
+// FORK-ANCHOR: upstream-http2-connection-reset (二开 #8933：连接级重置也原地重试一次)
+// isUpstreamHTTP2ConnectionReset 判断错误是否为 HTTP/2 连接级重置（不是单条流）。
+//
+// CDN 或中转在响应头前断开整条连接时，Go 返回的是连接级错误，而不是
+// http2.StreamError；同一条连接上的在途请求会一起失败。请求体可重放时在原地
+// 重试一次即可换到新连接，避免把整批请求都推给换号。
+func isUpstreamHTTP2ConnectionReset(err error) bool {
+	if err == nil {
+		return false
+	}
+	if isUpstreamHTTP2StreamReset(err) {
+		return false // 单流重置由上游逻辑处理，避免重复匹配
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "http2: client connection lost") ||
+		strings.Contains(msg, "connection reset by peer")
+}
+
 // shouldRetryUpstreamStreamReset 判断这次失败是否值得原地重放一次。
 //
 // http.Client.Do 返回错误意味着响应头从未到达：上游没有应答、没有产生计费，也
 // 没有任何字节写给客户端。只要请求体可以通过 GetBody 重放就是安全的。
+// 覆盖单流 RST_STREAM 和连接级重置两种形态。
 func shouldRetryUpstreamStreamReset(protocolMode string, req *http.Request, err error) bool {
 	if !isExplicitHTTP2ProtocolMode(protocolMode) {
 		return false
@@ -1225,7 +1244,8 @@ func shouldRetryUpstreamStreamReset(protocolMode string, req *http.Request, err 
 	if req.Context().Err() != nil {
 		return false
 	}
-	return isUpstreamHTTP2StreamReset(err)
+	// FORK-ANCHOR: upstream-http2-connection-reset-gate (二开 #8933：连接级重置进入同一重试)
+	return isUpstreamHTTP2StreamReset(err) || isUpstreamHTTP2ConnectionReset(err)
 }
 
 // retryUpstreamStreamReset 重放一次被对端重置的请求，最多一次。
