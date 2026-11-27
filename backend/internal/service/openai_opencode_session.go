@@ -63,7 +63,6 @@ func NormalizeOpenCodeUserAgentVersion(version string) string {
 	return version
 }
 
-
 func rememberOpenCodeInboundBody(c *gin.Context, body []byte) {
 	if c == nil || len(body) == 0 {
 		return
